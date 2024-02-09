@@ -1,8 +1,7 @@
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 
-pub fn init_tracing() {
-    let filter_layer = tracing_subscriber::filter::LevelFilter::INFO;
-    
+pub fn init_tracing(log_level: LevelFilter) {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
         .flatten_event(true)
@@ -11,7 +10,7 @@ pub fn init_tracing() {
         .with_span_list(false);
 
     let subscriber = tracing_subscriber::Registry::default()
-        .with(filter_layer)
+        .with(log_level)
         .with(fmt_layer);
 
     tracing::subscriber::set_global_default(subscriber).unwrap();

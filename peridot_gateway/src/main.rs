@@ -1,5 +1,6 @@
-use std::time::Duration;
+use std::{time::Duration, default};
 
+use crossbeam::atomic::AtomicCell;
 use peridot::{types::Domain, state::{InMemoryStateStore, ReadableStateStore}, init::init_tracing};
 use rdkafka::{ClientConfig, config::RDKafkaLogLevel};
 use tokio::time::sleep;
@@ -7,7 +8,7 @@ use eap::{
     config::Config,
     environment::Environment
 };
-use tracing::info;
+use tracing::{info, level_filters::LevelFilter};
 
 #[derive(Debug, eap::Config)]
 struct AppConfig {
@@ -21,11 +22,20 @@ struct Topic {
     consent_owner_type: String,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+enum Test {
+    #[default]
+    Hello,
+    Goodbye
+}
+
 #[tokio::main]
 async fn main() {
-    init_tracing();
+    init_tracing(LevelFilter::INFO);
 
     let mut source = ClientConfig::new();
+
+    println!("Is lock free: {}", AtomicCell::<Test>::is_lock_free());
 
     source
         .set(
@@ -40,7 +50,7 @@ async fn main() {
             "sasl.password",
             "ee5DtvJYWFXYJ/MF+bCJVBil8+xEH5vuZ6c8Fk2qjD0xSGhlDnXr9w4D9LTUQv2t",
         )
-        .set("group.id", "rust-test2")
+        .set("group.id", "rust-test1")
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
@@ -48,8 +58,6 @@ async fn main() {
         &source,
         "topicStore.Global",
     ).unwrap();
-
-    sleep(Duration::from_secs(5)).await;
 
     match state_store.get("changeOfAddress").await {
         Some(value) => info!("Value: {:?}", value),
