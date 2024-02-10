@@ -1,16 +1,38 @@
 use std::collections::HashMap;
 
-use super::{ReadableStateBackend, WriteableStateBackend};
+use tokio::sync::RwLock;
+use tracing::info;
+
+use super::{ReadableStateBackend, WriteableStateBackend, StateBackend};
 
 pub struct InMemoryStateBackend<T> {
-    store: tokio::sync::RwLock<HashMap<String, T>>
+    store: RwLock<HashMap<String, T>>,
+    offsets: RwLock<HashMap<String, i64>>,
 }
 
 impl <T> Default for InMemoryStateBackend<T> {
     fn default() -> Self {
         InMemoryStateBackend {
-            store: tokio::sync::RwLock::new(HashMap::new())
+            store: Default::default(),
+            offsets: Default::default(),
         }
+    }
+}
+
+impl <T> StateBackend for InMemoryStateBackend<T> 
+where T: Send + Sync + 'static
+{
+    async fn commit_offset(&self, topic: &str, partition: i32, offset: i64) {
+        let mut offsets = self.offsets.write().await;
+        offsets.insert(format!("{}-{}", topic, partition), offset);
+
+        info!("Committed offset: {}-{}:{}", topic, partition, offset);
+        info!("Current offsets: {:?}", offsets);
+    }
+
+    async fn get_offset(&self, topic: &str, partition: i32) -> Option<i64> {
+        let offsets = self.offsets.read().await;
+        offsets.get(&format!("{}-{}", topic, partition)).cloned()
     }
 }
 

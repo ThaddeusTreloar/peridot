@@ -1,8 +1,9 @@
 [workspace]
 members = [
     "peridot", 
-    "peridot_gateway"
-    ]
+    "peridot_gateway",
+    "peridot_api",
+]
 
 [workspace.package]
 name = "peridot"
