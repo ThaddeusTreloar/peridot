@@ -1,7 +1,7 @@
 use std::{time::Duration, default, sync::Arc, collections::HashMap};
 
 use crossbeam::atomic::AtomicCell;
-use peridot::{types::Domain, state::{InMemoryStateStore, ReadableStateStore}, init::init_tracing};
+use peridot::{types::Domain, state::{ReadableStateStore, StateStore, InMemoryStateBackend}, init::init_tracing};
 use rdkafka::{ClientConfig, config::RDKafkaLogLevel};
 use tokio::time::sleep;
 use eap::{
@@ -22,7 +22,7 @@ struct Topic {
     consent_owner_type: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct ConsentGrant {
     owner_type: String,
     owner: String,
@@ -48,11 +48,11 @@ async fn main() {
             "sasl.password",
             "ee5DtvJYWFXYJ/MF+bCJVBil8+xEH5vuZ6c8Fk2qjD0xSGhlDnXr9w4D9LTUQv2t",
         )
-        .set("group.id", "rust-test1")
+        .set("group.id", "rust-test7")
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let state_store: Arc<InMemoryStateStore<'_, ConsentGrant>> = InMemoryStateStore::from_consumer_config(
+    let state_store: Arc<StateStore<'_, InMemoryStateBackend<ConsentGrant>, ConsentGrant>> = StateStore::from_consumer_config(
         &source,
         "consent.Client",
     ).unwrap();

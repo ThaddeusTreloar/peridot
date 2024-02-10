@@ -1,11 +1,11 @@
-use std::{collections::HashMap, sync::Arc, time::{Duration, Instant, SystemTime}, marker::PhantomData, default};
+use std::{collections::HashMap, sync::Arc, time::{Duration, Instant, SystemTime}, marker::PhantomData, default, fmt::{Display, Write}};
 
 use crossbeam::atomic::AtomicCell;
 use rdkafka::{consumer::{StreamConsumer, Consumer, stream_consumer::StreamPartitionQueue, ConsumerContext}, ClientConfig, Message, message::OwnedMessage, topic_partition_list, ClientContext, error::KafkaError, util::DefaultRuntime};
-use futures::{StreamExt, Stream};
+use futures::{StreamExt, Stream, Future};
+use serde::de::DeserializeOwned;
 use tokio::sync::RwLock;
 use tracing::{info, debug};
-use tracing_subscriber::field::debug;
 
 use self::error::StateStoreCreationError;
 
@@ -53,6 +53,12 @@ pub enum ConsumerState {
     Lagging,
 }
 
+impl Display for ConsumerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 pub trait ReadableStateStore<T> {
     async fn get(&self, key: &str) -> Option<T>;
 }
@@ -62,17 +68,67 @@ pub trait WriteableStateStore<T> {
     async fn delete(&self, key: &str) -> Option<T>;
 }
 
-pub struct InMemoryStateStore<'a, T> 
-where T: serde::Deserialize<'a>
-{
-    consumer: Arc<StreamConsumer<StateStoreContext>>,
-    store: Arc<RwLock<HashMap<String, T>>>,
-    state: Arc<AtomicCell<ConsumerState>>,
-    _lifetime: &'a PhantomData<()>
+pub trait ReadableStateBackend<T> {
+    async fn get(&self, key: &str) -> Option<T>;
 }
 
-async fn start_partition_update_thread<C, R, T>(parition_queue: StreamPartitionQueue<C, R>, store: Arc<RwLock<HashMap<String, T>>>) 
-where C: ConsumerContext, T: serde::de::DeserializeOwned,
+pub trait WriteableStateBackend<T> 
+{
+    fn set(&self, key: &str, value: T) -> impl Future<Output = Option<T>> + Send;
+    fn delete(&self, key: &str)-> impl Future<Output = Option<T>> + Send;
+}
+
+pub struct InMemoryStateBackend<T> {
+    store: RwLock<HashMap<String, T>>
+}
+
+impl <T> Default for InMemoryStateBackend<T> {
+    fn default() -> Self {
+        InMemoryStateBackend {
+            store: RwLock::new(HashMap::new())
+        }
+    }
+}
+
+impl <T> ReadableStateBackend<T> for InMemoryStateBackend<T> 
+where T: Clone
+{
+    async fn get(&self, key: &str) -> Option<T> {
+        self.store
+            .read().await
+            .get(key)
+            .cloned()
+    }
+}
+
+impl <T> WriteableStateBackend<T> for InMemoryStateBackend<T> 
+where T: Send + Sync + 'static
+{
+    async fn set(&self, key: &str, value: T) -> Option<T> {
+        self.store
+        .write().await
+        .insert(key.to_string(), value)
+    }
+    
+    async fn delete(&self, key: &str) -> Option<T> {
+        self.store
+            .write().await
+            .remove(key)
+    }
+}
+
+pub struct StateStore<'a, T, U>
+where U: DeserializeOwned + Send + Sync + 'static
+{
+    consumer: Arc<StreamConsumer<StateStoreContext>>,
+    backend: Arc<T>,
+    state: Arc<AtomicCell<ConsumerState>>,
+    _lifetime: &'a PhantomData<()>,
+    _type: PhantomData<U>,
+}
+
+async fn start_partition_update_thread<C, R, T>(parition_queue: StreamPartitionQueue<C, R>, store: Arc<impl WriteableStateBackend<T>>) 
+where C: ConsumerContext, T: serde::de::DeserializeOwned + Send + Sync + 'static
 {
     parition_queue
         .stream()
@@ -83,6 +139,7 @@ where C: ConsumerContext, T: serde::de::DeserializeOwned,
             }
         }).for_each(|msg| {
             let store_ref = store.clone();
+
             async move {
                 let raw_key = msg.key().expect("No key");
                 debug!("Key: {:?}", raw_key);
@@ -91,12 +148,13 @@ where C: ConsumerContext, T: serde::de::DeserializeOwned,
                 debug!("Value: {:?}", raw_value);
                 let value = serde_json::from_slice::<T>(raw_value).expect("Failed to deserialize value");
 
-                store_ref.write().await.insert(key, value);
+                store_ref.set(&key, value).await;
         }}).await;
 }
 
-impl <'a, T> InMemoryStateStore<'a, T> 
-where T: serde::de::DeserializeOwned + Send + Sync + 'static
+impl <'a, T, U> StateStore<'a, T, U> 
+where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + Sync + 'static,
+        U: DeserializeOwned + Send + Sync + 'static + Default
 {
     pub fn from_consumer_config(config: &ClientConfig, topic: &str) -> Result<Arc<Self>, StateStoreCreationError> {
         let (sender, reciever) = tokio::sync::mpsc::channel(100);
@@ -107,38 +165,39 @@ where T: serde::de::DeserializeOwned + Send + Sync + 'static
 
         let client = config.create_with_context(context)?;
 
-        let store = InMemoryStateStore {
+        let state_store = Arc::new(StateStore {
             consumer: Arc::new(client),
-            store: Default::default(),
+            backend: Default::default(),
             state: Default::default(),
-            _lifetime: &PhantomData
-        };
+            _lifetime: &PhantomData,
+            _type: PhantomData,
+        });
 
-        store.consumer.subscribe(&[topic])?;
+        state_store.consumer.subscribe(&[topic])?;
 
-        store.start_update_thread();
-        store.start_lag_listener();
+        state_store.start_update_thread();
+        state_store.start_lag_listener();
         
-        store.state.store(ConsumerState::Lagging);
+        state_store.state.store(ConsumerState::Lagging);
         
-        while let ConsumerState::Lagging = store.state.load() {
+        while let ConsumerState::Lagging = state_store.state.load() {
             info!(
                 "Consumer state: {:?} waiting for consumer to start...",
-                store.state.load()
+                state_store.state.load()
             );
             std::thread::sleep(Duration::from_millis(1000));
         }
 
-        let self_ref = Arc::new(store);
-
-        self_ref.clone().start_rebalance_listener(reciever);
+        state_store.clone().start_rebalance_listener(reciever);
         
-        Ok(self_ref)
+        Ok(state_store)
     }
 
     fn start_update_thread(&self) {
         let consumer = self.consumer.clone();
-        let store = self.store.clone();
+        let store = self.backend.clone();
+
+        self.backend.set("jon", Default::default());
 
         tokio::spawn(
             async move {
@@ -278,31 +337,23 @@ where T: serde::de::DeserializeOwned + Send + Sync + 'static
     
 }
 
-impl <'a, T> ReadableStateStore<T> for InMemoryStateStore<'a, T> 
-where T: serde::de::DeserializeOwned + Clone
+impl <'a, T, U> ReadableStateStore<U> for StateStore<'a, T, U> 
+where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U>,
+        U: DeserializeOwned + Clone + Send + Sync + 'static + Default
 {
-    async fn get(&self, key: &str) -> Option<T> {
-        while let ConsumerState::Lagging | ConsumerState::Rebalancing = self.state.load() {
+    async fn get(&self, key: &str) -> Option<U> {
+        while let ConsumerState::Lagging | 
+        ConsumerState::Stopped |
+        ConsumerState::Rebalancing = self.state.load() {
             info!(
-                "Consumer state: {:?} waiting for consumer to catch up...",
+                "Waiting for consumer to resume, current state: {}",
                 self.state.load()
             );
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
 
-        while let ConsumerState::Stopped = self.state.load() {
-            info!(
-                "Consumer state: {:?} waiting for consumer to start...",
-                self.state.load()
-            );
-            tokio::time::sleep(Duration::from_millis(1000)).await;
-        }
-
-        Some(
-            self.store
-                .read().await
-                .get(key)?
-                .clone()
-        )
+        self.backend
+            .get(key)
+            .await
     }
 }
