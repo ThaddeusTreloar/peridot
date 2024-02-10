@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use rdkafka::{ClientContext, topic_partition_list::{self, TopicPartitionListElem}, error::KafkaError, consumer::ConsumerContext};
 use tokio::sync::broadcast::{
@@ -66,31 +66,42 @@ impl ContextWakers {
 
 #[derive(Debug)]
 pub struct PeridotConsumerContext {
-    pre_rebalance_waker: Sender<OwnedRebalance>,
-    post_rebalance_waker: Sender<OwnedRebalance>,
-    commit_waker: Sender<Commit>,
+    pre_rebalance_waker: Arc<Sender<OwnedRebalance>>,
+    post_rebalance_waker: Arc<Sender<OwnedRebalance>>,
+    commit_waker: Arc<Sender<Commit>>,
+}
+
+impl Clone for PeridotConsumerContext {
+    fn clone(&self) -> Self {
+        PeridotConsumerContext {
+            pre_rebalance_waker: self.pre_rebalance_waker.clone(),
+            post_rebalance_waker: self.post_rebalance_waker.clone(),
+            commit_waker: self.commit_waker.clone(),
+        }
+    }
 }
 
 impl ClientContext for PeridotConsumerContext {}
 
 impl PeridotConsumerContext {
-    pub fn new() -> (Self, ContextWakers) {
+    pub fn new() -> Self {
         let (pre_rebalance_waker, pre_rebalance_receiver) = channel(100);
         let (post_rebalance_waker, post_rebalance_receiver) = channel(100);
         let (commit_waker, commit_receiver) = channel(100);
 
-        (
-            PeridotConsumerContext {
-                pre_rebalance_waker,
-                post_rebalance_waker,
-                commit_waker,
-            },
-            ContextWakers {
-                pre_rebalance_waker: pre_rebalance_receiver,
-                post_rebalance_waker: post_rebalance_receiver,
-                commit_waker: commit_receiver,
-            }
-        )
+        PeridotConsumerContext {
+            pre_rebalance_waker: Arc::new(pre_rebalance_waker),
+            post_rebalance_waker: Arc::new(post_rebalance_waker),
+            commit_waker: Arc::new(commit_waker),
+        }
+    }
+
+    pub fn wakers(&self) -> ContextWakers {
+        ContextWakers {
+            pre_rebalance_waker: self.pre_rebalance_waker.subscribe(),
+            post_rebalance_waker: self.post_rebalance_waker.subscribe(),
+            commit_waker: self.commit_waker.subscribe(),
+        }
     }
 }
 

@@ -33,14 +33,18 @@ pub trait App {
 #[derive()]
 pub struct PeridotApp {
     config: ClientConfig,
-    source: StreamConsumer,
+    source: StreamConsumer<PeridotConsumerContext>,
+    context: PeridotConsumerContext,
 }
 
 impl PeridotApp {
     pub fn new(config: &ClientConfig) -> Result<Self, PeridotAppCreationError> {
+        let context = PeridotConsumerContext::new();
+
         Ok(PeridotApp {
             config: config.clone(),
-            source: config.create()?,
+            source: config.create_with_context(context.clone())?,
+            context
         })
     }
 }

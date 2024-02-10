@@ -104,9 +104,9 @@ where
         topic: &str,
         config: &ClientConfig,
     ) -> Result<Self, StateStoreCreationError> {
-        let (context, wakers) = PeridotConsumerContext::new();
+        let context = PeridotConsumerContext::new();
 
-        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = wakers;
+        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = context.wakers();
 
         let client = config.create_with_context(context)?;
         let backend = Default::default();
@@ -125,9 +125,9 @@ where
         config: &ClientConfig,
         backend: T,
     ) -> Result<Self, StateStoreCreationError> {
-        let (context, wakers) = PeridotConsumerContext::new();
+        let context = PeridotConsumerContext::new();
 
-        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = wakers;
+        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = context.wakers();
 
         let client = config.create_with_context(context)?;
 
