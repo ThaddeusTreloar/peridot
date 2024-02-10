@@ -1,14 +1,15 @@
 use std::{collections::HashMap, time::Duration};
 
+use futures::StreamExt;
 use eap::{config::Config, environment::Environment};
 use peridot::{
     init::init_tracing,
     state::{
-        backend::{in_memory::InMemoryStateBackend, persistent::PersistantStateBackend},
+        backend::{in_memory::InMemoryStateBackend, persistent::PersistantStateBackend, self},
         ReadableStateStore, StateStore,
-    },
+    }, app::{PeridotApp, App, error::PeridotAppRuntimeError},
 };
-use rdkafka::{config::RDKafkaLogLevel, ClientConfig};
+use rdkafka::{config::RDKafkaLogLevel, ClientConfig, consumer::{StreamConsumer, Consumer}};
 use tracing::{info, level_filters::LevelFilter};
 
 #[derive(Debug, eap::Config)]
@@ -29,40 +30,8 @@ struct ConsentGrant {
     map: HashMap<String, HashMap<String, HashMap<String, bool>>>,
 }
 
-async fn test_persistent_store(source: &ClientConfig) {
-    let persistent_backend =
-        PersistantStateBackend::try_from_file(std::path::Path::new("/tmp/peridot.state_store.db"))
-            .await
-            .unwrap();
-
-    let state_store: StateStore<PersistantStateBackend<_>, ConsentGrant> =
-        StateStore::from_consumer_config_and_backend("consent.Client", &source, persistent_backend)
-            .unwrap();
-
-    loop {
-        match state_store.get("jon").await {
-            Some(value) => info!("Value: {:?}", value),
-            None => info!("No value found"),
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-async fn test_in_memory_store(source: &ClientConfig) {
-    let state_store: StateStore<InMemoryStateBackend<_>, ConsentGrant> =
-        StateStore::from_consumer_config("consent.Client", source).unwrap();
-
-    loop {
-        match state_store.get("jon").await {
-            Some(value) => info!("Value: {:?}", value),
-            None => info!("No value found"),
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), PeridotAppRuntimeError>{
     init_tracing(LevelFilter::INFO);
 
     let mut source = ClientConfig::new();
@@ -81,6 +50,27 @@ async fn main() {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    //test_in_memory_store(&source).await;
-    test_persistent_store(&source).await;
+    let backend: PersistantStateBackend<ConsentGrant> = PersistantStateBackend::try_from_file(std::path::Path::new("/tmp/peridot.gw.state_store.db"))
+        .await
+        .unwrap();
+
+    let state_store: StateStore<PersistantStateBackend<_>, ConsentGrant> =
+        StateStore::from_consumer_config_and_backend("consent.Client", &source, backend)
+            .unwrap();
+
+    let primary_stream: StreamConsumer = source.create().unwrap();
+
+    primary_stream.subscribe(&["changeOfAddress"]).unwrap();
+
+    primary_stream.stream().for_each(|message| async {
+        
+    });
+
+    let app = PeridotApp::new(&source).unwrap();
+
+    let some_table = app.table::<(), ()>("test.topic");
+
+    let some_stream = app.stream::<(), ()>("test.topic");
+
+    app.run().await
 }

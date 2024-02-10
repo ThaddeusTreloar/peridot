@@ -13,20 +13,18 @@ use rdkafka::{
     ClientConfig, Message, topic_partition_list::TopicPartitionListElem, TopicPartitionList,
 };
 use serde::de::DeserializeOwned;
-use tokio::{select, sync::mpsc::Receiver};
+use tokio::{select, sync::broadcast::Receiver};
 use tracing::{debug, error, info, warn, trace};
 
-use crate::types::Topic;
+use crate::app::extensions::{OwnedRebalance, PeridotConsumerContext, Commit, ContextWakers};
 
 use self::{
-    backend::{ReadableStateBackend, WriteableStateBackend, StateBackend, StateStoreCommit},
+    backend::{ReadableStateBackend, WriteableStateBackend, StateBackend},
     error::StateStoreCreationError,
-    extensions::{OwnedRebalance, StateStoreContext},
 };
 
 pub mod backend;
 pub mod error;
-mod extensions;
 
 #[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
 pub enum ConsumerState {
@@ -57,7 +55,7 @@ pub struct StateStore<'a, T, U>
 where
     U: DeserializeOwned + Send + Sync + 'static,
 {
-    consumer: Arc<StreamConsumer<StateStoreContext>>,
+    consumer: Arc<StreamConsumer<PeridotConsumerContext>>,
     backend: Arc<T>,
     state: Arc<AtomicCell<ConsumerState>>,
     _lifetime: &'a PhantomData<()>,
@@ -106,7 +104,9 @@ where
         topic: &str,
         config: &ClientConfig,
     ) -> Result<Self, StateStoreCreationError> {
-        let (context, pre_rebalance_waker, post_rebalance_waker, commit_waker) = StateStoreContext::new();
+        let (context, wakers) = PeridotConsumerContext::new();
+
+        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = wakers;
 
         let client = config.create_with_context(context)?;
         let backend = Default::default();
@@ -125,7 +125,9 @@ where
         config: &ClientConfig,
         backend: T,
     ) -> Result<Self, StateStoreCreationError> {
-        let (context, pre_rebalance_waker, post_rebalance_waker, commit_waker) = StateStoreContext::new();
+        let (context, wakers) = PeridotConsumerContext::new();
+
+        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = wakers;
 
         let client = config.create_with_context(context)?;
 
@@ -134,11 +136,11 @@ where
 
     fn try_new(
         topic: &str,
-        client: StreamConsumer<StateStoreContext>,
+        client: StreamConsumer<PeridotConsumerContext>,
         backend: T,
         pre_rebalance_waker: Receiver<OwnedRebalance>,
         post_rebalance_waker: Receiver<OwnedRebalance>,
-        commit_waker: Receiver<StateStoreCommit>,
+        commit_waker: Receiver<Commit>,
     ) -> Result<Self, StateStoreCreationError> {
         let state_store = StateStore {
             consumer: Arc::new(client),
@@ -263,11 +265,11 @@ where
         });
     }
 
-    fn start_commit_listener(&self, mut waker: Receiver<StateStoreCommit>) {
+    fn start_commit_listener(&self, mut waker: Receiver<Commit>) {
         let store = self.backend.clone();
 
         tokio::spawn(async move {
-            while let Some(message) = waker.recv().await {
+            while let Ok(message) = waker.recv().await {
                 store.commit_offset(
                     message.topic(),
                     message.partition(),
@@ -281,7 +283,7 @@ where
     // Currently unused
     fn start_rebalance_listener(&self, mut waker: Receiver<OwnedRebalance>) {
         tokio::spawn(async move {
-            while let Some(rebalance) = waker.recv().await {
+            while let Ok(rebalance) = waker.recv().await {
                 match rebalance {
                     OwnedRebalance::Error(_) => {
                         error!("{}", rebalance);

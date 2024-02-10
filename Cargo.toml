@@ -3,6 +3,7 @@ members = [
     "peridot", 
     "peridot_gateway",
     "peridot_api",
+    "examples"
 ]
 
 [workspace.package]
