@@ -1,4 +1,4 @@
-use std::{time::Duration, default};
+use std::{time::Duration, default, sync::Arc, collections::HashMap};
 
 use crossbeam::atomic::AtomicCell;
 use peridot::{types::Domain, state::{InMemoryStateStore, ReadableStateStore}, init::init_tracing};
@@ -22,11 +22,11 @@ struct Topic {
     consent_owner_type: String,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-enum Test {
-    #[default]
-    Hello,
-    Goodbye
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ConsentGrant {
+    owner_type: String,
+    owner: String,
+    map: HashMap<String, HashMap<String, HashMap<String, bool>>>,
 }
 
 #[tokio::main]
@@ -34,8 +34,6 @@ async fn main() {
     init_tracing(LevelFilter::INFO);
 
     let mut source = ClientConfig::new();
-
-    println!("Is lock free: {}", AtomicCell::<Test>::is_lock_free());
 
     source
         .set(
@@ -54,13 +52,16 @@ async fn main() {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let state_store: InMemoryStateStore<'_, Topic> = InMemoryStateStore::from_consumer_config(
+    let state_store: Arc<InMemoryStateStore<'_, ConsentGrant>> = InMemoryStateStore::from_consumer_config(
         &source,
-        "topicStore.Global",
+        "consent.Client",
     ).unwrap();
 
-    match state_store.get("changeOfAddress").await {
-        Some(value) => info!("Value: {:?}", value),
-        None => info!("No value found"),
+    loop {
+        match state_store.get("jon").await {
+            Some(value) => info!("Value: {:?}", value),
+            None => info!("No value found"),
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
