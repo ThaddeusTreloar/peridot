@@ -1,7 +1,7 @@
 use std::{time::Duration, default, sync::Arc, collections::HashMap};
 
 use crossbeam::atomic::AtomicCell;
-use peridot::{types::Domain, state::{ReadableStateStore, StateStore, InMemoryStateBackend}, init::init_tracing};
+use peridot::{types::Domain, state::{ReadableStateStore, StateStore, backend::{in_memory::InMemoryStateBackend, persistent::PersistantStateBackend, ReadableStateBackend}}, init::init_tracing};
 use rdkafka::{ClientConfig, config::RDKafkaLogLevel};
 use tokio::time::sleep;
 use eap::{
@@ -29,6 +29,51 @@ struct ConsentGrant {
     map: HashMap<String, HashMap<String, HashMap<String, bool>>>,
 }
 
+async fn test_persistence() {
+    let persistent_backend = PersistantStateBackend::try_from_file(std::path::Path::new("./state_store")).await.unwrap();
+
+    let grant: Option<ConsentGrant> = persistent_backend.get("jon").await;
+
+    match grant {
+        Some(value) => info!("Value: {:?}", value),
+        None => info!("No value found"),
+    }
+}
+
+async fn test_persistent_store(source: &ClientConfig) {
+    let persistent_backend = PersistantStateBackend::try_from_file(std::path::Path::new("./state_store")).await.unwrap();
+
+    let state_store: Arc<StateStore<PersistantStateBackend<_>, ConsentGrant>> = StateStore::from_consumer_config_and_backend(
+        "consent.Client",
+        &source,
+        persistent_backend
+    ).unwrap();
+
+    loop {
+        match state_store.get("jon").await {
+            Some(value) => info!("Value: {:?}", value),
+            None => info!("No value found"),
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn test_in_memory_store(source: &ClientConfig) {
+    let state_store: Arc<StateStore<InMemoryStateBackend<_>, ConsentGrant>> = StateStore::from_consumer_config(
+        "consent.Client",
+        source,
+    ).unwrap();
+
+    loop {
+        match state_store.get("jon").await {
+            Some(value) => info!("Value: {:?}", value),
+            None => info!("No value found"),
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+
 #[tokio::main]
 async fn main() {
     init_tracing(LevelFilter::INFO);
@@ -48,20 +93,11 @@ async fn main() {
             "sasl.password",
             "ee5DtvJYWFXYJ/MF+bCJVBil8+xEH5vuZ6c8Fk2qjD0xSGhlDnXr9w4D9LTUQv2t",
         )
-        .set("group.id", "rust-test7")
+        .set("group.id", "rust-test50")
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let state_store: Arc<StateStore<'_, InMemoryStateBackend<ConsentGrant>, ConsentGrant>> = StateStore::from_consumer_config(
-        &source,
-        "consent.Client",
-    ).unwrap();
-
-    loop {
-        match state_store.get("jon").await {
-            Some(value) => info!("Value: {:?}", value),
-            None => info!("No value found"),
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
+    test_in_memory_store(&source).await;
+    // test_persistent_store(&source).await;
+    // test_persistence().await;
 }

@@ -16,7 +16,7 @@ parking_lot = "0.12.1"
 rdkafka = "0.36.2"
 serde = {workspace = true}
 serde_json = {workspace = true}
-surrealdb = {version = "1.1.1", default-features = false, features = ["protocol-ws"]}
+surrealdb = {version = "1.1.1", default-features = false, features = ["protocol-ws", "kv-rocksdb"]}
 thiserror = "*"
 tokio = { version = "*", features = ["sync"]}
 tracing = {workspace = true}

@@ -1,54 +1,24 @@
 use std::{collections::HashMap, sync::Arc, time::{Duration, Instant, SystemTime}, marker::PhantomData, default, fmt::{Display, Write}};
 
 use crossbeam::atomic::AtomicCell;
-use rdkafka::{consumer::{StreamConsumer, Consumer, stream_consumer::StreamPartitionQueue, ConsumerContext}, ClientConfig, Message, message::OwnedMessage, topic_partition_list, ClientContext, error::KafkaError, util::DefaultRuntime};
+use rdkafka::{consumer::{StreamConsumer, Consumer, stream_consumer::StreamPartitionQueue, ConsumerContext}, ClientConfig, Message, message::OwnedMessage, topic_partition_list, ClientContext, error::KafkaError, util::DefaultRuntime, producer::PARTITION_UA};
 use futures::{StreamExt, Stream, Future};
 use serde::de::DeserializeOwned;
-use tokio::sync::RwLock;
-use tracing::{info, debug};
+use tokio::{sync::{RwLock, mpsc::Receiver}, select};
+use tracing::{info, debug, error};
 
-use self::error::StateStoreCreationError;
+use self::{error::StateStoreCreationError, extensions::{StateStoreContext, OwnedRebalance}, backend::{WriteableStateBackend, ReadableStateBackend}};
 
 pub mod error;
-
-#[derive(Debug)]
-pub struct StateStoreContext {
-    channel: tokio::sync::mpsc::Sender<OwnedRebalance>,
-}
-
-impl ClientContext for StateStoreContext {
-
-}
-
-enum OwnedRebalance {
-    Assign(topic_partition_list::TopicPartitionList),
-    Revoke(topic_partition_list::TopicPartitionList),
-    Error(KafkaError)
-}
-
-impl From<&rdkafka::consumer::Rebalance<'_>> for OwnedRebalance {
-    fn from(rebalance: &rdkafka::consumer::Rebalance<'_>) -> Self {
-        match rebalance.clone() {
-            rdkafka::consumer::Rebalance::Assign(tp_list) => OwnedRebalance::Assign(tp_list.clone()),
-            rdkafka::consumer::Rebalance::Revoke(tp_list) => OwnedRebalance::Revoke(tp_list.clone()),
-            rdkafka::consumer::Rebalance::Error(e) => OwnedRebalance::Error(e),
-        }
-    }
-}
-
-impl ConsumerContext for StateStoreContext {
-    fn post_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
-        let owned_rebalance: OwnedRebalance = rebalance.into();
-
-        self.channel.try_send(owned_rebalance).expect("Failed to send rebalance");
-    }
-}
+pub mod backend;
+mod extensions;
 
 #[derive(Debug, PartialEq, Eq, Default, Clone, Copy, PartialOrd, Ord)]
 pub enum ConsumerState {
     #[default]
     Stopped,
     Running,
+    Initialised,
     Rebalancing,
     Lagging,
 }
@@ -68,54 +38,6 @@ pub trait WriteableStateStore<T> {
     async fn delete(&self, key: &str) -> Option<T>;
 }
 
-pub trait ReadableStateBackend<T> {
-    async fn get(&self, key: &str) -> Option<T>;
-}
-
-pub trait WriteableStateBackend<T> 
-{
-    fn set(&self, key: &str, value: T) -> impl Future<Output = Option<T>> + Send;
-    fn delete(&self, key: &str)-> impl Future<Output = Option<T>> + Send;
-}
-
-pub struct InMemoryStateBackend<T> {
-    store: RwLock<HashMap<String, T>>
-}
-
-impl <T> Default for InMemoryStateBackend<T> {
-    fn default() -> Self {
-        InMemoryStateBackend {
-            store: RwLock::new(HashMap::new())
-        }
-    }
-}
-
-impl <T> ReadableStateBackend<T> for InMemoryStateBackend<T> 
-where T: Clone
-{
-    async fn get(&self, key: &str) -> Option<T> {
-        self.store
-            .read().await
-            .get(key)
-            .cloned()
-    }
-}
-
-impl <T> WriteableStateBackend<T> for InMemoryStateBackend<T> 
-where T: Send + Sync + 'static
-{
-    async fn set(&self, key: &str, value: T) -> Option<T> {
-        self.store
-        .write().await
-        .insert(key.to_string(), value)
-    }
-    
-    async fn delete(&self, key: &str) -> Option<T> {
-        self.store
-            .write().await
-            .remove(key)
-    }
-}
 
 pub struct StateStore<'a, T, U>
 where U: DeserializeOwned + Send + Sync + 'static
@@ -156,18 +78,38 @@ impl <'a, T, U> StateStore<'a, T, U>
 where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + Sync + 'static,
         U: DeserializeOwned + Send + Sync + 'static + Default
 {
-    pub fn from_consumer_config(config: &ClientConfig, topic: &str) -> Result<Arc<Self>, StateStoreCreationError> {
-        let (sender, reciever) = tokio::sync::mpsc::channel(100);
+    pub fn from_consumer_config(topic: &str, config: &ClientConfig) -> Result<Arc<Self>, StateStoreCreationError> {
+        let (pre_sender, pre_reciever) = tokio::sync::mpsc::channel(100);
+        let (post_sender, post_reciever) = tokio::sync::mpsc::channel(100);
 
-        let context = StateStoreContext {
-            channel: sender
-        };
+        let context = StateStoreContext::new(pre_sender, post_sender);
+
+        let client = config.create_with_context(context)?;
+        let backend = Default::default();
+
+        StateStore::try_new(topic, client, backend, pre_reciever, post_reciever)
+    }
+}
+
+impl <'a, T, U> StateStore<'a, T, U> 
+where T: ReadableStateBackend<U> + WriteableStateBackend<U> + Send + Sync + 'static,
+        U: DeserializeOwned + Send + Sync + 'static + Default
+{
+    pub fn from_consumer_config_and_backend(topic: &str, config: &ClientConfig, backend: T) -> Result<Arc<Self>, StateStoreCreationError> {
+        let (pre_sender, pre_reciever) = tokio::sync::mpsc::channel(100);
+        let (post_sender, post_reciever) = tokio::sync::mpsc::channel(100);
+
+        let context = StateStoreContext::new(pre_sender, post_sender);
 
         let client = config.create_with_context(context)?;
 
+        StateStore::try_new(topic, client, backend, pre_reciever, post_reciever)
+    }
+
+    fn try_new(topic: &str, client: StreamConsumer<StateStoreContext>, backend: T, pre_rebalance_waker: Receiver<OwnedRebalance>, post_rebalance_waker: Receiver<OwnedRebalance>) -> Result<Arc<Self>, StateStoreCreationError> {
         let state_store = Arc::new(StateStore {
             consumer: Arc::new(client),
-            backend: Default::default(),
+            backend: Arc::new(backend),
             state: Default::default(),
             _lifetime: &PhantomData,
             _type: PhantomData,
@@ -175,78 +117,95 @@ where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + S
 
         state_store.consumer.subscribe(&[topic])?;
 
-        state_store.start_update_thread();
+        state_store.start_update_thread(pre_rebalance_waker);
         state_store.start_lag_listener();
         
-        state_store.state.store(ConsumerState::Lagging);
-        
-        while let ConsumerState::Lagging = state_store.state.load() {
-            info!(
-                "Consumer state: {:?} waiting for consumer to start...",
-                state_store.state.load()
-            );
-            std::thread::sleep(Duration::from_millis(1000));
-        }
-
-        state_store.clone().start_rebalance_listener(reciever);
+        state_store.clone().start_rebalance_listener(post_rebalance_waker);
         
         Ok(state_store)
     }
 
-    fn start_update_thread(&self) {
+    fn start_update_thread(&self, mut waker: Receiver<OwnedRebalance>) {
         let consumer = self.consumer.clone();
         let store = self.backend.clone();
+        let state = self.state.clone();
 
         self.backend.set("jon", Default::default());
 
         tokio::spawn(
             async move {
-                let topic_partitions = consumer.subscription().expect("No subscription");
+                loop {
+                    info!("Starting consumer threads...");
+                    let topic_partitions = consumer.assignment().expect("No subscription");
 
-                consumer.resume(&topic_partitions).expect("msg");
+                    consumer.resume(&topic_partitions).expect("msg");
 
-                for topic_partition in topic_partitions.elements() {
-                    let partition = topic_partition.partition();
-                    let topic = topic_partition.topic();
+                    let topic_partition_vec = topic_partitions.elements();
 
-                    if partition == -1 {
-                        let topic_md = consumer
-                            .fetch_metadata(Some(topic), Duration::from_millis(1000))
-                            .expect("Failed to get topic metadata");
+                    let mut count = 0;
 
-                        let partitions = topic_md.topics().iter().find(
-                                |t| t.name() == topic 
-                            ).expect("Failed to find topic metadata")
-                            .partitions()
-                            .iter()
-                            .map(
-                                |tp|tp.id()    
-                            );
-
-                        for partition in partitions {
-                            debug!("Starting update thread for topic: {} partition: {}", topic, partition);
-
-                            let partition_queue = consumer.split_partition_queue(topic, partition).expect("No partition queue");
-
-                            tokio::spawn(start_partition_update_thread(partition_queue, store.clone()));
-                        }
-                    } else {
-                        let partition_queue = consumer.split_partition_queue(topic, partition).expect("No partition queue");
+                    for topic_partition in topic_partition_vec {
+                        let partition = topic_partition.partition();
+                        let topic = topic_partition.topic();
                         
-                        tokio::spawn(start_partition_update_thread(partition_queue, store.clone()));
-                    }
-                }
+                        count+=1;
+                        debug!("Topic: {} Partition: {}", topic, partition);
 
-                let _ = consumer.recv().await;
-                println!("Consumer unexpecdly stopped: ");
+                        if partition != PARTITION_UA {
+                            let partition_queue = consumer.split_partition_queue(topic, partition).expect("No partition queue");
+                            
+                            tokio::spawn(start_partition_update_thread(partition_queue, store.clone()));
+                        } 
+                        /*else {
+                            let topic_md = consumer
+                                .fetch_metadata(Some(topic), Duration::from_millis(1000))
+                                .expect("Failed to get topic metadata");
+
+                            let partitions = topic_md.topics().iter().find(
+                                    |t| t.name() == topic 
+                                ).expect("Failed to find topic metadata")
+                                .partitions()
+                                .iter()
+                                .map(
+                                    |tp|tp.id()    
+                                );
+
+                            for partition in partitions {
+                                debug!("Starting update thread for topic: {} partition: {}", topic, partition);
+
+                                let partition_queue = consumer.split_partition_queue(topic, partition).expect("No partition queue");
+
+                                tokio::spawn(start_partition_update_thread(partition_queue, store.clone()));
+                            }
+                        }*/
+                    }
+
+                    if count == 0 {
+                        info!("No partitions found for topic, stopping...");
+                        state.store(ConsumerState::Stopped);
+                    } else {
+                        state.store(ConsumerState::Initialised);
+                    }
+
+                    select! {
+                        message = consumer.recv() => {
+                            error!("Unexpected consumer message: {:?}", message);
+                        },
+                        rebalance = waker.recv() => {
+                            info!("Rebalance waker received.");
+                        },
+                    };
+
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                }
             }
         );
     }
 
-    fn start_rebalance_listener(self: Arc<Self>, mut reciever: tokio::sync::mpsc::Receiver<OwnedRebalance>) {
+    fn start_rebalance_listener(self: Arc<Self>, mut waker: Receiver<OwnedRebalance>) {
         tokio::spawn(
             async move {
-                while let Some(rebalance) = reciever.recv().await {
+                while let Some(rebalance) = waker.recv().await {
                     match rebalance {
                         OwnedRebalance::Assign(tp_list) => {
                             info!("Rebalance: Assign {:?}", tp_list);
@@ -270,8 +229,13 @@ where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + S
         let consumer_state = self.state.clone();
 
         tokio::spawn(async move {
-            loop {
+            'outer: loop {
                 tokio::time::sleep(interval).await;
+
+                if consumer_state.load() == ConsumerState::Stopped {
+                    info!("Consumer stopped...");
+                    continue;
+                }
     
                 let subscription = consumer.position().expect("Failed to get subscription");
     
@@ -282,8 +246,8 @@ where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + S
     
                 let offsets = match consumer.offsets_for_timestamp(current_time, Duration::from_millis(1000)) {
                     Ok(offsets) => offsets,
-                    Err(_) => {
-                        info!("Failed to get offsets for timestamp: {:?}", consumer_state.load());
+                    Err(e) => {
+                        info!("Failed to get offsets for timestamp: {}, due to: {}", current_time, e);
                         continue;
                     }
                 };
@@ -308,17 +272,17 @@ where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + S
     
                     if consumer_offset+lag_max < broker_offset {
                         match consumer_state.load() {
-                            ConsumerState::Rebalancing |
-                            ConsumerState::Stopped |
-                            ConsumerState::Lagging => {
-                                info!("Consumer still lagging...");
-                                continue;
-                            },
-                            ConsumerState::Running => {
+                            ConsumerState::Running | 
+                            ConsumerState::Initialised => {
+
                                 consumer_state.store(ConsumerState::Lagging);
     
                                 info!("Consumer lagging...");
-                                continue;
+                                continue 'outer;
+                            },
+                            state => {
+                                info!("Consumer {}...", state);
+                                continue 'outer;
                             },
                         }
                     }
@@ -327,6 +291,9 @@ where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + S
                 if consumer_state.load() == ConsumerState::Lagging {
                     consumer_state.store(ConsumerState::Running);
                     info!("Consumer no longer lagging...");
+                } else if consumer_state.load() == ConsumerState::Initialised {
+                    consumer_state.store(ConsumerState::Running);
+                    info!("Consumer running...");
                 }
     
                 tokio::time::sleep(interval).await;
@@ -338,15 +305,17 @@ where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + S
 }
 
 impl <'a, T, U> ReadableStateStore<U> for StateStore<'a, T, U> 
-where T: Default + ReadableStateBackend<U> + WriteableStateBackend<U>,
-        U: DeserializeOwned + Clone + Send + Sync + 'static + Default
+where T: ReadableStateBackend<U> + WriteableStateBackend<U>,
+        U: DeserializeOwned + Clone + Send + Sync + 'static
 {
     async fn get(&self, key: &str) -> Option<U> {
         while let ConsumerState::Lagging | 
-        ConsumerState::Stopped |
-        ConsumerState::Rebalancing = self.state.load() {
+            ConsumerState::Stopped |
+            ConsumerState::Rebalancing |
+            ConsumerState::Initialised = self.state.load() 
+        {
             info!(
-                "Waiting for consumer to resume, current state: {}",
+                "State store not ready: {}",
                 self.state.load()
             );
             tokio::time::sleep(Duration::from_millis(1000)).await;
