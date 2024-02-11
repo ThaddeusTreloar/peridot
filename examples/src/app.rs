@@ -43,7 +43,7 @@ async fn main() -> Result<(), anyhow::Error> {
             "sasl.password",
             "ee5DtvJYWFXYJ/MF+bCJVBil8+xEH5vuZ6c8Fk2qjD0xSGhlDnXr9w4D9LTUQv2t",
         )
-        .set("group.id", "rust-test14")
+        .set("group.id", "rust-test19")
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
@@ -51,12 +51,12 @@ async fn main() -> Result<(), anyhow::Error> {
 
     info!("Creating table");
 
-    let consent_table: PTable<'_, String, ConsentGrant, InMemoryStateBackend<_>> = app_builder
+    let consent_table: PTable<'_, String, ConsentGrant> = app_builder
         .table("consent.Client")?
         .build()
         .await?;
 
-    let topic_table: PTable<'_, String, Topic, InMemoryStateBackend<_>> = app_builder
+    let topic_table: PTable<'_, String, Topic> = app_builder
         .table("topicStore.Global")?
         .build()
         .await?;

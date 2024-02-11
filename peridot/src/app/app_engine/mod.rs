@@ -2,7 +2,7 @@ use std::{
     fmt::Display,
     marker::PhantomData,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use crossbeam::atomic::AtomicCell;
@@ -272,15 +272,25 @@ impl AppEngine {
                             );
 
                             if local_committed_offset < group_offset {
+                                let (low_watermark, _) = consumer
+                                    .client()
+                                    .fetch_watermarks(topic.as_str(), partition, Duration::from_secs(1))
+                                    .expect("Failed to fetch watermarks");
+
+                                info!("Locally Committed Offset: {}, Low watermark: {}", local_committed_offset, low_watermark);
+
+                                let max_offset = std::cmp::max(local_committed_offset, low_watermark);
+
+                                // TODO: Seek to max(local_committed_offset, low watermark)
                                 info!(
-                                    "Seeking to locally committed offset: {}",
-                                    local_committed_offset
+                                    "Seeking to max(lco, lwm) offset: {}",
+                                    max_offset
                                 );
                                 consumer
                                     .seek(
                                         topic.as_str(),
                                         partition,
-                                        rdkafka::Offset::Offset(local_committed_offset),
+                                        rdkafka::Offset::Offset(max_offset),
                                         Duration::from_secs(1),
                                     )
                                     .expect("Failed to seek to group offset");
@@ -371,55 +381,32 @@ impl AppEngine {
 
                 let subscription = consumer.position().expect("Failed to get subscription");
 
-                let current_time: i64 = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("Failed to get time")
-                    .as_millis() as i64;
-
-                let offsets = match consumer
-                    .offsets_for_timestamp(current_time, Duration::from_millis(1000))
-                {
-                    Ok(offsets) => offsets,
-                    Err(e) => {
-                        info!(
-                            "Failed to get offsets for timestamp: {}, due to: {}",
-                            current_time, e
-                        );
-                        continue;
-                    }
-                };
-
                 for consumer_tp in subscription.elements() {
                     let topic = consumer_tp.topic();
                     let partition = consumer_tp.partition();
 
-                    let broker_offset_tp = offsets
-                        .find_partition(topic, partition)
-                        .expect("Failed to get topic partition");
+                    let (_, high_watermark) = consumer.client()
+                        .fetch_watermarks(topic, partition, Duration::from_secs(1))
+                        .expect("Failed to fetch watermarks");
 
                     let consumer_offset = consumer_tp
                         .offset()
                         .to_raw()
                         .expect("Failed to convert consumer offset to i64");
 
-                    let broker_offset = broker_offset_tp
-                        .offset()
-                        .to_raw()
-                        .expect("Failed to convert broker offset to i64");
-
-                    if broker_offset == -1 {
+                    if high_watermark < 0 {
                         debug!(
                             "Broker offset not found for topic partition: {}->{}",
                             topic, partition
                         );
-                    } else if consumer_offset + lag_max < broker_offset {
+                    } else if consumer_offset + lag_max < high_watermark {
                         match consumer_state.load() {
                             EngineState::Running | EngineState::NotReady => {
                                 consumer_state.store(EngineState::Lagging);
 
                                 info!(
                                     "Consumer topic partition {}->{} lagging: {} < {}",
-                                    topic, partition, consumer_offset, broker_offset
+                                    topic, partition, consumer_offset, high_watermark
                                 );
                                 continue 'outer;
                             }
