@@ -1,13 +1,13 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::RwLock;
 use tracing::info;
 
-use super::{ReadableStateBackend, WriteableStateBackend, StateBackend};
+use super::{ReadableStateBackend, WriteableStateBackend, StateBackend, CommitLog};
 
 pub struct InMemoryStateBackend<T> {
     store: RwLock<HashMap<String, T>>,
-    offsets: RwLock<HashMap<String, i64>>,
+    offsets: Arc<CommitLog>,
 }
 
 impl <T> Default for InMemoryStateBackend<T> {
@@ -22,17 +22,19 @@ impl <T> Default for InMemoryStateBackend<T> {
 impl <T> StateBackend for InMemoryStateBackend<T> 
 where T: Send + Sync + 'static
 {
+    fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
+        self.offsets.clone()
+    }
+
     async fn commit_offset(&self, topic: &str, partition: i32, offset: i64) {
-        let mut offsets = self.offsets.write().await;
-        offsets.insert(format!("{}-{}", topic, partition), offset);
+        self.offsets.commit_offset(topic, partition, offset);
 
         info!("Committed offset: {}-{}:{}", topic, partition, offset);
-        info!("Current offsets: {:?}", offsets);
+        info!("Current offsets: {:?}", self.offsets);
     }
 
     async fn get_offset(&self, topic: &str, partition: i32) -> Option<i64> {
-        let offsets = self.offsets.read().await;
-        offsets.get(&format!("{}-{}", topic, partition)).cloned()
+        self.offsets.get_offset(topic, partition)
     }
 }
 

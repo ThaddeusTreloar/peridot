@@ -4,7 +4,7 @@ use eap::{config::Config, environment::Environment};
 use peridot::{
     init::init_tracing,
     state::{
-        backend::{in_memory::InMemoryStateBackend, persistent::PersistantStateBackend},
+        backend::{in_memory::InMemoryStateBackend, persistent::PersistentStateBackend},
         ReadableStateStore, StateStore,
     },
 };
@@ -31,11 +31,11 @@ struct ConsentGrant {
 
 async fn test_persistent_store(source: &ClientConfig) {
     let persistent_backend =
-        PersistantStateBackend::try_from_file(std::path::Path::new("/tmp/peridot.state_store.db"))
+        PersistentStateBackend::try_from_file(std::path::Path::new("/tmp/peridot.state_store.db"))
             .await
             .unwrap();
 
-    let state_store: StateStore<PersistantStateBackend<_>, ConsentGrant> =
+    let state_store: StateStore<PersistentStateBackend<_>, ConsentGrant> =
         StateStore::from_consumer_config_and_backend("consent.Client", &source, persistent_backend)
             .unwrap();
 

@@ -1,29 +1,47 @@
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
+use dashmap::DashMap;
 use surrealdb::{Surreal, engine::local::{File, Db}};
 
-use super::{ReadableStateBackend, WriteableStateBackend, error::PersistantStateBackendCreationError, StateBackend};
+use super::{ReadableStateBackend, WriteableStateBackend, error::PersistantStateBackendCreationError, StateBackend, CommitLog};
 
-pub struct PersistantStateBackend<T> {
+pub struct PersistentStateBackend<T> {
     store: Surreal<Db>,
+    commit_log: Arc<CommitLog>,
     _type: std::marker::PhantomData<T>
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OffsetStruct{
-    offset: i64
+    pub topic: String,
+    pub partition: i32,
+    pub offset: i64
 }
 
-impl From<i64> for OffsetStruct {
-    fn from(offset: i64) -> Self {
+impl OffsetStruct {
+    fn new(topic: String, partition: i32, offset: i64) -> Self {
         OffsetStruct {
+            topic,
+            partition,
             offset
         }
     }
 }
 
-impl <T> PersistantStateBackend<T> {
+impl Into<CommitLog> for Vec<OffsetStruct> {
+    fn into(self) -> CommitLog {
+        let mut commit_log = CommitLog::default();
+
+        for offset_struct in self {
+            commit_log.commit_offset(offset_struct.topic.as_str(), offset_struct.partition, offset_struct.offset);
+        }
+
+        commit_log
+    }
+}
+
+impl <T> PersistentStateBackend<T> {
     pub async fn try_from_file(path: &Path) -> Result<Self, PersistantStateBackendCreationError> {
         let store = Surreal::new::<File>(path).await?;
         
@@ -31,39 +49,58 @@ impl <T> PersistantStateBackend<T> {
         store.use_ns("stream_app_state_backend").await?;
         store.use_db("stream_app_state_backend").await?;
 
-        let backend = PersistantStateBackend {
+        let stored_offsets = store.select::
+            <Vec<OffsetStruct>>("offsets")
+            .await
+            .expect("Failed to get value from db");
+
+        let commit_log: Arc<CommitLog> = Arc::new(stored_offsets.into());
+
+        let backend = PersistentStateBackend {
             store,
-            _type: std::marker::PhantomData
+            commit_log,
+            _type: Default::default()
         };
 
         Ok(backend)
     }
 }
 
-impl <T> StateBackend for PersistantStateBackend<T> 
+impl <T> StateBackend for PersistentStateBackend<T> 
 where T: Send + Sync + 'static
 {
+    fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
+        self.commit_log.clone()
+    }
+
     async fn commit_offset(&self, topic: &str, partition: i32, offset: i64) {
         let key = format!("{}-{}", topic, partition);
+
+        let content = OffsetStruct {
+            topic: topic.to_string(),
+            partition,
+            offset
+        };
 
         if self.store
             .select::<Option<OffsetStruct>>(("offsets", key.as_str())).await
             .expect("Failed to get value from db") 
             .is_some()
         {
-
             self.store
                 .update::<Option<OffsetStruct>>(("offsets", key))
-                .content::<OffsetStruct>(offset.into())
+                .content::<OffsetStruct>(content)
                 .await
                 .expect("Failed to set value in db");
         } else {
             self.store
                 .create::<Option<OffsetStruct>>(("offsets", key))
-                .content::<OffsetStruct>(offset.into())
+                .content::<OffsetStruct>(content)
                 .await
                 .expect("Failed to set value in db");
         }
+
+        self.commit_log.commit_offset(topic, partition, offset);
     }
 
     async fn get_offset(&self, topic: &str, partition: i32) -> Option<i64> {
@@ -76,7 +113,7 @@ where T: Send + Sync + 'static
     }
 }
 
-impl <T> ReadableStateBackend<T> for PersistantStateBackend<T> 
+impl <T> ReadableStateBackend<T> for PersistentStateBackend<T> 
 where T: Clone + Send + Sync + 'static + for<'de> serde::Deserialize<'de>
 {
     async fn get(&self, key: &str) -> Option<T> {
@@ -86,7 +123,7 @@ where T: Clone + Send + Sync + 'static + for<'de> serde::Deserialize<'de>
     }
 }
 
-impl <T> WriteableStateBackend<T> for PersistantStateBackend<T> 
+impl <T> WriteableStateBackend<T> for PersistentStateBackend<T> 
 where T: Send + Sync + 'static + for<'de> serde::Deserialize<'de> + serde::Serialize
 {
     async fn set(&self, key: &str, value: T) -> Option<T> {

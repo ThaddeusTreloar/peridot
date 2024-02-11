@@ -10,6 +10,7 @@ authors = {workspace = true}
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dashmap = { workspace = true }
 crossbeam = "0.8.4"
 futures = "0.3.30"
 parking_lot = "0.12.1"

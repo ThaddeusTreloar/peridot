@@ -5,9 +5,9 @@ use eap::{config::Config, environment::Environment};
 use peridot::{
     init::init_tracing,
     state::{
-        backend::{in_memory::InMemoryStateBackend, persistent::PersistantStateBackend, self},
+        backend::{in_memory::InMemoryStateBackend, persistent::PersistentStateBackend, self},
         ReadableStateStore, StateStore,
-    }, app::{PeridotApp, App, error::PeridotAppRuntimeError},
+    }, app::{PeridotAppBuilder, App, error::PeridotAppRuntimeError},
 };
 use rdkafka::{config::RDKafkaLogLevel, ClientConfig, consumer::{StreamConsumer, Consumer}};
 use tracing::{info, level_filters::LevelFilter};
@@ -50,11 +50,11 @@ async fn main() -> Result<(), PeridotAppRuntimeError>{
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let backend: PersistantStateBackend<ConsentGrant> = PersistantStateBackend::try_from_file(std::path::Path::new("/tmp/peridot.gw.state_store.db"))
+    let backend: PersistentStateBackend<ConsentGrant> = PersistentStateBackend::try_from_file(std::path::Path::new("/tmp/peridot.gw.state_store.db"))
         .await
         .unwrap();
 
-    let state_store: StateStore<PersistantStateBackend<_>, ConsentGrant> =
+    let state_store: StateStore<PersistentStateBackend<_>, ConsentGrant> =
         StateStore::from_consumer_config_and_backend("consent.Client", &source, backend)
             .unwrap();
 
@@ -66,7 +66,7 @@ async fn main() -> Result<(), PeridotAppRuntimeError>{
         
     });
 
-    let app = PeridotApp::new(&source).unwrap();
+    let app = PeridotAppBuilder::new(&source).unwrap();
 
     let some_table = app.table::<(), ()>("test.topic");
 

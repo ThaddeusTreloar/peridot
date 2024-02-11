@@ -5,7 +5,7 @@ use eap::{config::Config, environment::Environment};
 use peridot::{
     init::init_tracing,
     state::{
-        backend::{in_memory::InMemoryStateBackend, persistent::PersistantStateBackend},
+        backend::{in_memory::InMemoryStateBackend, persistent::PersistentStateBackend},
         ReadableStateStore, StateStore,
     },
 };
@@ -61,7 +61,7 @@ where T: ReadableStateStore<ConsentGrant> {
     }
 }
 
-type PersistentStateStore<'a> = StateStore<'a, PersistantStateBackend<ConsentGrant>, ConsentGrant>;
+type PersistentStateStore<'a> = StateStore<'a, PersistentStateBackend<ConsentGrant>, ConsentGrant>;
 
 async fn get_consent(state: State<Arc<AppState<PersistentStateStore<'_>>>>, param: Query<ConsentQuery>) -> impl axum::response::IntoResponse {
     let item: ConsentGrant = state
@@ -91,14 +91,14 @@ async fn main() -> Result<(), std::io::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let backend: PersistantStateBackend<ConsentGrant> = PersistantStateBackend::
+    let backend: PersistentStateBackend<ConsentGrant> = PersistentStateBackend::
         try_from_file(
             std::path::Path::new("/tmp/peridot.api.state_store.db")
         )
         .await
         .unwrap();
 
-    let state_store: StateStore<PersistantStateBackend<_>, ConsentGrant> = StateStore::from_consumer_config_and_backend("consent.Client", &source, backend)
+    let state_store: StateStore<PersistentStateBackend<_>, ConsentGrant> = StateStore::from_consumer_config_and_backend("consent.Client", &source, backend)
         .unwrap();
 
     let app_state = Arc::new(AppState::new(state_store));

@@ -1,14 +1,10 @@
+use super::app_engine::error::PeridotEngineCreationError;
+
 
 #[derive(Debug, thiserror::Error)]
 pub enum PeridotAppCreationError {
-    #[error("Failed to client: {0}")]
-    ClientCreationError(String),
-}
-
-impl From<rdkafka::error::KafkaError> for PeridotAppCreationError {
-    fn from(error: rdkafka::error::KafkaError) -> Self {
-        PeridotAppCreationError::ClientCreationError(error.to_string())
-    }
+    #[error("Failed to initialise engine: {0}")]
+    EngineCreationError(#[from] PeridotEngineCreationError),
 }
 
 #[derive(Debug, thiserror::Error)]

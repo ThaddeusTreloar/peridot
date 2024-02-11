@@ -166,8 +166,6 @@ where
         let store = self.backend.clone();
         let state = self.state.clone();
 
-        self.backend.set("jon", Default::default());
-
         tokio::spawn(async move {
             '_outer: loop {
                 debug!("Starting consumer threads...");
