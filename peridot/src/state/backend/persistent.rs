@@ -3,8 +3,9 @@ use std::{path::Path, sync::Arc};
 
 use dashmap::DashMap;
 use surrealdb::{Surreal, engine::local::{File, Db}};
+use tokio::fs::try_exists;
 
-use super::{ReadableStateBackend, WriteableStateBackend, error::PersistantStateBackendCreationError, StateBackend, CommitLog};
+use super::{ReadableStateBackend, WriteableStateBackend, error::BackendCreationError, StateBackend, CommitLog};
 
 pub struct PersistentStateBackend<T> {
     store: Surreal<Db>,
@@ -41,8 +42,10 @@ impl Into<CommitLog> for Vec<OffsetStruct> {
     }
 }
 
-impl <T> PersistentStateBackend<T> {
-    pub async fn try_from_file(path: &Path) -> Result<Self, PersistantStateBackendCreationError> {
+impl <T> PersistentStateBackend<T> 
+where T: Send + Sync + 'static
+{
+    pub async fn try_from_file(path: &Path) -> Result<Self, BackendCreationError> {
         let store = Surreal::new::<File>(path).await?;
         
         // TODO: Derive some db name from some app_id
@@ -56,7 +59,7 @@ impl <T> PersistentStateBackend<T> {
 
         let commit_log: Arc<CommitLog> = Arc::new(stored_offsets.into());
 
-        let backend = PersistentStateBackend {
+        let backend: PersistentStateBackend<T> = PersistentStateBackend {
             store,
             commit_log,
             _type: Default::default()
@@ -69,6 +72,14 @@ impl <T> PersistentStateBackend<T> {
 impl <T> StateBackend for PersistentStateBackend<T> 
 where T: Send + Sync + 'static
 {
+    async fn with_topic_name(topic_name: &str) -> Self {
+        let state_db_filename = format!("peridot.{}.db", topic_name);
+
+        let state_dir = Path::new("/tmp").join(state_db_filename);
+        
+        Self::try_from_file(state_dir.as_path()).await.expect("Failed to create state backend")
+    }
+
     fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
         self.commit_log.clone()
     }

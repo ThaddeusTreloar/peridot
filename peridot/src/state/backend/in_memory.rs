@@ -22,6 +22,10 @@ impl <T> Default for InMemoryStateBackend<T> {
 impl <T> StateBackend for InMemoryStateBackend<T> 
 where T: Send + Sync + 'static
 {
+    async fn with_topic_name(_topic_name: &str) -> Self {
+        Self::default()
+    }
+
     fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
         self.offsets.clone()
     }

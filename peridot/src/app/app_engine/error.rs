@@ -1,3 +1,5 @@
+use crate::state::error::StateStoreCreationError;
+
 
 
 
@@ -17,6 +19,8 @@ impl From<rdkafka::error::KafkaError> for PeridotEngineCreationError {
 pub enum PeridotEngineRuntimeError {
     #[error(transparent)]
     TableCreationError(#[from] TableCreationError),
+    #[error(transparent)]
+    BackendInitialisationError(#[from] StateStoreCreationError),
 }
 
 #[derive(Debug, thiserror::Error)]

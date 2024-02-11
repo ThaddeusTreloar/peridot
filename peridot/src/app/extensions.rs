@@ -66,9 +66,9 @@ impl ContextWakers {
 
 #[derive(Debug)]
 pub struct PeridotConsumerContext {
-    pre_rebalance_waker: Arc<Sender<OwnedRebalance>>,
-    post_rebalance_waker: Arc<Sender<OwnedRebalance>>,
-    commit_waker: Arc<Sender<Commit>>,
+    pre_rebalance_waker: Sender<OwnedRebalance>,
+    post_rebalance_waker: Sender<OwnedRebalance>,
+    commit_waker: Sender<Commit>,
 }
 
 impl Clone for PeridotConsumerContext {
@@ -90,9 +90,9 @@ impl PeridotConsumerContext {
         let (commit_waker, commit_receiver) = channel(100);
 
         PeridotConsumerContext {
-            pre_rebalance_waker: Arc::new(pre_rebalance_waker),
-            post_rebalance_waker: Arc::new(post_rebalance_waker),
-            commit_waker: Arc::new(commit_waker),
+            pre_rebalance_waker,
+            post_rebalance_waker,
+            commit_waker,
         }
     }
 
@@ -102,6 +102,30 @@ impl PeridotConsumerContext {
             post_rebalance_waker: self.post_rebalance_waker.subscribe(),
             commit_waker: self.commit_waker.subscribe(),
         }
+    }
+
+    pub fn pre_rebalance_waker(&self) -> Receiver<OwnedRebalance> {
+        self.pre_rebalance_waker.subscribe()
+    }
+
+    pub fn post_rebalance_waker(&self) -> Receiver<OwnedRebalance> {
+        self.post_rebalance_waker.subscribe()
+    }
+
+    pub fn commit_waker(&self) -> Receiver<Commit> {
+        self.commit_waker.subscribe()
+    }
+
+    pub fn pre_rebalance_sender(&self) -> Sender<OwnedRebalance> {
+        self.pre_rebalance_waker.clone()
+    }
+
+    pub fn post_rebalance_sender(&self) -> Sender<OwnedRebalance> {
+        self.post_rebalance_waker.clone()
+    }
+
+    pub fn commit_sender(&self) -> Sender<Commit> {
+        self.commit_waker.clone()
     }
 }
 

@@ -16,31 +16,15 @@ use serde::de::DeserializeOwned;
 use tokio::{select, sync::broadcast::Receiver};
 use tracing::{debug, error, info, warn, trace};
 
-use crate::app::extensions::{OwnedRebalance, PeridotConsumerContext, Commit, ContextWakers};
+use crate::app::{extensions::{OwnedRebalance, PeridotConsumerContext, Commit, ContextWakers}, PeridotPartitionQueue, app_engine::EngineState};
 
 use self::{
-    backend::{ReadableStateBackend, WriteableStateBackend, StateBackend},
+    backend::{ReadableStateBackend, WriteableStateBackend, StateBackend, persistent::PersistentStateBackend},
     error::StateStoreCreationError,
 };
 
 pub mod backend;
 pub mod error;
-
-#[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
-pub enum ConsumerState {
-    Lagging,
-    NotReady,
-    Rebalancing,
-    Running,
-    #[default]
-    Stopped,
-}
-
-impl Display for ConsumerState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
 
 pub trait ReadableStateStore<T> {
     async fn get(&self, key: &str) -> Option<T>;
@@ -55,9 +39,8 @@ pub struct StateStore<'a, T, U>
 where
     U: DeserializeOwned + Send + Sync + 'static,
 {
-    consumer: Arc<StreamConsumer<PeridotConsumerContext>>,
     backend: Arc<T>,
-    state: Arc<AtomicCell<ConsumerState>>,
+    state: Arc<AtomicCell<EngineState>>,
     _lifetime: &'a PhantomData<()>,
     _type: PhantomData<U>,
 }
@@ -97,168 +80,37 @@ async fn start_partition_update_thread<C, R, T>(
 
 impl<'a, T, U> StateStore<'a, T, U>
 where
-    T: Default + StateBackend + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + Sync + 'static,
-    U: DeserializeOwned + Send + Sync + 'static + Default,
-{
-    pub fn from_consumer_config(
-        topic: &str,
-        config: &ClientConfig,
-    ) -> Result<Self, StateStoreCreationError> {
-        let context = PeridotConsumerContext::new();
-
-        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = context.wakers();
-
-        let client = config.create_with_context(context)?;
-        let backend = Default::default();
-
-        StateStore::try_new(topic, client, backend, pre_rebalance_waker, post_rebalance_waker, commit_waker)
-    }
-}
-
-impl<'a, T, U> StateStore<'a, T, U>
-where
     T: StateBackend + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + Sync + 'static,
-    U: DeserializeOwned + Send + Sync + 'static + Default,
+    U: DeserializeOwned + Send + Sync + 'static,
 {
-    pub fn from_consumer_config_and_backend(
-        topic: &str,
-        config: &ClientConfig,
+    pub fn try_new(
         backend: T,
-    ) -> Result<Self, StateStoreCreationError> {
-        let context = PeridotConsumerContext::new();
-
-        let ContextWakers {pre_rebalance_waker, post_rebalance_waker, commit_waker} = context.wakers();
-
-        let client = config.create_with_context(context)?;
-
-        StateStore::try_new(topic, client, backend, pre_rebalance_waker, post_rebalance_waker, commit_waker)
-    }
-
-    fn try_new(
-        topic: &str,
-        client: StreamConsumer<PeridotConsumerContext>,
-        backend: T,
-        pre_rebalance_waker: Receiver<OwnedRebalance>,
-        post_rebalance_waker: Receiver<OwnedRebalance>,
+        state: Arc<AtomicCell<EngineState>>,
         commit_waker: Receiver<Commit>,
+        stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>
     ) -> Result<Self, StateStoreCreationError> {
         let state_store = StateStore {
-            consumer: Arc::new(client),
             backend: Arc::new(backend),
-            state: Default::default(),
+            state,
             _lifetime: &PhantomData,
             _type: PhantomData,
         };
 
-        state_store.consumer.subscribe(&[topic])?;
-
-        state_store.start_update_thread(pre_rebalance_waker);
-        state_store.start_lag_listener();
-
-        state_store.start_rebalance_listener(post_rebalance_waker);
+        state_store.start_update_thread(stream_queue);
         state_store.start_commit_listener(commit_waker);
 
         Ok(state_store)
     }
 
-    fn start_update_thread(&self, mut waker: Receiver<OwnedRebalance>) {
-        let consumer = self.consumer.clone();
+    fn start_update_thread(&self, mut stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>) {
         let store = self.backend.clone();
-        let state = self.state.clone();
 
         tokio::spawn(async move {
-            '_outer: loop {
-                debug!("Starting consumer threads...");
-                let topic_partitions = consumer.assignment().expect("No subscription");
-
-                consumer.resume(&topic_partitions).expect("msg");
-
-                let topic_partitions: Vec<_> = topic_partitions
-                    .elements()
-                    .iter()
-                    .map(
-                        |tp| (
-                            tp.topic().to_string(), 
-                            tp.partition(), 
-                        ),
-                    ).collect();
-
-                let mut count = 0;
-
-                for (topic, partition) in topic_partitions.into_iter() {
-                    count += 1;
-
-                    debug!(
-                        "Topic: {} Partition: {}",
-                        topic,
-                        partition
-                    );
-
-                    if partition != PARTITION_UA {
-                        let partition_queue = consumer
-                            .split_partition_queue(
-                                topic.as_str(),
-                                partition,
-                            )
-                            .expect("No partition queue");
-
-                        let local_committed_offset = store.get_offset(topic.as_str(), partition).await.unwrap_or(0);
-                        
-                        let mut topic_partition_list = TopicPartitionList::new();
-                        topic_partition_list.add_partition(topic.as_str(), partition);
-
-                        let group_offset = consumer
-                            .committed_offsets(
-                                topic_partition_list,
-                                Duration::from_secs(1),
-                            )
-                            .expect("No group offset")
-                            .find_partition(topic.as_str(), partition)
-                            .unwrap()
-                            .offset()
-                            .to_raw()
-                            .unwrap_or(0);
-
-                        info!(
-                            "Local committed offset: {} Group offset: {}",
-                            local_committed_offset,
-                            group_offset
-                        );
-
-                        if local_committed_offset < group_offset {
-                            info!("Seeking to locally committed offset: {}", local_committed_offset);
-                            consumer.seek(topic.as_str(), partition, rdkafka::Offset::Offset(local_committed_offset), Duration::from_secs(1))
-                                .expect("Failed to seek to group offset");
-                        }
-
-                        tokio::spawn(start_partition_update_thread(
-                            partition_queue,
-                            store.clone(),
-                        ));
-                    }
-                }
-
-                if count == 0 {
-                    info!("No partitions found for topic, stopping state store...");
-                    state.store(ConsumerState::Stopped);
-                } else {
-                    state.store(ConsumerState::NotReady);
-                }
-
-                select! {
-                    message = consumer.recv() => {
-                        error!("Unexpected consumer message: {:?}", message);
-                        // TODO: decide on the behaviour here because this should be unreachable
-                        // panic!("Unexpected consumer message: {:?}", message);
-                        // break 'outer;
-                    },
-                    _rebalance = waker.recv() => {
-                        debug!("Rebalance waker received: {:?}", _rebalance);
-                        state.store(ConsumerState::Stopped);
-                    },
-                };
-
-                tokio::time::sleep(Duration::from_millis(100)).await;
+            while let Some(queue) = stream_queue.recv().await {
+                tokio::spawn(start_partition_update_thread(
+                    queue,
+                    store.clone(),
+                ));
             }
         });
     }
@@ -277,106 +129,6 @@ where
             }
         });
     }
-
-    // Currently unused
-    fn start_rebalance_listener(&self, mut waker: Receiver<OwnedRebalance>) {
-        tokio::spawn(async move {
-            while let Ok(rebalance) = waker.recv().await {
-                match rebalance {
-                    OwnedRebalance::Error(_) => {
-                        error!("{}", rebalance);
-                    }
-                    _ => {
-                        info!("{}", rebalance);
-                    }
-                }
-            }
-        });
-    }
-
-    fn start_lag_listener(&self) {
-        let lag_max = 100;
-        let interval = Duration::from_millis(1000);
-        let consumer = self.consumer.clone();
-        let consumer_state = self.state.clone();
-
-        tokio::spawn(async move {
-            'outer: loop {
-                tokio::time::sleep(interval).await;
-
-                if consumer_state.load() == ConsumerState::Stopped {
-                    info!("Consumer stopped...");
-                    continue;
-                }
-
-                let subscription = consumer.position().expect("Failed to get subscription");
-
-                let current_time: i64 = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("Failed to get time")
-                    .as_millis() as i64;
-
-                let offsets = match consumer
-                    .offsets_for_timestamp(current_time, Duration::from_millis(1000))
-                {
-                    Ok(offsets) => offsets,
-                    Err(e) => {
-                        info!(
-                            "Failed to get offsets for timestamp: {}, due to: {}",
-                            current_time, e
-                        );
-                        continue;
-                    }
-                };
-
-                for consumer_tp in subscription.elements() {
-                    let topic = consumer_tp.topic();
-                    let partition = consumer_tp.partition();
-
-                    let broker_offset_tp = offsets
-                        .find_partition(topic, partition)
-                        .expect("Failed to get topic partition");
-
-                    let consumer_offset = consumer_tp
-                        .offset()
-                        .to_raw()
-                        .expect("Failed to convert consumer offset to i64");
-
-                    let broker_offset = broker_offset_tp
-                        .offset()
-                        .to_raw()
-                        .expect("Failed to convert broker offset to i64");
-
-                    if broker_offset == -1 {
-                        info!("Broker offset not found for topic partition: {}->{}", topic, partition);
-                    } else if consumer_offset + lag_max < broker_offset {
-                        match consumer_state.load() {
-                            ConsumerState::Running | ConsumerState::NotReady => {
-                                consumer_state.store(ConsumerState::Lagging);
-
-                                info!("Consumer topic partition {}->{} lagging: {} < {}", topic, partition, consumer_offset, broker_offset);
-                                continue 'outer;
-                            }
-                            state => {
-                                info!("Consumer {}...", state);
-                                continue 'outer;
-                            }
-                        }
-                    }
-                }
-
-                if consumer_state.load() == ConsumerState::Lagging {
-                    consumer_state.store(ConsumerState::Running);
-                    info!("Consumer no longer lagging...");
-                } else if consumer_state.load() == ConsumerState::NotReady {
-                    consumer_state.store(ConsumerState::Running);
-                    info!("Consumer running...");
-                }
-
-                tokio::time::sleep(interval).await;
-            }
-        });
-    }
 }
 
 impl<'a, T, U> ReadableStateStore<U> for StateStore<'a, T, U>
@@ -385,10 +137,10 @@ where
     U: DeserializeOwned + Clone + Send + Sync + 'static,
 {
     async fn get(&self, key: &str) -> Option<U> {
-        while let ConsumerState::Lagging
-        | ConsumerState::Stopped
-        | ConsumerState::Rebalancing
-        | ConsumerState::NotReady = self.state.load()
+        while let EngineState::Lagging
+        | EngineState::Stopped
+        | EngineState::Rebalancing
+        | EngineState::NotReady = self.state.load()
         {
             info!("State store not ready: {}", self.state.load());
             tokio::time::sleep(Duration::from_millis(1000)).await;

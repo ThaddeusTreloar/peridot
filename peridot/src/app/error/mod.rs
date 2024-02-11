@@ -1,4 +1,4 @@
-use super::app_engine::error::PeridotEngineCreationError;
+use super::app_engine::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
 
 
 #[derive(Debug, thiserror::Error)]
@@ -13,4 +13,6 @@ pub enum PeridotAppRuntimeError {
     RunError(String),
     #[error("Created multiple source with the same topic: {0}")]
     SourceConflictError(String),
+    #[error("Failed to initialise engine: {0}")]
+    EngineRuntimeError(#[from] PeridotEngineRuntimeError),
 }

@@ -1,13 +1,13 @@
 
 
 #[derive(Debug, thiserror::Error)]
-pub enum PersistantStateBackendCreationError {
+pub enum BackendCreationError {
     #[error("Failed to create persistant state backend: {0}")]
     LoadFileError(String),
 }
 
-impl From<surrealdb::Error> for PersistantStateBackendCreationError {
+impl From<surrealdb::Error> for BackendCreationError {
     fn from(err: surrealdb::Error) -> Self {
-        PersistantStateBackendCreationError::LoadFileError(err.to_string())
+        BackendCreationError::LoadFileError(err.to_string())
     }
 }

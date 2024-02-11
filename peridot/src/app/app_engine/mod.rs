@@ -1,16 +1,16 @@
-use std::{collections::{hash_map::DefaultHasher, HashMap}, fmt::Display, sync::Arc, time::{Duration, SystemTime}};
+use std::{collections::{hash_map::DefaultHasher, HashMap}, fmt::Display, sync::Arc, time::{Duration, SystemTime}, marker::PhantomData};
 
 use crossbeam::atomic::AtomicCell;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use rdkafka::{consumer::{StreamConsumer, stream_consumer::StreamPartitionQueue, Consumer}, ClientConfig, producer::PARTITION_UA, TopicPartitionList};
 use tokio::{sync::mpsc::Sender, select};
 use tracing::{debug, info, error, warn};
 
-use crate::state::backend::{StateBackend, CommitLogs};
+use crate::state::{backend::{StateBackend, CommitLogs, in_memory::InMemoryStateBackend, persistent::PersistentStateBackend, ReadableStateBackend, WriteableStateBackend}, StateStore};
 
 use self::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
 
-use super::{extensions::{PeridotConsumerContext, OwnedRebalance, Commit}, PeridotConsumer, PeridotPartitionQueue, PTable};
+use super::{extensions::{PeridotConsumerContext, OwnedRebalance, Commit, ContextWakers}, PeridotConsumer, PeridotPartitionQueue, PTable};
 
 pub mod error;
 
@@ -38,51 +38,51 @@ pub enum StateType {
 }
 
 #[derive()]
-pub struct TableBuilder<K, V> {
+pub struct TableBuilder<K, V, B = PersistentStateBackend<V>> {
     engine: Arc<AppEngine>,
-    state_type: AtomicCell<StateType>,
     topic: String,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
+    _backend_type: std::marker::PhantomData<B>,
 }
 
-impl <K, V> TableBuilder<K, V> {
+            // TODO: Remove this bound
+impl <K, V, B> TableBuilder<K, V, B> 
+where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+    K: Send + Sync + 'static,
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+{
     pub fn new(topic: &str, engine: Arc<AppEngine>) -> Self {
         TableBuilder {
             engine,
-            state_type: Default::default(),
             topic: topic.to_string(),
-            _key_type: Default::default(),
-            _value_type: Default::default(),
+            _key_type: PhantomData,
+            _value_type: PhantomData,
+            _backend_type: PhantomData,
         }
     }
 
-    pub fn with_state_type(self, state_type: StateType) -> Self {
-        self.state_type.store(state_type);
-        self
-    }
+    pub async fn build<'a>(self) -> Result<PTable<'a, K, V, B>, PeridotEngineRuntimeError> {
+        let Self {engine, topic, ..} = self;
 
-    pub fn build(self) -> Result<PTable<K, V>, PeridotEngineRuntimeError> {
-        let new_table = NewTable::from(self);
-
-        self.engine.table(new_table)
+        AppEngine::table(engine, topic).await
     }
 }
 
-pub struct NewTable<K, V> {
-    state_type: AtomicCell<StateType>,
+pub struct NewTable<K, V, B = PersistentStateBackend<V>> {
     topic: String,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
+    _backend_type: std::marker::PhantomData<B>
 }
 
-impl <K, V> From<TableBuilder<K, V>> for NewTable<K, V> {
-    fn from(builder: TableBuilder<K, V>) -> Self {
+impl <K, V, B> From<TableBuilder<K, V, B>> for NewTable<K, V, B> {
+    fn from(builder: TableBuilder<K, V, B>) -> Self {
         NewTable {
-            state_type: builder.state_type,
             topic: builder.topic,
             _key_type: Default::default(),
             _value_type: Default::default(),
+            _backend_type: Default::default(),
         }
     }
 }
@@ -92,17 +92,18 @@ pub struct AppEngine {
     waker_context: Arc<PeridotConsumerContext>,
     downstreams: Arc<DashMap<String, Sender<PeridotPartitionQueue>>>,
     downstream_commit_logs: Arc<CommitLogs>,
-    state_streams: Arc<Vec<String>>,
+    state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
 }
 
 impl AppEngine {
-    pub fn table<K, V>(&self, NewTable {
-        state_type,
-        topic,
-        ..
-    }: NewTable<K, V>) -> Result<PTable<K, V>, PeridotEngineRuntimeError> {
-        let mut subscription = self.consumer
+                        // TODO: Remove this bound
+    pub async fn table<K, V, B>(app_engine: Arc<AppEngine>, topic: String) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError> 
+    where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+        K: Send + Sync + 'static,
+        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+    {
+        let mut subscription = app_engine.consumer
             .subscription()
             .expect("Failed to get subscription.")
             .elements()
@@ -110,7 +111,7 @@ impl AppEngine {
             .map(|tp|tp.topic().to_string())
             .collect::<Vec<String>>();
 
-        if subscription.contains(&topic.to_string()) {
+        if subscription.contains(&topic) {
             return Err(
                 PeridotEngineRuntimeError::TableCreationError(
                     error::TableCreationError::TableAlreadyExists
@@ -118,9 +119,9 @@ impl AppEngine {
             );
         }
 
-        subscription.push(topic.to_string());
+        subscription.push(topic.clone());
 
-        self.consumer.subscribe(
+        app_engine.consumer.subscribe(
             subscription
                 .iter()
                 .map(|s| s.as_str())
@@ -129,11 +130,26 @@ impl AppEngine {
             )
             .expect("Failed to subscribe to topic.");
 
-        self.state_streams.push(topic.to_string());
+        app_engine.state_streams.insert(topic.clone());
 
-        //let (queue_sender, queue_receiver) = tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+        let (queue_sender, queue_receiver) = tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
 
-        Ok(PTable::<K, V>{  })
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+
+        let commit_waker = app_engine.waker_context.commit_waker();
+
+        let state_store: StateStore<B, V> = StateStore::try_new(
+            B::with_topic_name(topic.as_str()).await,
+            app_engine.engine_state.clone(),
+            commit_waker,
+            queue_receiver,
+        )?;
+
+        Ok(PTable::<K, V, B>{
+            store: Arc::new(state_store),
+            _key_type: Default::default(),
+            _value_type: Default::default(),
+        })
     }
 
     pub fn from_config(config: &ClientConfig) -> Result<Self, PeridotEngineCreationError> {
@@ -148,6 +164,21 @@ impl AppEngine {
             state_streams: Default::default(),
             engine_state: Default::default(),
         })
+    }
+
+    pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
+        let pre_rebalance_waker = self.waker_context.pre_rebalance_waker();
+        let commit_waker = self.waker_context.commit_waker();
+        let rebalance_waker = self.waker_context.post_rebalance_waker();
+
+        self.start_update_thread(pre_rebalance_waker);
+        self.start_commit_listener(commit_waker);
+        self.start_rebalance_listener(rebalance_waker);
+        self.start_lag_listener();
+
+        info!("Engine running...");
+
+        Ok(())
     }
 
     fn start_update_thread(&self, mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>) {
@@ -231,7 +262,11 @@ impl AppEngine {
                         if let Some(queue_sender) = queue_sender {
                             let queue_sender = queue_sender.value();
 
+                            info!("Sending partition queue to downstream: {}", topic);
+
                             queue_sender.send(partition_queue).await.expect("Failed to send partition queue");
+                        } else {
+                            error!("No downstream found for topic: {}", topic);
                         }
                     }
                 }
@@ -267,9 +302,9 @@ impl AppEngine {
 
     // Currently unused
     fn start_rebalance_listener(&self, mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>) {
-        warn!("start_rebalance_listener: Currently unused")
+        warn!("start_rebalance_listener: Currently unused");
 
-        /*tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Ok(rebalance) = waker.recv().await {
                 match rebalance {
                     OwnedRebalance::Error(_) => {
@@ -280,7 +315,7 @@ impl AppEngine {
                     }
                 }
             }
-        });*/
+        });
     }
 
     fn start_lag_listener(&self) {

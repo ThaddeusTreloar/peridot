@@ -13,6 +13,10 @@ authors = {workspace = true}
 name = "state_store"
 path = "src/state_store.rs"
 
+[[bin]]
+name = "app"
+path = "src/app.rs"
+
 [dependencies]
 crossbeam = "0.8.4"
 
