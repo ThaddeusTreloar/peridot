@@ -1,16 +1,34 @@
-use std::{collections::{hash_map::DefaultHasher, HashMap}, fmt::Display, sync::Arc, time::{Duration, SystemTime}, marker::PhantomData};
+use std::{
+    fmt::Display,
+    marker::PhantomData,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
-use rdkafka::{consumer::{StreamConsumer, stream_consumer::StreamPartitionQueue, Consumer}, ClientConfig, producer::PARTITION_UA, TopicPartitionList};
-use tokio::{sync::mpsc::Sender, select};
-use tracing::{debug, info, error, warn};
+use rdkafka::{
+    consumer::{stream_consumer::StreamPartitionQueue, Consumer},
+    producer::PARTITION_UA,
+    ClientConfig, TopicPartitionList,
+};
+use tokio::{select, sync::mpsc::Sender};
+use tracing::{debug, error, info, warn};
 
-use crate::state::{backend::{StateBackend, CommitLogs, in_memory::InMemoryStateBackend, persistent::PersistentStateBackend, ReadableStateBackend, WriteableStateBackend}, StateStore};
+use crate::state::{
+    backend::{
+        persistent::PersistentStateBackend, CommitLogs, ReadableStateBackend, StateBackend,
+        WriteableStateBackend,
+    },
+    StateStore,
+};
 
 use self::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
 
-use super::{extensions::{PeridotConsumerContext, OwnedRebalance, Commit, ContextWakers}, PeridotConsumer, PeridotPartitionQueue, PTable};
+use super::{
+    extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
+    PTable, PeridotConsumer, PeridotPartitionQueue,
+};
 
 pub mod error;
 
@@ -46,11 +64,12 @@ pub struct TableBuilder<K, V, B = PersistentStateBackend<V>> {
     _backend_type: std::marker::PhantomData<B>,
 }
 
-            // TODO: Remove this bound
-impl <K, V, B> TableBuilder<K, V, B> 
-where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+// TODO: Remove this bound
+impl<K, V, B> TableBuilder<K, V, B>
+where
+    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
     K: Send + Sync + 'static,
-    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
 {
     pub fn new(topic: &str, engine: Arc<AppEngine>) -> Self {
         TableBuilder {
@@ -63,23 +82,23 @@ where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Sen
     }
 
     pub async fn build<'a>(self) -> Result<PTable<'a, K, V, B>, PeridotEngineRuntimeError> {
-        let Self {engine, topic, ..} = self;
+        let Self { engine, topic, .. } = self;
 
         AppEngine::table(engine, topic).await
     }
 }
 
 pub struct NewTable<K, V, B = PersistentStateBackend<V>> {
-    topic: String,
+    _topic: String,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
-    _backend_type: std::marker::PhantomData<B>
+    _backend_type: std::marker::PhantomData<B>,
 }
 
-impl <K, V, B> From<TableBuilder<K, V, B>> for NewTable<K, V, B> {
+impl<K, V, B> From<TableBuilder<K, V, B>> for NewTable<K, V, B> {
     fn from(builder: TableBuilder<K, V, B>) -> Self {
         NewTable {
-            topic: builder.topic,
+            _topic: builder.topic,
             _key_type: Default::default(),
             _value_type: Default::default(),
             _backend_type: Default::default(),
@@ -97,42 +116,52 @@ pub struct AppEngine {
 }
 
 impl AppEngine {
-                        // TODO: Remove this bound
-    pub async fn table<K, V, B>(app_engine: Arc<AppEngine>, topic: String) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError> 
-    where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+    pub async fn table<K, V, B>(
+        app_engine: Arc<AppEngine>,
+        topic: String,
+    ) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError>
+    where
+        B: StateBackend
+            + ReadableStateBackend<V>
+            + WriteableStateBackend<V>
+            + Send
+            + Sync
+            + 'static,
         K: Send + Sync + 'static,
-        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
     {
-        let mut subscription = app_engine.consumer
+        let mut subscription = app_engine
+            .consumer
             .subscription()
             .expect("Failed to get subscription.")
             .elements()
             .into_iter()
-            .map(|tp|tp.topic().to_string())
+            .map(|tp| tp.topic().to_string())
             .collect::<Vec<String>>();
 
         if subscription.contains(&topic) {
-            return Err(
-                PeridotEngineRuntimeError::TableCreationError(
-                    error::TableCreationError::TableAlreadyExists
-                )
-            );
+            return Err(PeridotEngineRuntimeError::TableCreationError(
+                error::TableCreationError::TableAlreadyExists,
+            ));
         }
 
         subscription.push(topic.clone());
 
-        app_engine.consumer.subscribe(
-            subscription
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<&str>>()
-                .as_slice()
+        app_engine
+            .consumer
+            .subscribe(
+                subscription
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .as_slice(),
             )
             .expect("Failed to subscribe to topic.");
 
         app_engine.state_streams.insert(topic.clone());
 
-        let (queue_sender, queue_receiver) = tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+        let (queue_sender, queue_receiver) =
+            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
 
         app_engine.downstreams.insert(topic.clone(), queue_sender);
 
@@ -145,7 +174,7 @@ impl AppEngine {
             queue_receiver,
         )?;
 
-        Ok(PTable::<K, V, B>{
+        Ok(PTable::<K, V, B> {
             store: Arc::new(state_store),
             _key_type: Default::default(),
             _value_type: Default::default(),
@@ -153,7 +182,7 @@ impl AppEngine {
     }
 
     pub fn from_config(config: &ClientConfig) -> Result<Self, PeridotEngineCreationError> {
-        let context = PeridotConsumerContext::new();
+        let context = PeridotConsumerContext::default();
         let consumer = config.create_with_context(context.clone())?;
 
         Ok(AppEngine {
@@ -199,72 +228,70 @@ impl AppEngine {
                 let topic_partitions: Vec<_> = topic_partitions
                     .elements()
                     .iter()
-                    .map(
-                        |tp| (
-                            tp.topic().to_string(), 
-                            tp.partition(), 
-                        ),
-                    ).collect();
+                    .map(|tp| (tp.topic().to_string(), tp.partition()))
+                    .collect();
 
                 let mut count = 0;
 
                 for (topic, partition) in topic_partitions.into_iter() {
                     count += 1;
 
-                    debug!(
-                        "Topic: {} Partition: {}",
-                        topic,
-                        partition
-                    );
+                    debug!("Topic: {} Partition: {}", topic, partition);
 
                     if partition != PARTITION_UA {
                         let partition_queue = consumer
-                            .split_partition_queue(
-                                topic.as_str(),
-                                partition,
-                            )
+                            .split_partition_queue(topic.as_str(), partition)
                             .expect("No partition queue");
 
                         if state_streams.contains(&topic) {
-                            let local_committed_offset = commit_logs.get_offset(topic.as_str(), partition).unwrap_or(0);
-    
+                            let local_committed_offset = commit_logs
+                                .get_offset(topic.as_str(), partition)
+                                .unwrap_or(0);
+
                             let mut topic_partition_list = TopicPartitionList::new();
                             topic_partition_list.add_partition(topic.as_str(), partition);
-    
+
                             let group_offset = consumer
-                                .committed_offsets(
-                                    topic_partition_list,
-                                    Duration::from_secs(1),
-                                )
+                                .committed_offsets(topic_partition_list, Duration::from_secs(1))
                                 .expect("No group offset")
                                 .find_partition(topic.as_str(), partition)
                                 .unwrap()
                                 .offset()
                                 .to_raw()
                                 .unwrap_or(0);
-    
+
                             info!(
                                 "Local committed offset: {} Group offset: {}",
-                                local_committed_offset,
-                                group_offset
+                                local_committed_offset, group_offset
                             );
-    
+
                             if local_committed_offset < group_offset {
-                                info!("Seeking to locally committed offset: {}", local_committed_offset);
-                                consumer.seek(topic.as_str(), partition, rdkafka::Offset::Offset(local_committed_offset), Duration::from_secs(1))
+                                info!(
+                                    "Seeking to locally committed offset: {}",
+                                    local_committed_offset
+                                );
+                                consumer
+                                    .seek(
+                                        topic.as_str(),
+                                        partition,
+                                        rdkafka::Offset::Offset(local_committed_offset),
+                                        Duration::from_secs(1),
+                                    )
                                     .expect("Failed to seek to group offset");
                             }
                         }
 
-                        let queue_sender = downstreams
-                            .get(topic.as_str());
+                        let queue_sender = downstreams.get(topic.as_str());
 
                         if let Some(queue_sender) = queue_sender {
                             let queue_sender = queue_sender.value();
 
                             info!("Sending partition queue to downstream: {}", topic);
 
-                            queue_sender.send(partition_queue).await.expect("Failed to send partition queue");
+                            queue_sender
+                                .send(partition_queue)
+                                .await
+                                .expect("Failed to send partition queue");
                         } else {
                             error!("No downstream found for topic: {}", topic);
                         }
@@ -296,12 +323,15 @@ impl AppEngine {
         });
     }
 
-    fn start_commit_listener(&self, mut waker: tokio::sync::broadcast::Receiver<Commit>) {
+    fn start_commit_listener(&self, mut _waker: tokio::sync::broadcast::Receiver<Commit>) {
         warn!("start_commit_listener: Currently unused");
     }
 
     // Currently unused
-    fn start_rebalance_listener(&self, mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>) {
+    fn start_rebalance_listener(
+        &self,
+        mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>,
+    ) {
         warn!("start_rebalance_listener: Currently unused");
 
         tokio::spawn(async move {
@@ -372,13 +402,19 @@ impl AppEngine {
                         .expect("Failed to convert broker offset to i64");
 
                     if broker_offset == -1 {
-                        debug!("Broker offset not found for topic partition: {}->{}", topic, partition);
+                        debug!(
+                            "Broker offset not found for topic partition: {}->{}",
+                            topic, partition
+                        );
                     } else if consumer_offset + lag_max < broker_offset {
                         match consumer_state.load() {
                             EngineState::Running | EngineState::NotReady => {
                                 consumer_state.store(EngineState::Lagging);
 
-                                info!("Consumer topic partition {}->{} lagging: {} < {}", topic, partition, consumer_offset, broker_offset);
+                                info!(
+                                    "Consumer topic partition {}->{} lagging: {} < {}",
+                                    topic, partition, consumer_offset, broker_offset
+                                );
                                 continue 'outer;
                             }
                             state => {
@@ -391,7 +427,7 @@ impl AppEngine {
 
                 if consumer_state.load() == EngineState::Lagging {
                     consumer_state.store(EngineState::Running);
-                    info!("Consumer no longer lagging...");
+                    info!("Consumer caught up...");
                 } else if consumer_state.load() == EngineState::NotReady {
                     consumer_state.store(EngineState::Running);
                     info!("Consumer running...");

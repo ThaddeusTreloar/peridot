@@ -1,52 +1,57 @@
 use std::sync::Arc;
 
-use crossbeam::atomic::AtomicCell;
-use futures::Future;
-use rdkafka::{ClientConfig, consumer::{StreamConsumer, Consumer, stream_consumer::StreamPartitionQueue, ConsumerContext}};
-use tokio::sync::broadcast::Sender;
+use rdkafka::{
+    consumer::{stream_consumer::StreamPartitionQueue, StreamConsumer},
+    ClientConfig,
+};
 use tracing::info;
 
-use crate::{app::extensions::PeridotConsumerContext, state::{ReadableStateStore, backend::{persistent::PersistentStateBackend, StateBackend, ReadableStateBackend, WriteableStateBackend, in_memory::InMemoryStateBackend}, StateStore}};
+use crate::{
+    app::extensions::PeridotConsumerContext,
+    state::{
+        backend::{
+            persistent::PersistentStateBackend, ReadableStateBackend, StateBackend,
+            WriteableStateBackend,
+        },
+        StateStore,
+    },
+};
 
-use self::{error::{PeridotAppCreationError, PeridotAppRuntimeError}, app_engine::{AppEngine, StateType, TableBuilder}};
+use self::{
+    app_engine::{AppEngine, TableBuilder},
+    error::{PeridotAppCreationError, PeridotAppRuntimeError},
+};
 
+pub mod app_engine;
 pub mod error;
 pub mod extensions;
-pub mod app_engine;
 
 pub type PeridotConsumer = StreamConsumer<PeridotConsumerContext>;
 pub type PeridotPartitionQueue = StreamPartitionQueue<PeridotConsumerContext>;
 
-pub trait PeridotTable<K, V, B> 
-where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+pub trait PeridotTable<K, V, B>
+where
+    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
     K: Send + Sync + 'static,
-    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
 {
     fn get_store(&self) -> Result<Arc<StateStore<'_, B, V>>, PeridotAppRuntimeError>;
 }
 
-pub struct PTable<'a, K, V, B = PersistentStateBackend<V>> 
-where V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+pub struct PTable<'a, K, V, B = PersistentStateBackend<V>>
+where
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
 {
     store: Arc<StateStore<'a, B, V>>,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
 }
 
-impl<'a, K, V, B: Default> Default for PTable<'a, K, V, B> 
-where V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
-{
-    fn default() -> Self {
-        PTable {
-            ..Default::default()
-        }
-    }
-}
-
-impl <'a, K, V, B> PeridotTable<K, V, B> for PTable<'a, K, V, B> 
-where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+impl<'a, K, V, B> PeridotTable<K, V, B> for PTable<'a, K, V, B>
+where
+    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
     K: Send + Sync + 'static,
-    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
 {
     fn get_store(&self) -> Result<Arc<StateStore<'_, B, V>>, PeridotAppRuntimeError> {
         Ok(self.store.clone())
@@ -60,7 +65,7 @@ pub struct PStream<K, V> {
     _value_type: std::marker::PhantomData<V>,
 }
 
-impl <K, V> Default for PStream<K, V> {
+impl<K, V> Default for PStream<K, V> {
     fn default() -> Self {
         PStream {
             _key_type: std::marker::PhantomData,
@@ -76,7 +81,7 @@ pub struct PeridotApp {}
 
 #[derive()]
 pub struct PeridotAppBuilder {
-    config: ClientConfig,
+    _config: ClientConfig,
     engine: Arc<AppEngine>,
 }
 
@@ -85,7 +90,7 @@ impl PeridotAppBuilder {
         let engine = AppEngine::from_config(config)?;
 
         Ok(PeridotAppBuilder {
-            config: config.clone(),
+            _config: config.clone(),
             engine: Arc::new(engine),
         })
     }
@@ -94,15 +99,24 @@ impl PeridotAppBuilder {
 impl PeridotAppBuilder {
     //type Error = PeridotAppRuntimeError;
 
-    pub async fn run(self) -> Result<(), PeridotAppRuntimeError>{
+    pub async fn run(self) -> Result<(), PeridotAppRuntimeError> {
         info!("Running PeridotApp");
         self.engine.run().await?;
         Ok(())
     }
-    pub fn table<K, V, B>(&self, topic: &str) -> Result<TableBuilder<K, V, B>, PeridotAppRuntimeError> 
-    where B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+    pub fn table<K, V, B>(
+        &self,
+        topic: &str,
+    ) -> Result<TableBuilder<K, V, B>, PeridotAppRuntimeError>
+    where
+        B: StateBackend
+            + ReadableStateBackend<V>
+            + WriteableStateBackend<V>
+            + Send
+            + Sync
+            + 'static,
         K: Send + Sync + 'static,
-        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
     {
         let table_builder = TableBuilder::new(topic, self.engine.clone());
 
@@ -114,23 +128,3 @@ impl PeridotAppBuilder {
         Ok(Default::default())
     }
 }
-
-
-async fn tester() -> Result<(), PeridotAppRuntimeError> {
-    let app_builder = PeridotAppBuilder::from_config(&ClientConfig::new()).unwrap();
-
-    let table = app_builder.table::<String, String, InMemoryStateBackend<String>>("test.topic").unwrap()
-        .build()
-        .await
-        .unwrap();
-
-    table.get_store().unwrap().get("test").await;
-
-    let stream = app_builder.stream::<String, String>("test.topic2").unwrap();
-
-    let _ = app_builder
-        .run()
-        .await?;
-
-    Ok(())
-}   

@@ -1,9 +1,7 @@
 
 use std::{path::Path, sync::Arc};
 
-use dashmap::DashMap;
 use surrealdb::{Surreal, engine::local::{File, Db}};
-use tokio::fs::try_exists;
 
 use super::{ReadableStateBackend, WriteableStateBackend, error::BackendCreationError, StateBackend, CommitLog};
 
@@ -21,7 +19,7 @@ struct OffsetStruct{
 }
 
 impl OffsetStruct {
-    fn new(topic: String, partition: i32, offset: i64) -> Self {
+    fn _new(topic: String, partition: i32, offset: i64) -> Self {
         OffsetStruct {
             topic,
             partition,
@@ -30,11 +28,11 @@ impl OffsetStruct {
     }
 }
 
-impl Into<CommitLog> for Vec<OffsetStruct> {
-    fn into(self) -> CommitLog {
-        let mut commit_log = CommitLog::default();
+impl From<Vec<OffsetStruct>> for CommitLog {
+    fn from(val: Vec<OffsetStruct>) -> Self {
+        let commit_log = CommitLog::default();
 
-        for offset_struct in self {
+        for offset_struct in val {
             commit_log.commit_offset(offset_struct.topic.as_str(), offset_struct.partition, offset_struct.offset);
         }
 

@@ -3,8 +3,6 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::Future;
 
-use self::error::BackendCreationError;
-
 pub mod in_memory;
 pub mod persistent;
 pub mod error;
@@ -45,7 +43,7 @@ impl CommitLog {
 
 pub trait StateBackend
 {
-    async fn with_topic_name(topic_name: &str) -> Self;
+    fn with_topic_name(topic_name: &str) -> impl Future<Output = Self>;
     fn get_commit_log(&self) -> Arc<CommitLog>;
     fn commit_offset(&self, topic: &str, partition: i32, offset: i64) -> impl Future<Output = ()> + Send;
     fn get_offset(&self, topic: &str, partition: i32) -> impl Future<Output = Option<i64>> + Send;

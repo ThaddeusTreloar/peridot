@@ -1,13 +1,13 @@
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
-use rdkafka::{ClientContext, topic_partition_list::{self, TopicPartitionListElem}, error::KafkaError, consumer::ConsumerContext};
-use tokio::sync::broadcast::{
-    channel,
-    Sender,
-    Receiver
+use rdkafka::{
+    consumer::ConsumerContext,
+    error::KafkaError,
+    topic_partition_list::{self, TopicPartitionListElem},
+    ClientContext,
 };
+use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tracing::error;
-
 
 #[derive(Debug, Clone)]
 pub struct Commit {
@@ -30,15 +30,15 @@ impl Commit {
     }
 }
 
-impl <'a> From<TopicPartitionListElem<'a>> for Commit {
+impl<'a> From<TopicPartitionListElem<'a>> for Commit {
     fn from(elem: TopicPartitionListElem<'a>) -> Self {
         Commit {
             topic: elem.topic().to_string(),
             partition: elem.partition(),
             offset: match elem.offset() {
                 rdkafka::Offset::Offset(offset) => offset,
-                _ => 0
-            }
+                _ => 0,
+            },
         }
     }
 }
@@ -83,11 +83,11 @@ impl Clone for PeridotConsumerContext {
 
 impl ClientContext for PeridotConsumerContext {}
 
-impl PeridotConsumerContext {
-    pub fn new() -> Self {
-        let (pre_rebalance_waker, pre_rebalance_receiver) = channel(100);
-        let (post_rebalance_waker, post_rebalance_receiver) = channel(100);
-        let (commit_waker, commit_receiver) = channel(100);
+impl Default for PeridotConsumerContext {
+    fn default() -> Self {
+        let (pre_rebalance_waker, _) = channel(100);
+        let (post_rebalance_waker, _) = channel(100);
+        let (commit_waker, _) = channel(100);
 
         PeridotConsumerContext {
             pre_rebalance_waker,
@@ -95,7 +95,9 @@ impl PeridotConsumerContext {
             commit_waker,
         }
     }
+}
 
+impl PeridotConsumerContext {
     pub fn wakers(&self) -> ContextWakers {
         ContextWakers {
             pre_rebalance_waker: self.pre_rebalance_waker.subscribe(),
@@ -133,7 +135,7 @@ impl PeridotConsumerContext {
 pub enum OwnedRebalance {
     Assign(topic_partition_list::TopicPartitionList),
     Revoke(topic_partition_list::TopicPartitionList),
-    Error(KafkaError)
+    Error(KafkaError),
 }
 
 impl Display for OwnedRebalance {
@@ -149,8 +151,12 @@ impl Display for OwnedRebalance {
 impl From<&rdkafka::consumer::Rebalance<'_>> for OwnedRebalance {
     fn from(rebalance: &rdkafka::consumer::Rebalance<'_>) -> Self {
         match rebalance.clone() {
-            rdkafka::consumer::Rebalance::Assign(tp_list) => OwnedRebalance::Assign(tp_list.clone()),
-            rdkafka::consumer::Rebalance::Revoke(tp_list) => OwnedRebalance::Revoke(tp_list.clone()),
+            rdkafka::consumer::Rebalance::Assign(tp_list) => {
+                OwnedRebalance::Assign(tp_list.clone())
+            }
+            rdkafka::consumer::Rebalance::Revoke(tp_list) => {
+                OwnedRebalance::Revoke(tp_list.clone())
+            }
             rdkafka::consumer::Rebalance::Error(e) => OwnedRebalance::Error(e),
         }
     }
@@ -160,16 +166,24 @@ impl ConsumerContext for PeridotConsumerContext {
     fn pre_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
         let owned_rebalance: OwnedRebalance = rebalance.into();
 
-        self.pre_rebalance_waker.send(owned_rebalance).expect("Failed to send rebalance");
+        self.pre_rebalance_waker
+            .send(owned_rebalance)
+            .expect("Failed to send rebalance");
     }
 
     fn post_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
         let owned_rebalance: OwnedRebalance = rebalance.into();
 
-        self.post_rebalance_waker.send(owned_rebalance).expect("Failed to send rebalance");
+        self.post_rebalance_waker
+            .send(owned_rebalance)
+            .expect("Failed to send rebalance");
     }
 
-    fn commit_callback(&self, result: rdkafka::error::KafkaResult<()>, offsets: &rdkafka::TopicPartitionList) {
+    fn commit_callback(
+        &self,
+        result: rdkafka::error::KafkaResult<()>,
+        offsets: &rdkafka::TopicPartitionList,
+    ) {
         match result {
             Ok(_) => {
                 for offset in offsets.elements() {
@@ -177,7 +191,7 @@ impl ConsumerContext for PeridotConsumerContext {
                         .send(Commit::from(offset))
                         .expect("Failed to send commit");
                 }
-            },
+            }
             Err(e) => {
                 error!("Failed to commit offsets: {}", e);
             }

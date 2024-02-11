@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use peridot::init::init_tracing;
-use peridot::state::backend::persistent::PersistentStateBackend;
-use peridot::{app::PeridotAppBuilder, state::backend::in_memory::InMemoryStateBackend};
+use peridot::app::PeridotAppBuilder;
 use rdkafka::ClientConfig;
 
 use peridot::app::{PeridotTable, PTable};
@@ -63,7 +62,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     info!("Creating stream");
 
-    let stream = app_builder.stream::<String, String>("changeOfAddress")?;
+    let _stream = app_builder.stream::<String, String>("changeOfAddress")?;
 
     info!("Running app");
 

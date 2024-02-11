@@ -1,17 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::RwLock;
 use tracing::info;
 
-use super::{ReadableStateBackend, WriteableStateBackend, StateBackend, CommitLog};
+use super::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend};
 
 pub struct InMemoryStateBackend<T> {
     store: DashMap<String, T>,
     offsets: Arc<CommitLog>,
 }
 
-impl <T> Default for InMemoryStateBackend<T> {
+impl<T> Default for InMemoryStateBackend<T> {
     fn default() -> Self {
         InMemoryStateBackend {
             store: Default::default(),
@@ -20,8 +19,9 @@ impl <T> Default for InMemoryStateBackend<T> {
     }
 }
 
-impl <T> StateBackend for InMemoryStateBackend<T> 
-where T: Send + Sync + 'static
+impl<T> StateBackend for InMemoryStateBackend<T>
+where
+    T: Send + Sync + 'static,
 {
     async fn with_topic_name(_topic_name: &str) -> Self {
         Self::default()
@@ -43,27 +43,24 @@ where T: Send + Sync + 'static
     }
 }
 
-impl <T> ReadableStateBackend<T> for InMemoryStateBackend<T> 
-where T: Clone + Send + Sync + 'static
+impl<T> ReadableStateBackend<T> for InMemoryStateBackend<T>
+where
+    T: Clone + Send + Sync + 'static,
 {
     async fn get(&self, key: &str) -> Option<T> {
-        Some(self.store
-            .get(key)?
-            .value()
-            .clone())
+        Some(self.store.get(key)?.value().clone())
     }
 }
 
-impl <T> WriteableStateBackend<T> for InMemoryStateBackend<T> 
-where T: Send + Sync + 'static
+impl<T> WriteableStateBackend<T> for InMemoryStateBackend<T>
+where
+    T: Send + Sync + 'static,
 {
     async fn set(&self, key: &str, value: T) -> Option<T> {
-        self.store
-            .insert(key.to_string(), value)
+        self.store.insert(key.to_string(), value)
     }
-    
+
     async fn delete(&self, key: &str) -> Option<T> {
-        Some(self.store
-            .remove(key)?.1)
+        Some(self.store.remove(key)?.1)
     }
 }

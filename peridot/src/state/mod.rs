@@ -1,25 +1,19 @@
-use std::{
-    fmt::Display,
-    marker::PhantomData,
-    sync::Arc,
-    time::{Duration, SystemTime}, collections::HashMap,
-};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use crossbeam::atomic::AtomicCell;
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use rdkafka::{
-    consumer::{stream_consumer::StreamPartitionQueue, Consumer, ConsumerContext, StreamConsumer},
-    producer::PARTITION_UA,
-    ClientConfig, Message, topic_partition_list::TopicPartitionListElem, TopicPartitionList,
+    consumer::{stream_consumer::StreamPartitionQueue, ConsumerContext},
+    Message,
 };
 use serde::de::DeserializeOwned;
-use tokio::{select, sync::broadcast::Receiver};
-use tracing::{debug, error, info, warn, trace};
+use tokio::sync::broadcast::Receiver;
+use tracing::{info, trace};
 
-use crate::app::{extensions::{OwnedRebalance, PeridotConsumerContext, Commit, ContextWakers}, PeridotPartitionQueue, app_engine::EngineState};
+use crate::app::{app_engine::EngineState, extensions::Commit, PeridotPartitionQueue};
 
 use self::{
-    backend::{ReadableStateBackend, WriteableStateBackend, StateBackend, persistent::PersistentStateBackend},
+    backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
     error::StateStoreCreationError,
 };
 
@@ -27,12 +21,12 @@ pub mod backend;
 pub mod error;
 
 pub trait ReadableStateStore<T> {
-    async fn get(&self, key: &str) -> Option<T>;
+    fn get(&self, key: &str) -> impl Future<Output = Option<T>>;
 }
 
 pub trait WriteableStateStore<T> {
-    async fn set(&self, key: &str, value: T) -> Option<T>;
-    async fn delete(&self, key: &str) -> Option<T>;
+    fn set(&self, key: &str, value: T) -> impl Future<Output = Option<T>>;
+    fn delete(&self, key: &str) -> impl Future<Output = Option<T>>;
 }
 
 pub struct StateStore<'a, T, U>
@@ -87,7 +81,7 @@ where
         backend: T,
         state: Arc<AtomicCell<EngineState>>,
         commit_waker: Receiver<Commit>,
-        stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>
+        stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
     ) -> Result<Self, StateStoreCreationError> {
         let state_store = StateStore {
             backend: Arc::new(backend),
@@ -102,15 +96,15 @@ where
         Ok(state_store)
     }
 
-    fn start_update_thread(&self, mut stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>) {
+    fn start_update_thread(
+        &self,
+        mut stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
+    ) {
         let store = self.backend.clone();
 
         tokio::spawn(async move {
             while let Some(queue) = stream_queue.recv().await {
-                tokio::spawn(start_partition_update_thread(
-                    queue,
-                    store.clone(),
-                ));
+                tokio::spawn(start_partition_update_thread(queue, store.clone()));
             }
         });
     }
@@ -120,12 +114,9 @@ where
 
         tokio::spawn(async move {
             while let Ok(message) = waker.recv().await {
-                store.commit_offset(
-                    message.topic(),
-                    message.partition(),
-                    message.offset(),
-                )
-                .await;
+                store
+                    .commit_offset(message.topic(), message.partition(), message.offset())
+                    .await;
             }
         });
     }

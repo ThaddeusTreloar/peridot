@@ -1,16 +1,24 @@
-use std::{collections::HashMap, time::Duration, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use axum::{routing::get, extract::{State, Query}, Json};
+use axum::{
+    extract::{Query, State},
+    routing::get,
+    Json,
+};
 use eap::{config::Config, environment::Environment};
 use peridot::{
+    app::{PTable, PeridotAppBuilder, PeridotTable},
     init::init_tracing,
     state::{
-        backend::{in_memory::InMemoryStateBackend, persistent::PersistentStateBackend, WriteableStateBackend, StateBackend, ReadableStateBackend},
-        ReadableStateStore, StateStore,
-    }, app::{PeridotApp, PeridotAppBuilder, PeridotTable, PTable},
+        backend::{
+            persistent::PersistentStateBackend, ReadableStateBackend, StateBackend,
+            WriteableStateBackend,
+        },
+        ReadableStateStore,
+    },
 };
 use rdkafka::{config::RDKafkaLogLevel, ClientConfig};
-use tracing::{info, level_filters::LevelFilter};
+use tracing::level_filters::LevelFilter;
 
 #[derive(Debug, eap::Config)]
 struct AppConfig {}
@@ -38,41 +46,49 @@ struct AppState<'a, T> {
     state_store: Arc<PTable<'a, String, ConsentGrant, T>>,
 }
 
-impl <'a, T> Clone for AppState<'a, T> {
+impl<'a, T> Clone for AppState<'a, T> {
     fn clone(&self) -> Self {
         Self {
-            state_store: self.state_store.clone()
+            state_store: self.state_store.clone(),
         }
     }
 }
 
 impl<'a, T> AppState<'a, T> {
-    pub fn new(state_store: PTable<'a, String, ConsentGrant, T>) -> Self {
+    pub fn _new(state_store: PTable<'a, String, ConsentGrant, T>) -> Self {
         Self {
-            state_store: Arc::new(state_store)
+            state_store: Arc::new(state_store),
         }
     }
 
     pub fn from_arc(state_store: Arc<PTable<'a, String, ConsentGrant, T>>) -> Self {
-        Self {
-            state_store
-        }
+        Self { state_store }
     }
 
-    pub fn get_state(&self) -> Arc<PTable<String, ConsentGrant, T>> {
+    pub fn _get_state(&self) -> Arc<PTable<String, ConsentGrant, T>> {
         self.state_store.clone()
     }
 }
 
-type PersistentStateStore<'a> = StateStore<'a, PersistentStateBackend<ConsentGrant>, ConsentGrant>;
-
-async fn get_consent<'a, T>(state: State<Arc<AppState<'a, T>>>, param: Query<ConsentQuery>) -> impl axum::response::IntoResponse 
-where T: StateBackend + ReadableStateBackend<ConsentGrant> + WriteableStateBackend<ConsentGrant> + Send + Sync + 'static
+async fn get_consent<T>(
+    state: State<Arc<AppState<'_, T>>>,
+    param: Query<ConsentQuery>,
+) -> impl axum::response::IntoResponse
+where
+    T: StateBackend
+        + ReadableStateBackend<ConsentGrant>
+        + WriteableStateBackend<ConsentGrant>
+        + Send
+        + Sync
+        + 'static,
 {
     let item: ConsentGrant = state
         .state_store
-        .get_store().unwrap()
-        .get(param.owner()).await.unwrap();
+        .get_store()
+        .unwrap()
+        .get(param.owner())
+        .await
+        .unwrap();
 
     Json(item)
 }
@@ -99,8 +115,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = PeridotAppBuilder::from_config(&source)?;
 
-    let consent_table: Arc<PTable<String, ConsentGrant, PersistentStateBackend<_>>> = Arc::new(app.table("consent.Client")?
-        .build().await?);
+    let consent_table: Arc<PTable<String, ConsentGrant, PersistentStateBackend<_>>> =
+        Arc::new(app.table("consent.Client")?.build().await?);
 
     let app_state = Arc::new(AppState::from_arc(consent_table));
 
