@@ -66,7 +66,7 @@ async fn main() -> Result<(), PeridotAppRuntimeError>{
         
     });
 
-    let app = PeridotAppBuilder::new(&source).unwrap();
+    let app = PeridotAppBuilder::from_config(&source).unwrap();
 
     let some_table = app.table::<(), ()>("test.topic");
 

@@ -5,7 +5,7 @@ use peridot::state::backend::persistent::PersistentStateBackend;
 use peridot::{app::PeridotAppBuilder, state::backend::in_memory::InMemoryStateBackend};
 use rdkafka::ClientConfig;
 
-use peridot::app::PeridotTable;
+use peridot::app::{PeridotTable, PTable};
 use peridot::state::ReadableStateStore;
 use rdkafka::config::RDKafkaLogLevel;
 use tracing::info;
@@ -28,7 +28,7 @@ struct ConsentGrant {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
 
     let mut source = ClientConfig::new();
@@ -47,43 +47,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app_builder = PeridotAppBuilder::new(&source).unwrap();
+    let app_builder = PeridotAppBuilder::from_config(&source)?;
 
     info!("Creating table");
 
-    let consent_table = app_builder.table::<String, ConsentGrant, PersistentStateBackend<ConsentGrant>>("consent.Client").unwrap()
+    let consent_table: PTable<'_, String, ConsentGrant> = app_builder
+        .table("consent.Client")?
         .build()
-        .await
-        .unwrap();
+        .await?;
 
-    let topic_table = app_builder.table::<String, Topic, PersistentStateBackend<Topic>>("topicStore.Global").unwrap()
+    let topic_table: PTable<'_, String, Topic> = app_builder
+        .table("topicStore.Global")?
         .build()
-        .await
-        .unwrap();
+        .await?;
 
     info!("Creating stream");
 
-    let stream = app_builder.stream::<String, String>("changeOfAddress").unwrap();
+    let stream = app_builder.stream::<String, String>("changeOfAddress")?;
 
     info!("Running app");
 
-    let _ = app_builder
+    app_builder
         .run()
         .await?;
 
     loop {
-        match consent_table.get_store().unwrap().get("jon").await {
+        match consent_table.get_store()?.get("jon").await {
             Some(value) => info!("Consent Value: {:?}", value),
             None => info!("No value found"),
         }
 
-        match topic_table.get_store().unwrap().get("changeOfAddress").await {
+        match topic_table.get_store()?.get("changeOfAddress").await {
             Some(value) => info!("Topic Store Value: {:?}", value),
             None => info!("No value found"),
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
-
-    Ok(())
 }

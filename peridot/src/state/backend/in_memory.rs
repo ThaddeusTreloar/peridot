@@ -1,12 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
+use dashmap::DashMap;
 use tokio::sync::RwLock;
 use tracing::info;
 
 use super::{ReadableStateBackend, WriteableStateBackend, StateBackend, CommitLog};
 
 pub struct InMemoryStateBackend<T> {
-    store: RwLock<HashMap<String, T>>,
+    store: DashMap<String, T>,
     offsets: Arc<CommitLog>,
 }
 
@@ -46,10 +47,10 @@ impl <T> ReadableStateBackend<T> for InMemoryStateBackend<T>
 where T: Clone + Send + Sync + 'static
 {
     async fn get(&self, key: &str) -> Option<T> {
-        self.store
-            .read().await
-            .get(key)
-            .cloned()
+        Some(self.store
+            .get(key)?
+            .value()
+            .clone())
     }
 }
 
@@ -58,13 +59,11 @@ where T: Send + Sync + 'static
 {
     async fn set(&self, key: &str, value: T) -> Option<T> {
         self.store
-        .write().await
-        .insert(key.to_string(), value)
+            .insert(key.to_string(), value)
     }
     
     async fn delete(&self, key: &str) -> Option<T> {
-        self.store
-            .write().await
-            .remove(key)
+        Some(self.store
+            .remove(key)?.1)
     }
 }

@@ -329,7 +329,7 @@ impl AppEngine {
                 tokio::time::sleep(interval).await;
 
                 if consumer_state.load() == EngineState::Stopped {
-                    info!("Consumer stopped...");
+                    debug!("Consumer stopped...");
                     continue;
                 }
 
@@ -372,7 +372,7 @@ impl AppEngine {
                         .expect("Failed to convert broker offset to i64");
 
                     if broker_offset == -1 {
-                        info!("Broker offset not found for topic partition: {}->{}", topic, partition);
+                        debug!("Broker offset not found for topic partition: {}->{}", topic, partition);
                     } else if consumer_offset + lag_max < broker_offset {
                         match consumer_state.load() {
                             EngineState::Running | EngineState::NotReady => {

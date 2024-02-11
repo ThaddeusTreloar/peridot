@@ -81,7 +81,7 @@ pub struct PeridotAppBuilder {
 }
 
 impl PeridotAppBuilder {
-    pub fn new(config: &ClientConfig) -> Result<Self, PeridotAppCreationError> {
+    pub fn from_config(config: &ClientConfig) -> Result<Self, PeridotAppCreationError> {
         let engine = AppEngine::from_config(config)?;
 
         Ok(PeridotAppBuilder {
@@ -117,7 +117,7 @@ impl PeridotAppBuilder {
 
 
 async fn tester() -> Result<(), PeridotAppRuntimeError> {
-    let app_builder = PeridotAppBuilder::new(&ClientConfig::new()).unwrap();
+    let app_builder = PeridotAppBuilder::from_config(&ClientConfig::new()).unwrap();
 
     let table = app_builder.table::<String, String, InMemoryStateBackend<String>>("test.topic").unwrap()
         .build()
