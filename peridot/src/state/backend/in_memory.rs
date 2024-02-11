@@ -27,6 +27,13 @@ where
         Self::default()
     }
 
+    async fn with_topic_name_and_commit_log(_topic_name: &str, commit_log: Arc<CommitLog>) -> Self {
+        InMemoryStateBackend {
+            store: Default::default(),
+            offsets: commit_log,
+        }
+    }
+
     fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
         self.offsets.clone()
     }

@@ -17,8 +17,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::state::{
     backend::{
-        persistent::PersistentStateBackend, CommitLogs, ReadableStateBackend, StateBackend,
-        WriteableStateBackend,
+        persistent::PersistentStateBackend, ReadableStateBackend, StateBackend,
+        WriteableStateBackend, CommitLog,
     },
     StateStore,
 };
@@ -110,7 +110,7 @@ pub struct AppEngine {
     consumer: Arc<PeridotConsumer>,
     waker_context: Arc<PeridotConsumerContext>,
     downstreams: Arc<DashMap<String, Sender<PeridotPartitionQueue>>>,
-    downstream_commit_logs: Arc<CommitLogs>,
+    downstream_commit_logs: Arc<CommitLog>,
     state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
 }
@@ -167,8 +167,14 @@ impl AppEngine {
 
         let commit_waker = app_engine.waker_context.commit_waker();
 
+        let backend = B::with_topic_name_and_commit_log(
+            topic.as_str(), 
+            app_engine.downstream_commit_logs.clone()
+        ).await;
+
         let state_store: StateStore<B, V> = StateStore::try_new(
-            B::with_topic_name(topic.as_str()).await,
+            topic,
+            backend,
             app_engine.engine_state.clone(),
             commit_waker,
             queue_receiver,

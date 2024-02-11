@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use peridot::init::init_tracing;
 use peridot::app::PeridotAppBuilder;
+use peridot::state::backend::in_memory::InMemoryStateBackend;
 use rdkafka::ClientConfig;
 
 use peridot::app::{PeridotTable, PTable};
@@ -35,14 +36,14 @@ async fn main() -> Result<(), anyhow::Error> {
     source
         .set("bootstrap.servers", "servicesaustralia.com.au:29092")
         .set("security.protocol", "PLAINTEXT")
-        .set("enable.auto.commit", "false")
+        .set("enable.auto.commit", "true")
         .set("sasl.mechanisms", "PLAIN")
         .set("sasl.username", "5D5PMQEIB2VD633V")
         .set(
             "sasl.password",
             "ee5DtvJYWFXYJ/MF+bCJVBil8+xEH5vuZ6c8Fk2qjD0xSGhlDnXr9w4D9LTUQv2t",
         )
-        .set("group.id", "rust-test10")
+        .set("group.id", "rust-test14")
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
@@ -50,12 +51,12 @@ async fn main() -> Result<(), anyhow::Error> {
 
     info!("Creating table");
 
-    let consent_table: PTable<'_, String, ConsentGrant> = app_builder
+    let consent_table: PTable<'_, String, ConsentGrant, InMemoryStateBackend<_>> = app_builder
         .table("consent.Client")?
         .build()
         .await?;
 
-    let topic_table: PTable<'_, String, Topic> = app_builder
+    let topic_table: PTable<'_, String, Topic, InMemoryStateBackend<_>> = app_builder
         .table("topicStore.Global")?
         .build()
         .await?;

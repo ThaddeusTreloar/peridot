@@ -33,6 +33,7 @@ pub struct StateStore<'a, T, U>
 where
     U: DeserializeOwned + Send + Sync + 'static,
 {
+    topic: Arc<String>,
     backend: Arc<T>,
     state: Arc<AtomicCell<EngineState>>,
     _lifetime: &'a PhantomData<()>,
@@ -78,12 +79,14 @@ where
     U: DeserializeOwned + Send + Sync + 'static,
 {
     pub fn try_new(
+        topic: String,
         backend: T,
         state: Arc<AtomicCell<EngineState>>,
         commit_waker: Receiver<Commit>,
         stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
     ) -> Result<Self, StateStoreCreationError> {
         let state_store = StateStore {
+            topic: Arc::new(topic),
             backend: Arc::new(backend),
             state,
             _lifetime: &PhantomData,
@@ -111,12 +114,18 @@ where
 
     fn start_commit_listener(&self, mut waker: Receiver<Commit>) {
         let store = self.backend.clone();
+        let table_topic = self.topic.clone();
 
         tokio::spawn(async move {
             while let Ok(message) = waker.recv().await {
-                store
-                    .commit_offset(message.topic(), message.partition(), message.offset())
-                    .await;
+                let Commit {topic, partition, offset} = message;
+
+                if table_topic.as_str() == topic.as_str() && offset > 0 {
+                    info!("Committing offset: {}-{}:{}", topic, partition, offset);
+                    store.commit_offset(topic.as_str(), partition, offset).await;
+                } else {
+                    info!("Table: {}, ignoring commit: {}-{}:{}", table_topic, topic, partition, offset);
+                }
             }
         });
     }

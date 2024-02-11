@@ -11,9 +11,15 @@ use tracing::error;
 
 #[derive(Debug, Clone)]
 pub struct Commit {
-    topic: String,
-    partition: i32,
-    offset: i64,
+    pub topic: String,
+    pub partition: i32,
+    pub offset: i64,
+}
+
+impl Display for Commit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Commit: {}-{}:{}", self.topic, self.partition, self.offset)
+    }
 }
 
 impl Commit {

@@ -44,6 +44,7 @@ impl CommitLog {
 pub trait StateBackend
 {
     fn with_topic_name(topic_name: &str) -> impl Future<Output = Self>;
+    fn with_topic_name_and_commit_log(topic_name: &str, commit_log: Arc<CommitLog>) -> impl Future<Output = Self>;
     fn get_commit_log(&self) -> Arc<CommitLog>;
     fn commit_offset(&self, topic: &str, partition: i32, offset: i64) -> impl Future<Output = ()> + Send;
     fn get_offset(&self, topic: &str, partition: i32) -> impl Future<Output = Option<i64>> + Send;

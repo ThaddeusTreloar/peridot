@@ -2,6 +2,7 @@
 use std::{path::Path, sync::Arc};
 
 use surrealdb::{Surreal, engine::local::{File, Db}};
+use tracing::info;
 
 use super::{ReadableStateBackend, WriteableStateBackend, error::BackendCreationError, StateBackend, CommitLog};
 
@@ -57,6 +58,35 @@ where T: Send + Sync + 'static
 
         let commit_log: Arc<CommitLog> = Arc::new(stored_offsets.into());
 
+        info!("Commit log: {:?}", commit_log);
+
+        let backend: PersistentStateBackend<T> = PersistentStateBackend {
+            store,
+            commit_log,
+            _type: Default::default()
+        };
+
+        Ok(backend)
+    }
+
+    pub async fn try_from_file_and_commit_log(path: &Path, commit_log: Arc<CommitLog>) -> Result<Self, BackendCreationError> {
+        let store = Surreal::new::<File>(path).await?;
+        
+        // TODO: Derive some db name from some app_id
+        store.use_ns("stream_app_state_backend").await?;
+        store.use_db("stream_app_state_backend").await?;
+
+        let stored_offsets = store.select::
+            <Vec<OffsetStruct>>("offsets")
+            .await
+            .expect("Failed to get value from db");
+
+        for stored_offset in stored_offsets {
+            commit_log.commit_offset(stored_offset.topic.as_str(), stored_offset.partition, stored_offset.offset);
+        }
+
+        info!("Commit log: {:?}", commit_log);
+
         let backend: PersistentStateBackend<T> = PersistentStateBackend {
             store,
             commit_log,
@@ -76,6 +106,14 @@ where T: Send + Sync + 'static
         let state_dir = Path::new("/tmp").join(state_db_filename);
         
         Self::try_from_file(state_dir.as_path()).await.expect("Failed to create state backend")
+    }
+
+    async fn with_topic_name_and_commit_log(topic_name: &str, commit_log: std::sync::Arc<CommitLog>) -> Self {
+        let state_db_filename = format!("peridot.{}.db", topic_name);
+
+        let state_dir = Path::new("/tmp").join(state_db_filename);
+        
+        Self::try_from_file_and_commit_log(state_dir.as_path(), commit_log).await.expect("Failed to create state backend")
     }
 
     fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
