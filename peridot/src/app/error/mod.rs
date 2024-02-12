@@ -1,3 +1,5 @@
+use rdkafka::error::KafkaError;
+
 use super::app_engine::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
 
 
@@ -15,4 +17,6 @@ pub enum PeridotAppRuntimeError {
     SourceConflictError(String),
     #[error("Failed to initialise engine: {0}")]
     EngineRuntimeError(#[from] PeridotEngineRuntimeError),
+    #[error("Sink error: {0}")]
+    SinkError(#[from] KafkaError),
 }

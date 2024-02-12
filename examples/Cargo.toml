@@ -13,13 +13,18 @@ authors = {workspace = true}
 name = "app"
 path = "src/app.rs"
 
+[[bin]]
+name = "app-stream"
+path = "src/app-stream.rs"
+
 [dependencies]
 crossbeam = "0.8.4"
-
+futures = "0.3.30"
 anyhow = "1.0.79"
 eap = { path = "/Users/ttreloar/Documents/personal/eap", features = ["derive"]}
 peridot = { path = "../peridot" }
 tokio = { version = "1.36.0", features = ["full"] }
 rdkafka = "*"
 serde = { workspace=true, features = ["derive"] }
+serde_json = { workspace=true }
 tracing = {workspace = true}

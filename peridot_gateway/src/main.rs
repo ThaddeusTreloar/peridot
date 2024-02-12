@@ -7,7 +7,7 @@ use peridot::{
     state::{
         backend::{in_memory::InMemoryStateBackend, persistent::PersistentStateBackend, self},
         ReadableStateStore, StateStore,
-    }, app::{PeridotAppBuilder, App, error::PeridotAppRuntimeError},
+    }, app::{PeridotApp, App, error::PeridotAppRuntimeError},
 };
 use rdkafka::{config::RDKafkaLogLevel, ClientConfig, consumer::{StreamConsumer, Consumer}};
 use tracing::{info, level_filters::LevelFilter};
@@ -66,7 +66,7 @@ async fn main() -> Result<(), PeridotAppRuntimeError>{
         
     });
 
-    let app = PeridotAppBuilder::from_config(&source).unwrap();
+    let app = PeridotApp::from_config(&source).unwrap();
 
     let some_table = app.table::<(), ()>("test.topic");
 

@@ -7,7 +7,7 @@ use axum::{
 };
 use eap::{config::Config, environment::Environment};
 use peridot::{
-    app::{PTable, PeridotAppBuilder, PeridotTable},
+    app::{PTable, PeridotApp, PeridotTable},
     init::init_tracing,
     state::{
         backend::{
@@ -113,7 +113,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app = PeridotAppBuilder::from_config(&source)?;
+    let app = PeridotApp::from_config(&source)?;
 
     let consent_table: Arc<PTable<String, ConsentGrant, PersistentStateBackend<_>>> =
         Arc::new(app.table("consent.Client")?.build().await?);

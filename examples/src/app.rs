@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use peridot::app::ptable::{PTable, PeridotTable};
 use peridot::init::init_tracing;
-use peridot::app::PeridotAppBuilder;
+use peridot::app::PeridotApp;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use rdkafka::ClientConfig;
 
-use peridot::app::{PeridotTable, PTable};
 use peridot::state::ReadableStateStore;
 use rdkafka::config::RDKafkaLogLevel;
 use tracing::info;
@@ -47,29 +48,23 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app_builder = PeridotAppBuilder::from_config(&source)?;
+    let app = Arc::new(PeridotApp::from_config(&source)?);
 
     info!("Creating table");
 
-    let consent_table: PTable<'_, String, ConsentGrant> = app_builder
-        .table("consent.Client")?
-        .build()
-        .await?;
+    let consent_table: PTable<'_, String, ConsentGrant> = app
+        .table("consent.Client").await?;
 
-    let topic_table: PTable<'_, String, Topic> = app_builder
-        .table("topicStore.Global")?
-        .build()
-        .await?;
+    let topic_table: PTable<'_, String, Topic> = app
+        .table("topicStore.Global").await?;
 
     info!("Creating stream");
 
-    let _stream = app_builder.stream::<String, String>("changeOfAddress")?;
+    //let _stream = app.stream("changeOfAddress").await?;
 
     info!("Running app");
 
-    app_builder
-        .run()
-        .await?;
+    app.run().await?;
 
     loop {
         match consent_table.get_store()?.get("jon").await {

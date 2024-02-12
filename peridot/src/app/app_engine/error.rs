@@ -1,3 +1,5 @@
+use rdkafka::error::KafkaError;
+
 use crate::state::error::StateStoreCreationError;
 
 
@@ -21,6 +23,10 @@ pub enum PeridotEngineRuntimeError {
     TableCreationError(#[from] TableCreationError),
     #[error(transparent)]
     BackendInitialisationError(#[from] StateStoreCreationError),
+    #[error("Cyclic dependency detected for topic: {0}, you cannot both subsribe and publish to the same topic.")]
+    CyclicDependencyError(String),
+    #[error("Failed to create producer: {0}")]
+    ProducerCreationError(#[from] KafkaError),
 }
 
 #[derive(Debug, thiserror::Error)]
