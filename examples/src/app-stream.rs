@@ -89,19 +89,15 @@ async fn main() -> Result<(), anyhow::Error> {
     let table_state = table.get_store()?;
 
     let filter_func = |kv: &StringKeyValue<(ChangeOfAddress, ConsentGrant)>| {
-        let key = kv.key.clone();
-        let msg = kv.value.0.clone();
-        let consent_grant = kv.value.1.clone();
-
-        let result = match consent_grant.map.get("servicesaustralia.com.au")
+        let result = match kv.value.1.map.get("servicesaustralia.com.au")
             .and_then(|f|f.get("medicare.com.au"))
             .and_then(|f|f.get("changeOfAddress")) {
             None => {
-                info!("No consent found for key: {}", key);
+                info!("No consent found for key: {}", &kv.key);
                 false
             },
             Some(consent) => {
-                info!("Consent '{}' found for key: {}", *consent, key);
+                info!("Consent '{}' found for key: {}", *consent, &kv.key);
                 *consent
             }
         };
@@ -110,7 +106,8 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     match stream
-        .stream::<StringKeyValue<ChangeOfAddress>>().then(
+        .stream::<StringKeyValue<ChangeOfAddress>>()
+        .filter_map(
             |kv: StringKeyValue<ChangeOfAddress>| {
                 let key = kv.key.clone();
                 let value = kv.value.clone();
@@ -126,7 +123,6 @@ async fn main() -> Result<(), anyhow::Error> {
                     }
                 }
         })
-        .filter_map(|o|async{o})
         .filter(filter_func)
         .map(|kv|Ok(StringKeyValue::new(kv.key, kv.value.0)))
         .forward(&mut sink).await {
