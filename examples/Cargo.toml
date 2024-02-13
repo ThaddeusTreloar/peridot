@@ -17,6 +17,10 @@ path = "src/app.rs"
 name = "app-stream"
 path = "src/app-stream.rs"
 
+[[bin]]
+name = "app-stream-eos"
+path = "src/app-stream-eos.rs"
+
 [dependencies]
 crossbeam = "0.8.4"
 futures = "0.3.30"

@@ -23,7 +23,7 @@ use crate::{state::{
     StateStore,
 }, app::ptable::PTable};
 
-use super::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
+use super::{error::{PeridotEngineCreationError, PeridotEngineRuntimeError}, util::{ExactlyOnce, DeliveryGuaranteeType, AtMostOnce, AtLeastOnce}};
 
 use super::super::{
     extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
@@ -31,22 +31,25 @@ use super::super::{
 };
 
 #[derive()]
-pub struct TableBuilder<K, V, B = PersistentStateBackend<V>> {
-    engine: Arc<AppEngine>,
+pub struct TableBuilder<K, V, B = PersistentStateBackend<V>, G = ExactlyOnce> 
+where G: DeliveryGuaranteeType
+{
+    engine: Arc<AppEngine<G>>,
     topic: String,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
     _backend_type: std::marker::PhantomData<B>,
 }
 
-// TODO: Remove this bound
-impl<K, V, B> TableBuilder<K, V, B>
+impl<K, V, B, G> TableBuilder<K, V, B, G>
 where
     B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
     K: Send + Sync + 'static,
     V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    G: DeliveryGuaranteeType
 {
-    pub fn new(topic: &str, engine: Arc<AppEngine>) -> Self {
+    pub fn new(topic: &str, engine: Arc<AppEngine<G>>) -> Self 
+    {
         TableBuilder {
             engine,
             topic: topic.to_string(),
@@ -55,11 +58,44 @@ where
             _backend_type: PhantomData,
         }
     }
+}
 
+impl<K, V, B> TableBuilder<K, V, B, AtMostOnce>
+where
+    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+    K: Send + Sync + 'static,
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+{
     pub async fn build<'a>(self) -> Result<PTable<'a, K, V, B>, PeridotEngineRuntimeError> {
         let Self { engine, topic, .. } = self;
 
-        AppEngine::table(engine, topic).await
+        AppEngine::<AtMostOnce>::table(engine, topic).await
+    }
+}
+
+impl<K, V, B> TableBuilder<K, V, B, AtLeastOnce>
+where
+    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+    K: Send + Sync + 'static,
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+{
+    pub async fn build<'a>(self) -> Result<PTable<'a, K, V, B>, PeridotEngineRuntimeError> {
+        let Self { engine, topic, .. } = self;
+
+        AppEngine::<AtLeastOnce>::table(engine, topic).await
+    }
+}
+
+impl<K, V, B> TableBuilder<K, V, B, ExactlyOnce>
+where
+    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
+    K: Send + Sync + 'static,
+    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+{
+    pub async fn build<'a>(self) -> Result<PTable<'a, K, V, B>, PeridotEngineRuntimeError> {
+        let Self { engine, topic, .. } = self;
+
+        AppEngine::<ExactlyOnce>::table(engine, topic).await
     }
 }
 

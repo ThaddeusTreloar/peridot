@@ -2,45 +2,48 @@ use std::sync::Arc;
 
 use crate::app::pstream::PStream;
 
-use super::{AppEngine, error::PeridotEngineRuntimeError};
+use super::{AppEngine, error::PeridotEngineRuntimeError, util::{ExactlyOnce, DeliveryGuaranteeType, AtLeastOnce, AtMostOnce}};
 
 
 #[derive()]
-pub struct StreamBuilder {
-    engine: Arc<AppEngine>,
+pub struct StreamBuilder<G=ExactlyOnce> 
+where G: DeliveryGuaranteeType
+{
+    engine: Arc<AppEngine<G>>,
     topic: String,
 }
 
-impl StreamBuilder
+impl <G>  StreamBuilder<G>
+where G: DeliveryGuaranteeType
 {
-    pub fn new(topic: &str, engine: Arc<AppEngine>) -> Self {
-        StreamBuilder {
+    pub fn new(topic: &str, engine: Arc<AppEngine<G>>) -> Self {
+        Self {
             engine,
             topic: topic.to_string(),
         }
     }
+}
 
-    pub async fn build<'a>(self) -> Result<PStream, PeridotEngineRuntimeError> {
+impl StreamBuilder<AtLeastOnce> {
+    pub async fn build<'a>(self) -> Result<PStream<AtLeastOnce>, PeridotEngineRuntimeError> {
         let Self { engine, topic } = self;
 
-        AppEngine::stream(engine, topic).await
+        AppEngine::<AtLeastOnce>::stream(engine, topic).await
     }
 }
 
-/*pub struct NewTable<K, V, B = PersistentStateBackend<V>> {
-    _topic: String,
-    _key_type: std::marker::PhantomData<K>,
-    _value_type: std::marker::PhantomData<V>,
-    _backend_type: std::marker::PhantomData<B>,
+impl StreamBuilder<ExactlyOnce> {
+    pub async fn build<'a>(self) -> Result<PStream<ExactlyOnce>, PeridotEngineRuntimeError> {
+        let Self { engine, topic } = self;
+
+        AppEngine::<ExactlyOnce>::stream(engine, topic).await
+    }
 }
 
-impl From<StreamBuilder> for NewTable {
-    fn from(builder: StreamBuilder) -> Self {
-        NewTable {
-            _topic: builder.topic,
-            _key_type: Default::default(),
-            _value_type: Default::default(),
-            _backend_type: Default::default(),
-        }
+impl StreamBuilder<AtMostOnce> {
+    pub async fn build<'a>(self) -> Result<PStream<AtMostOnce>, PeridotEngineRuntimeError> {
+        let Self { engine, topic } = self;
+
+        AppEngine::<AtMostOnce>::stream(engine, topic).await
     }
-}*/
+}

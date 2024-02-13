@@ -48,7 +48,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app = Arc::new(PeridotApp::from_config(&source)?);
+    let app = Arc::new(PeridotApp::from_client_config(&source)?);
 
     info!("Creating table");
 

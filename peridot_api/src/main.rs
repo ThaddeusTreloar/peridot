@@ -113,7 +113,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app = PeridotApp::from_config(&source)?;
+    let app = PeridotApp::from_client_config(&source)?;
 
     let consent_table: Arc<PTable<String, ConsentGrant, PersistentStateBackend<_>>> =
         Arc::new(app.table("consent.Client")?.build().await?);

@@ -1,7 +1,7 @@
 use futures::{Stream, StreamExt, stream::{empty, Forward, Map}, Sink, TryStream};
 use rdkafka::message::BorrowedMessage;
 
-use crate::app::PeridotApp;
+use crate::app::{PeridotApp, wrappers::MessageKey};
 
 use self::{types::{IntoRecordParts, KeyValue}, fork::{Forked, Fork}, checkpoint::Checkpointed};
 
@@ -49,18 +49,17 @@ mod tests {
     use rdkafka::ClientConfig;
     use tokio::select;
 
-    use crate::app::PeridotApp;
+    use crate::app::{PeridotApp, app_engine::util::{ExactlyOnce, AtLeastOnce}};
 
     use super::{PStream, PStreamExt, types::KeyValue};
 
     async fn tester() {
         let config = ClientConfig::new();
 
-        let app = PeridotApp::from_config(&config).unwrap();
+        let app = PeridotApp::<AtLeastOnce>::from_client_config(&config).unwrap();
 
         let stream = app
-            .stream_builder("changeOfAddress").await
-            .build().await.unwrap();
+            .stream("changeOfAddress").await.unwrap();
 
         let s: Vec<String> = stream
             .stream::<KeyValue<String, String>>()

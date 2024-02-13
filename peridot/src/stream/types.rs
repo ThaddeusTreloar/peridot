@@ -1,6 +1,8 @@
 use rdkafka::{message::{OwnedMessage, Headers, FromBytes}, Message, producer::{BaseRecord}};
 use tracing::info;
 
+use crate::{serde_ext::PSerialize, app::wrappers::{MessageKey, MessageValue}};
+
 pub struct RecordParts {
     headers: (),
     key: Vec<u8>,
@@ -34,6 +36,39 @@ impl RecordParts {
 pub trait IntoRecordParts {
     fn into_record_parts(self) -> RecordParts;
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum RecordPartsError {
+    #[error("Failed to serialise key: {0}")]
+    KeySerialisationError(String),
+    #[error("Failed to serialise value: {0}")]
+    ValueSerialisationError(String),
+}
+
+pub trait TryIntoRecordParts<K, V> 
+where K: PSerialize, 
+    V: PSerialize, 
+    Self: MessageKey<K::Input> + MessageValue<V::Input>
+{
+    fn try_into_record_parts(&self) -> Result<RecordParts, RecordPartsError> {
+        let key = K::serialize(self.key())
+            .map_err(
+                |e| RecordPartsError::KeySerialisationError(e.to_string())
+            )?;
+        let value = V::serialize(self.value())
+            .map_err(
+                |e| RecordPartsError::ValueSerialisationError(e.to_string())
+            )?;
+
+        Ok(RecordParts::new((), key, value))
+    }
+}
+
+impl <K, V, T> TryIntoRecordParts<K, V> for T
+where K: PSerialize, 
+    V: PSerialize, 
+    T: MessageKey<K::Input> + MessageValue<V::Input>, 
+{}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StringKeyValue<V> 

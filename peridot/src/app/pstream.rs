@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, marker::PhantomData};
 
 use tracing::error;
 use crossbeam::atomic::AtomicCell;
@@ -7,20 +7,19 @@ use rdkafka::{message::{BorrowedMessage, OwnedMessage}, consumer::{stream_consum
 use tokio::sync::broadcast::Receiver;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::state::backend::{CommitLogs, CommitLog};
+use crate::state::backend::CommitLog;
 
-use super::{app_engine::EngineState, extensions::Commit, PeridotPartitionQueue};
+use super::{app_engine::{EngineState, util::{AtMostOnce, AtLeastOnce, ExactlyOnce}}, extensions::Commit, PeridotPartitionQueue, wrappers::{MessageContext, FromOwnedMessage}};
 
-pub trait PeridotStream<K, V> {}
-
-pub struct PStream {
+pub struct PStream<G = ExactlyOnce> {
     output_stream: UnboundedReceiverStream<OwnedMessage>,
     engine_state: Arc<AtomicCell<EngineState>>,
     commit_logs: Arc<CommitLog>,
     commit_waker: Arc<Receiver<Commit>>,
+    phantom_data: PhantomData<G>,
 }
 
-impl PStream {
+impl <G> PStream<G> {
     pub fn new(topic: String,
         commit_logs: Arc<CommitLog>,
         engine_state: Arc<AtomicCell<EngineState>>,
@@ -31,11 +30,12 @@ impl PStream {
 
         Self::start_forwarding_thread(sender, queue_receiver);
 
-        PStream {
+        Self {
             output_stream: UnboundedReceiverStream::new(receiver),
             engine_state,
             commit_logs,
             commit_waker: Arc::new(commit_waker),
+            phantom_data: PhantomData,
         }
     }
 
@@ -71,7 +71,9 @@ impl PStream {
             }
         });
     }
+}
 
+impl PStream<AtMostOnce> {
     pub fn stream<M>(self) -> impl Stream<Item = M>
     where M: From<OwnedMessage>
     {
@@ -79,4 +81,18 @@ impl PStream {
     }
 }
 
-impl<K, V> PeridotStream<K, V> for PStream {}
+impl PStream<AtLeastOnce> {
+    pub fn stream<M>(self) -> impl Stream<Item = M>
+    where M: From<OwnedMessage>
+    {
+        self.output_stream.map(From::<OwnedMessage>::from)
+    }
+}
+
+impl PStream<ExactlyOnce> {
+    pub fn stream<M, S>(self) -> impl Stream<Item = M>
+    where M: FromOwnedMessage<S> + MessageContext
+    {
+        self.output_stream.map(FromOwnedMessage::from_owned_message)
+    }
+}

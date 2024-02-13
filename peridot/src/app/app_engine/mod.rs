@@ -9,7 +9,7 @@ use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use rdkafka::{
     consumer::{stream_consumer::StreamPartitionQueue, Consumer},
-    producer::{PARTITION_UA, BaseProducer},
+    producer::{PARTITION_UA, BaseProducer, Producer},
     ClientConfig, TopicPartitionList, config::FromClientConfig, topic_partition_list::TopicPartitionListElem,
 };
 use tokio::{select, sync::mpsc::Sender};
@@ -23,16 +23,17 @@ use crate::state::{
     StateStore,
 };
 
-use self::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
+use self::{error::{PeridotEngineCreationError, PeridotEngineRuntimeError}, util::{DeliveryGuarantee, ExactlyOnce, DeliveryGuaranteeType, AtLeastOnce, AtMostOnce}};
 
 use super::{
-    extensions::{Commit, OwnedRebalance, PeridotConsumerContext}, PeridotConsumer, PeridotPartitionQueue, ptable::PTable, pstream::PStream, psink::PSink,
+    extensions::{Commit, OwnedRebalance, PeridotConsumerContext}, PeridotConsumer, PeridotPartitionQueue, ptable::PTable, pstream::PStream, psink::PSink, config::PeridotConfig,
 };
 
 pub mod error;
 pub mod tables;
 pub mod sinks;
 pub mod streams;
+pub mod util;
 
 #[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
 pub enum EngineState {
@@ -57,172 +58,22 @@ pub enum StateType {
     InMemory,
 }
 
-pub struct AppEngine {
-    config: ClientConfig,
+pub struct AppEngine<G = ExactlyOnce>
+where G: DeliveryGuaranteeType
+{
+    config: PeridotConfig,
     consumer: Arc<PeridotConsumer>,
     waker_context: Arc<PeridotConsumerContext>,
     downstreams: Arc<DashMap<String, Sender<PeridotPartitionQueue>>>,
     downstream_commit_logs: Arc<CommitLog>,
     state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
+    _delivery_guarantee: PhantomData<G>,
 }
 
-impl AppEngine {
-    pub fn from_config(config: &ClientConfig) -> Result<Self, PeridotEngineCreationError> {
-        let context = PeridotConsumerContext::default();
-        let consumer = config.create_with_context(context.clone())?;
-
-        Ok(AppEngine {
-            config: config.clone(),
-            consumer: Arc::new(consumer),
-            waker_context: Arc::new(context),
-            downstreams: Default::default(),
-            downstream_commit_logs: Default::default(),
-            state_streams: Default::default(),
-            engine_state: Default::default(),
-        })
-    }
-
-    pub async fn table<K, V, B>(
-        app_engine: Arc<AppEngine>,
-        topic: String,
-    ) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError>
-    where
-        B: StateBackend
-            + ReadableStateBackend<V>
-            + WriteableStateBackend<V>
-            + Send
-            + Sync
-            + 'static,
-        K: Send + Sync + 'static,
-        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
-    {
-        let mut subscription = app_engine
-            .consumer
-            .subscription()
-            .expect("Failed to get subscription.")
-            .elements()
-            .into_iter()
-            .map(|tp| tp.topic().to_string())
-            .collect::<Vec<String>>();
-
-        if subscription.contains(&topic) {
-            return Err(PeridotEngineRuntimeError::TableCreationError(
-                error::TableCreationError::TableAlreadyExists,
-            ));
-        }
-
-        subscription.push(topic.clone());
-
-        app_engine
-            .consumer
-            .subscribe(
-                subscription
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<&str>>()
-                    .as_slice(),
-            )
-            .expect("Failed to subscribe to topic.");
-
-        app_engine.state_streams.insert(topic.clone());
-
-        let (queue_sender, queue_receiver) =
-            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
-
-        app_engine.downstreams.insert(topic.clone(), queue_sender);
-
-        let commit_waker = app_engine.waker_context.commit_waker();
-
-        let backend = B::with_topic_name_and_commit_log(
-            topic.as_str(), 
-            app_engine.downstream_commit_logs.clone()
-        ).await;
-
-        let state_store: StateStore<B, V> = StateStore::try_new(
-            topic,
-            backend,
-            app_engine.engine_state.clone(),
-            commit_waker,
-            queue_receiver,
-        )?;
-
-        Ok(PTable::<K, V, B>::new(Arc::new(state_store)))
-    }
-
-    pub async fn stream(
-        app_engine: Arc<AppEngine>,
-        topic: String,
-    ) -> Result<PStream, PeridotEngineRuntimeError> {
-
-        let mut subscription = app_engine
-            .consumer
-            .subscription()
-            .expect("Failed to get subscription.")
-            .elements()
-            .into_iter()
-            .map(|tp| tp.topic().to_string())
-            .collect::<Vec<String>>();
-
-        if subscription.contains(&topic) {
-            return Err(PeridotEngineRuntimeError::TableCreationError(
-                error::TableCreationError::TableAlreadyExists,
-            ));
-        }
-
-        subscription.push(topic.clone());
-
-        app_engine
-            .consumer
-            .subscribe(
-                subscription
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<&str>>()
-                    .as_slice(),
-            )
-            .expect("Failed to subscribe to topic.");
-
-        //app_engine.state_streams.insert(topic.clone());
-
-        let (queue_sender, queue_receiver) =
-            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
-
-        app_engine.downstreams.insert(topic.clone(), queue_sender);
-
-        let commit_waker = app_engine.waker_context.commit_waker();
-
-        Ok(PStream::new(
-            topic,
-            app_engine.downstream_commit_logs.clone(),
-            app_engine.engine_state.clone(),
-            commit_waker,
-            queue_receiver,
-        ))
-    }
-
-    pub async fn sink(
-        app_engine: Arc<AppEngine>,
-        topic: String,
-    ) -> Result<PSink, PeridotEngineRuntimeError> {
-        let mut subscription = app_engine
-            .consumer
-            .subscription()
-            .expect("Failed to get subscription.")
-            .elements()
-            .into_iter()
-            .map(|tp| tp.topic().to_string())
-            .collect::<Vec<String>>();
-
-        if subscription.contains(&topic) {
-            return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
-        } 
-
-        let producer = BaseProducer::from_config(&app_engine.config)?;
-
-        Ok(PSink::new(producer, topic))
-    }
-
+impl <G> AppEngine<G> 
+where G: DeliveryGuaranteeType
+{
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
         let pre_rebalance_waker = self.waker_context.pre_rebalance_waker();
         let commit_waker = self.waker_context.commit_waker();
@@ -236,6 +87,24 @@ impl AppEngine {
         info!("Engine running...");
 
         Ok(())
+    }
+
+    pub fn from_config(config: & PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
+        let context = PeridotConsumerContext::default();
+        let consumer = config
+            .clients_config()
+            .create_with_context(context.clone())?;
+    
+        Ok(Self {
+            config: config.clone(),
+            consumer: Arc::new(consumer),
+            waker_context: Arc::new(context),
+            downstreams: Default::default(),
+            downstream_commit_logs: Default::default(),
+            state_streams: Default::default(),
+            engine_state: Default::default(),
+            _delivery_guarantee: PhantomData,
+        })
     }
 
     fn start_update_thread(&self, mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>) {
@@ -503,5 +372,446 @@ impl AppEngine {
                 tokio::time::sleep(interval).await;
             }
         });
+    }
+}
+
+impl AppEngine<ExactlyOnce> {
+    pub async fn table<K, V, B>(
+        app_engine: Arc<AppEngine<ExactlyOnce>>,
+        topic: String,
+    ) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError>
+    where
+        B: StateBackend
+            + ReadableStateBackend<V>
+            + WriteableStateBackend<V>
+            + Send
+            + Sync
+            + 'static,
+        K: Send + Sync + 'static,
+        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    {
+        let mut subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+    
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::TableCreationError(
+                error::TableCreationError::TableAlreadyExists,
+            ));
+        }
+    
+        subscription.push(topic.clone());
+    
+        app_engine
+            .consumer
+            .subscribe(
+                subscription
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .as_slice(),
+            )
+            .expect("Failed to subscribe to topic.");
+    
+        app_engine.state_streams.insert(topic.clone());
+    
+        let (queue_sender, queue_receiver) =
+            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+    
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+    
+        let commit_waker = app_engine.waker_context.commit_waker();
+    
+        let backend = B::with_topic_name_and_commit_log(
+            topic.as_str(), 
+            app_engine.downstream_commit_logs.clone()
+        ).await;
+    
+        let state_store: StateStore<B, V> = StateStore::try_new(
+            topic,
+            backend,
+            app_engine.engine_state.clone(),
+            commit_waker,
+            queue_receiver,
+        )?;
+    
+        Ok(PTable::<K, V, B>::new(Arc::new(state_store)))
+    }
+    
+    pub async fn stream(
+        app_engine: Arc<AppEngine<ExactlyOnce>>,
+        topic: String,
+    ) -> Result<PStream<ExactlyOnce>, PeridotEngineRuntimeError> {
+    
+        let mut subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+    
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::TableCreationError(
+                error::TableCreationError::TableAlreadyExists,
+            ));
+        }
+    
+        subscription.push(topic.clone());
+    
+        app_engine
+            .consumer
+            .subscribe(
+                subscription
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .as_slice(),
+            )
+            .expect("Failed to subscribe to topic.");
+    
+        //app_engine.state_streams.insert(topic.clone());
+    
+        let (queue_sender, queue_receiver) =
+            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+    
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+    
+        let commit_waker = app_engine.waker_context.commit_waker();
+    
+        Ok(PStream::new(
+            topic,
+            app_engine.downstream_commit_logs.clone(),
+            app_engine.engine_state.clone(),
+            commit_waker,
+            queue_receiver,
+        ))
+    }
+
+    pub async fn sink<K, V>(
+        app_engine: Arc<AppEngine<ExactlyOnce>>,
+        topic: String,
+    ) -> Result<PSink<K, V, ExactlyOnce>, PeridotEngineRuntimeError> {
+        let subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
+        } 
+
+        let mut config = app_engine.config.clients_config().clone();
+
+        config.set("transactional.id", format!("peridot-transactional-id-{}", topic));
+
+        let producer = BaseProducer::from_config(
+            &config
+        )?;
+
+        while let Err(e) = producer.init_transactions(Duration::from_millis(1000)) {
+            warn!("Failed to initialize transactions: {}", e);
+            warn!("Retrying...");
+        };
+
+        Ok(PSink::<K, V, ExactlyOnce>::new(producer, app_engine.consumer.clone(), topic))
+    }
+}
+
+impl AppEngine<AtMostOnce> {
+    pub async fn table<K, V, B>(
+        app_engine: Arc<AppEngine<AtMostOnce>>,
+        topic: String,
+    ) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError>
+    where
+        B: StateBackend
+            + ReadableStateBackend<V>
+            + WriteableStateBackend<V>
+            + Send
+            + Sync
+            + 'static,
+        K: Send + Sync + 'static,
+        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    {
+        let mut subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+    
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::TableCreationError(
+                error::TableCreationError::TableAlreadyExists,
+            ));
+        }
+    
+        subscription.push(topic.clone());
+    
+        app_engine
+            .consumer
+            .subscribe(
+                subscription
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .as_slice(),
+            )
+            .expect("Failed to subscribe to topic.");
+    
+        app_engine.state_streams.insert(topic.clone());
+    
+        let (queue_sender, queue_receiver) =
+            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+    
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+    
+        let commit_waker = app_engine.waker_context.commit_waker();
+    
+        let backend = B::with_topic_name_and_commit_log(
+            topic.as_str(), 
+            app_engine.downstream_commit_logs.clone()
+        ).await;
+    
+        let state_store: StateStore<B, V> = StateStore::try_new(
+            topic,
+            backend,
+            app_engine.engine_state.clone(),
+            commit_waker,
+            queue_receiver,
+        )?;
+    
+        Ok(PTable::<K, V, B>::new(Arc::new(state_store)))
+    }
+    
+    pub async fn stream(
+        app_engine: Arc<AppEngine<AtMostOnce>>,
+        topic: String,
+    ) -> Result<PStream<AtMostOnce>, PeridotEngineRuntimeError> {
+    
+        let mut subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+    
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::TableCreationError(
+                error::TableCreationError::TableAlreadyExists,
+            ));
+        }
+    
+        subscription.push(topic.clone());
+    
+        app_engine
+            .consumer
+            .subscribe(
+                subscription
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .as_slice(),
+            )
+            .expect("Failed to subscribe to topic.");
+    
+        //app_engine.state_streams.insert(topic.clone());
+    
+        let (queue_sender, queue_receiver) =
+            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+    
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+    
+        let commit_waker = app_engine.waker_context.commit_waker();
+    
+        Ok(PStream::new(
+            topic,
+            app_engine.downstream_commit_logs.clone(),
+            app_engine.engine_state.clone(),
+            commit_waker,
+            queue_receiver,
+        ))
+    }
+
+    pub async fn sink<K, V>(
+        app_engine: Arc<AppEngine<AtMostOnce>>,
+        topic: String,
+    ) -> Result<PSink<K, V, AtMostOnce>, PeridotEngineRuntimeError> {
+        let subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
+        } 
+
+        let producer = BaseProducer::from_config(
+            app_engine.config.clients_config()
+        )?;
+
+        Ok(PSink::<K, V, AtMostOnce>::new(producer, app_engine.consumer.clone(), topic))
+    }
+}
+
+impl AppEngine<AtLeastOnce> {
+    pub async fn table<K, V, B>(
+        app_engine: Arc<AppEngine<AtLeastOnce>>,
+        topic: String,
+    ) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError>
+    where
+        B: StateBackend
+            + ReadableStateBackend<V>
+            + WriteableStateBackend<V>
+            + Send
+            + Sync
+            + 'static,
+        K: Send + Sync + 'static,
+        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    {
+        let mut subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+    
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::TableCreationError(
+                error::TableCreationError::TableAlreadyExists,
+            ));
+        }
+    
+        subscription.push(topic.clone());
+    
+        app_engine
+            .consumer
+            .subscribe(
+                subscription
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .as_slice(),
+            )
+            .expect("Failed to subscribe to topic.");
+    
+        app_engine.state_streams.insert(topic.clone());
+    
+        let (queue_sender, queue_receiver) =
+            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+    
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+    
+        let commit_waker = app_engine.waker_context.commit_waker();
+    
+        let backend = B::with_topic_name_and_commit_log(
+            topic.as_str(), 
+            app_engine.downstream_commit_logs.clone()
+        ).await;
+    
+        let state_store: StateStore<B, V> = StateStore::try_new(
+            topic,
+            backend,
+            app_engine.engine_state.clone(),
+            commit_waker,
+            queue_receiver,
+        )?;
+    
+        Ok(PTable::<K, V, B>::new(Arc::new(state_store)))
+    }
+    
+    pub async fn stream(
+        app_engine: Arc<AppEngine<AtLeastOnce>>,
+        topic: String,
+    ) -> Result<PStream<AtLeastOnce>, PeridotEngineRuntimeError> {
+    
+        let mut subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+    
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::TableCreationError(
+                error::TableCreationError::TableAlreadyExists,
+            ));
+        }
+    
+        subscription.push(topic.clone());
+    
+        app_engine
+            .consumer
+            .subscribe(
+                subscription
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .as_slice(),
+            )
+            .expect("Failed to subscribe to topic.");
+    
+        //app_engine.state_streams.insert(topic.clone());
+    
+        let (queue_sender, queue_receiver) =
+            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
+    
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+    
+        let commit_waker = app_engine.waker_context.commit_waker();
+    
+        Ok(PStream::new(
+            topic,
+            app_engine.downstream_commit_logs.clone(),
+            app_engine.engine_state.clone(),
+            commit_waker,
+            queue_receiver,
+        ))
+    }
+
+    pub async fn sink<K, V>(
+        app_engine: Arc<AppEngine<AtLeastOnce>>,
+        topic: String,
+    ) -> Result<PSink<K, V, AtLeastOnce>, PeridotEngineRuntimeError> {
+        let subscription = app_engine
+            .consumer
+            .subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .into_iter()
+            .map(|tp| tp.topic().to_string())
+            .collect::<Vec<String>>();
+
+        if subscription.contains(&topic) {
+            return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
+        } 
+
+        let producer = BaseProducer::from_config(
+            app_engine.config.clients_config()
+        )?;
+
+        Ok(PSink::<K, V, AtLeastOnce>::new(producer, app_engine.consumer.clone(), topic))
     }
 }
