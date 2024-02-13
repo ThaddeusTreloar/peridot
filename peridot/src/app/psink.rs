@@ -71,8 +71,17 @@ where I: TryIntoRecordParts<K, V> + MessageContext,
         _cx: &mut Context<'_>,
     ) -> Poll<Result<(), Self::Error>> {
         info!("Starting transaction");
-
-        self.producer.begin_transaction().expect("Failed to begin transaction");
+        match self.producer.begin_transaction() {
+            Ok(_) => (),
+            Err(KafkaError::Transaction(e)) => {
+                info!("Failed to start transaction: {}, {}", e.code(), e);
+                return Poll::Ready(Ok(()));
+            },
+            Err(e) => {
+                info!("Failed to start transaction: {}", e);
+                return Poll::Ready(Ok(()));
+            },
+        };
 
         Poll::Ready(Ok(()))
     }
@@ -81,7 +90,7 @@ where I: TryIntoRecordParts<K, V> + MessageContext,
         self: Pin<&mut Self>,
         item: I,
     ) -> Result<(), Self::Error> {
-    
+
         let topic = item.consumer_topic();
         let partition = item.consumer_partition();
         let offset = item.consumer_offset();
@@ -91,6 +100,8 @@ where I: TryIntoRecordParts<K, V> + MessageContext,
 
         let record = parts
             .into_record(&self.topic);
+
+        info!("Sending message: {:?}", record);
 
         let group_meta = self.consumer_ref.group_metadata().expect("No group metadata");
 
@@ -125,6 +136,11 @@ where I: TryIntoRecordParts<K, V> + MessageContext,
     ) -> Poll<Result<(), Self::Error>> {
         info!("Commiting transaction");
 
+        if self.producer.in_flight_count() < 1 {
+            info!("No in-flight messages, skipping transaction commit");
+            return Poll::Ready(Ok(()));
+        }
+
         while let Err(e) = self.producer.commit_transaction(Duration::from_millis(1000)) {
             match e {
                 KafkaError::Transaction(e) => {
@@ -141,6 +157,8 @@ where I: TryIntoRecordParts<K, V> + MessageContext,
                 },
             }
         }
+
+        info!("Transaction committed!");
         
         self.producer.begin_transaction().expect("Failed to begin transaction");
 

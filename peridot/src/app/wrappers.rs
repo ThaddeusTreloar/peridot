@@ -202,7 +202,7 @@ where K: PDeserialize,
                 |h| h.iter().map(
                     |h| (String::from(h.key), h.value.expect("No Header").to_vec())
                 ).collect::<Vec<(String, Vec<u8>)>>()
-            ).unwrap();
+            ).unwrap_or_default();
 
         Self {
             consumer_topic: msg.topic().to_string(),

@@ -61,13 +61,14 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut source = ClientConfig::new();
 
+    let group = "rust-test25";
+
     source
-        .set("bootstrap.servers", "servicesaustralia.com.au:29092")
+        .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
-        .set("group.id", "rust-test22")
-        .set("auto.offset.reset", "earliest")
-        .set("transactional.id", format!("peridot-transactional-id-{}", "topic"))
+        .set("group.id", group)
+        .set("auto.offset.reset", "latest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
     let app = Arc::new(PeridotApp::<ExactlyOnce>::from_client_config(&source)?);
@@ -80,7 +81,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .stream("changeOfAddress").await?;
 
     let mut sink = app
-        .sink::<String, Json<ChangeOfAddress>>("orgTopic.a").await?;
+        .sink::<String, Json<ChangeOfAddress>>("genericTopic").await?;
     
     app.run().await?;
     
@@ -88,8 +89,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let filter_func = |kv: &KeyValueMessage<String, (ChangeOfAddress, ConsentGrant)>| {
         let maybe_grant = kv.value().1.map
-            .get("servicesaustralia.com.au")
-            .and_then(|f|f.get("medicare.com.au"))
+            .get("DomainAlpha")
+            .and_then(|f|f.get("DomainBravo"))
             .and_then(|f|f.get("changeOfAddress"));
 
         let result = match maybe_grant {

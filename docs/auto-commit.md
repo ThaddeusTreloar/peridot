@@ -1,3 +1,3 @@
 # Auto Commit
 
-Raft uses transactional producers to ensure exactly once semantics and as such is incompatible with "enable.auto.commit=true".
+When Raft is running with exactly once semantics, "enable.auto.commit=true" option must be disable as it is incompatible with this mode.
