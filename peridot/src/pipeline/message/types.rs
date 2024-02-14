@@ -132,7 +132,15 @@ pub trait PatchMessage<K, V, RK, RV> {
 
 
 pub struct Value<K> {
-    value: K
+    pub value: K
+}
+
+impl <K> From<K> for Value<K> {
+    fn from(value: K) -> Self {
+        Self {
+            value
+        }
+    }
 }
 
 impl <K, V> FromMessage<K, V> for Value<V> 
@@ -167,6 +175,12 @@ where K: Clone,
 pub struct KeyValue<K, V> {
     key: K,
     value: V
+}
+
+impl <K, V> From<(K, V)> for KeyValue<K, V> {
+    fn from((key, value): (K, V)) -> Self {
+        Self { key, value }
+    }
 }
 
 impl <K, V> FromMessage<K, V> for KeyValue<K, V> 

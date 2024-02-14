@@ -1,4 +1,4 @@
-use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData};
+use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData, sync::Arc};
 
 use crate::engine::QueueMetadata;
 
@@ -11,7 +11,7 @@ pub trait MessageStream<K, V> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Message<K, V>>>;
 }
 
-pub trait MessageStreamExt {}
+pub trait MessageStreamExt<K, V>: MessageStream<K, V> {}
 
 pub struct PipelineStage<M, K, V> {
     pub queue_metadata: QueueMetadata,
@@ -33,16 +33,17 @@ where
         }
     }
 
-    /*
-    pub fn map<E, R, F, RK, RV>(self, f: F) -> PipelineStage<MapMessage<M, F, E, R, K, V>, RK, RV>
+    pub fn map<E, R, F, RK, RV>(self, f: Arc<F>) -> PipelineStage<MapMessage<M, F, E, R, K, V>, RK, RV>
     where
-        F: FnMut(E) -> R,
+        F: Fn(E) -> R,
         E: FromMessage<K, V>,
         R: PatchMessage<K, V, RK, RV>,
         Self: Sized,
     {
-        let wrapped = MapMessage::new(self.message_stream, f);
+        let Self { queue_metadata, message_stream, .. } = self;
 
-        PipelineStage::new(self.queue_metadata, wrapped)
-    } */
+        let wrapped = MapMessage::new(message_stream, f);
+
+        PipelineStage::new(queue_metadata, wrapped)
+    }
 }

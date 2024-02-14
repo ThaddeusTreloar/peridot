@@ -97,7 +97,7 @@ impl <G> PStream<G> {
         });
     }
 
-    pub fn stream<S>(self) -> UnboundedReceiverStream<OwnedMessage> 
+    pub fn stream(self) -> UnboundedReceiverStream<OwnedMessage> 
     {
         self.output_stream
     }

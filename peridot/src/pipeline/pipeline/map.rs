@@ -41,7 +41,7 @@ where
     E: FromMessage<K, V>,
     R: PatchMessage<K, V, RK, RV>
 {
-    fn new(inner: S, callback: F) -> Self {
+    pub fn new(inner: S, callback: F) -> Self {
         Self {
             inner,
             callback: Arc::new(callback),
@@ -67,17 +67,14 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<MapMessage<M, F, E, R, K, V>, RK, RV>>> {
         let this = self.project();
 
-        let PipelineStage { queue_metadata, message_stream, .. } = match this.inner.poll_next(cx) {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(None) => return Poll::Ready(None),
-            Poll::Ready(Some(queue)) => queue,
-        };
-
-        let mapped_queue: MapMessage<M, F, E, R, K, V> = MapMessage::new(message_stream, this.callback.clone());
-
-        Poll::Ready(
-            Option::Some(
-                PipelineStage::new(queue_metadata, mapped_queue)
-        ))
+        match this.inner.poll_next(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Some(queue)) => Poll::Ready(
+                Option::Some(
+                    queue.map(this.callback.clone())
+                )   
+            ),
+        }
     }
 }

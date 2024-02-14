@@ -8,6 +8,8 @@ use peridot::app::ptable::{PTable, PeridotTable};
 use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
 use peridot::app::PeridotApp;
+use peridot::pipeline::message::types::{Value, KeyValue};
+use peridot::pipeline::pipeline::PipelineStreamExt;
 use peridot::pipeline::serde_ext::Json;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use peridot::state::backend::persistent::PersistentStateBackend;
@@ -76,11 +78,29 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
 
     let stream = app
-        .stream("changeOfAddress").await?;
+        .stream("changeOfAddress").await?
+        .stream()
+        .map(|f| async {
+            f
+        }).map(
+            |f| {
+                f
+            }
+        ).filter_map(
+            |s| {
+                Some(s)
+            }
+        );
 
     let engine = app.engine_ref();
 
     let pstream = PStream::<ExactlyOnce>::new_new::<String, Json<ChangeOfAddress>>();
+
+    let mappped = pstream.map(
+        |v: Value<ChangeOfAddress>| {
+            KeyValue::from((String::from("Asd"), v.value.city))
+        }
+    );
 
     //let mut sink = app
     //    .sink::<String, Json<ChangeOfAddress>>("genericTopic").await?;

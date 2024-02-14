@@ -13,7 +13,9 @@ use crate::{
     pipeline::serde_ext::PDeserialize,
 };
 
-use super::message::{PipelineStage, MessageStream, types::{Message, TryFromBorrowedMessage}};
+use self::map::MapPipeline;
+
+use super::message::{PipelineStage, MessageStream, types::{Message, TryFromBorrowedMessage, FromMessage, PatchMessage}};
 
 pub mod map;
 
@@ -23,7 +25,23 @@ where M: MessageStream<K, V>,
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<M, K, V>>>;
 }
 
-pub trait PipelineStreamExt {}
+pub trait PipelineStreamExt<M, K, V>: PipelineStream<M, K, V> 
+where M: MessageStream<K, V> {
+
+    fn map<E, R, F, RK, RV>(self, f: F) -> MapPipeline<Self, M, K, V, F, E, R, RK, RV>
+    where
+        F: Fn(E) -> R,
+        E: FromMessage<K, V>,
+        R: PatchMessage<K, V, RK, RV>,
+        Self: Sized,
+    {
+        MapPipeline::new(self, f)
+    }
+}
+
+impl <P, M, K, V> PipelineStreamExt<M, K, V> for P
+where P: PipelineStream<M, K, V>,
+    M: MessageStream<K, V>{}
 
 pin_project! {
     pub struct Pipeline<KS, VS>
