@@ -3,15 +3,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
-use peridot::app::app_engine::util::{AtLeastOnce, ExactlyOnce};
+use peridot::app::pstream::PStream;
 use peridot::app::ptable::{PTable, PeridotTable};
-use peridot::app::wrappers::{ValueMessage, MessageKey, MessageValue, KeyValueMessage, TransferMessageContext, TransferMessageContextAndKey};
+use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
 use peridot::app::PeridotApp;
-use peridot::serde_ext::Json;
+use peridot::pipeline::serde_ext::Json;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use peridot::state::backend::persistent::PersistentStateBackend;
-use peridot::stream::types::{KeyValue, StringKeyValue};
 use rdkafka::ClientConfig;
 
 use peridot::state::ReadableStateStore;
@@ -54,7 +53,6 @@ struct Client {
     owner: String,
 }
 
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
@@ -80,45 +78,15 @@ async fn main() -> Result<(), anyhow::Error> {
     let stream = app
         .stream("changeOfAddress").await?;
 
-    let mut sink = app
-        .sink::<String, Json<ChangeOfAddress>>("genericTopic").await?;
+    let engine = app.engine_ref();
+
+    let pstream = PStream::<ExactlyOnce>::new_new::<String, Json<ChangeOfAddress>>();
+
+    //let mut sink = app
+    //    .sink::<String, Json<ChangeOfAddress>>("genericTopic").await?;
     
     app.run().await?;
     
-    let table_state = table.get_store()?;
-
-    match stream
-        .stream::<KeyValueMessage<_, _>, (String, Json<ChangeOfAddress>)>()
-        .filter_map(
-            |kv: KeyValueMessage<String, ChangeOfAddress> | {
-                let key = kv.key().clone();
-                let value = kv.value().clone();
-
-                async {
-                    info!("Getting consent for key: {}", key);
-                    match table_state.get(&key).await {
-                        Some(consent_grant) => {
-                            let s = kv.map(key, (value, consent_grant));
-
-                            Some(s)
-                        },
-                        None => {
-                            info!("Failed to get consent for key: {}", key);
-                            None
-                        }
-                    }
-                }
-        })
-        .filter(filter_func)
-        .map(|kv|{
-            let value = kv.value().0.clone();
-
-            Ok(kv.map_value::<KeyValueMessage<_,_>>(value))
-        })
-        .forward(&mut sink).await {
-        Ok(_) => info!("Stream completed"),
-        Err(e) => info!("Stream failed: {:?}", e),
-    };
 
     Ok(())
 }

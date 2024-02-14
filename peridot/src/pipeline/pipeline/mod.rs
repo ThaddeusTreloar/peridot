@@ -1,27 +1,73 @@
+use futures::{Stream, StreamExt};
+use pin_project_lite::pin_project;
 use std::{
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
-
-use futures::{Stream, StreamExt};
-
-use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::error;
-
-use pin_project_lite::pin_project;
 
 use crate::{
     app::PeridotPartitionQueue,
-    pipeline::message::{Message, TryFromBorrowedMessage},
-    serde_ext::PDeserialize,
+    engine::QueueReceiver,
+    pipeline::serde_ext::PDeserialize,
 };
 
-use self::stage::{QueueMetadata, PipelineStage};
+use super::message::{PipelineStage, MessageStream, types::{Message, TryFromBorrowedMessage}};
 
-use super::MessageStream;
+pub mod map;
 
-pub mod stage;
+pub trait PipelineStream<M, K, V> 
+where M: MessageStream<K, V>,
+{
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<M, K, V>>>;
+}
+
+pub trait PipelineStreamExt {}
+
+pin_project! {
+    pub struct Pipeline<KS, VS>
+    where KS: PDeserialize,
+        VS: PDeserialize
+    {
+        #[pin]
+        queue_stream: QueueReceiver,
+        _key_serialiser: PhantomData<KS>,
+        _value_serialiser: PhantomData<VS>
+    }
+}
+
+impl <KS, VS> Pipeline<KS, VS>
+where 
+    KS: PDeserialize,
+    VS: PDeserialize 
+{
+    pub fn new(queue_stream: QueueReceiver) -> Self {
+        Self {
+            queue_stream,
+            _key_serialiser: PhantomData,
+            _value_serialiser: PhantomData,
+        }
+    }
+}
+impl<KS, VS> PipelineStream<QueueConnector<KS, VS>, KS::Output, VS::Output> for Pipeline<KS, VS>
+where
+    KS: PDeserialize,
+    VS: PDeserialize,
+{
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<QueueConnector<KS, VS>, KS::Output, VS::Output>>> {
+        let (metadata, queue) = match self.queue_stream.poll_recv(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(None) => return Poll::Ready(None),
+            Poll::Ready(Some(val)) => val,
+        };
+
+        Poll::Ready(Option::Some(PipelineStage::new(
+            metadata,
+            QueueConnector::<KS, VS>::new(queue),
+        )))
+    }
+}
 
 pin_project! {
     pub struct QueueConnector<KS, VS> {
@@ -76,38 +122,5 @@ where
         };
 
         Poll::Ready(msg)
-    }
-}
-
-pin_project! {
-    pub struct Pipeline<KS, VS>
-    where KS: PDeserialize,
-        VS: PDeserialize
-    {
-        #[pin]
-        queue_stream: UnboundedReceiver<(QueueMetadata, PeridotPartitionQueue)>,
-        _key_serialiser: PhantomData<KS>,
-        _value_serialiser: PhantomData<VS>
-    }
-}
-
-impl<KS, VS> Stream for Pipeline<KS, VS>
-where
-    KS: PDeserialize,
-    VS: PDeserialize,
-{
-    type Item = PipelineStage<QueueConnector<KS, VS>, KS::Output, VS::Output>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let (metadata, queue) = match self.queue_stream.poll_recv(cx) {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(None) => return Poll::Ready(None),
-            Poll::Ready(Some(val)) => val,
-        };
-
-        Poll::Ready(Option::Some(PipelineStage::new(
-            metadata,
-            QueueConnector::<KS, VS>::new(queue),
-        )))
     }
 }

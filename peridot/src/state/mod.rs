@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::broadcast::Receiver;
 use tracing::{info, trace};
 
-use crate::app::{app_engine::EngineState, extensions::Commit, PeridotPartitionQueue};
+use crate::{app::{extensions::Commit, PeridotPartitionQueue}, engine::EngineState};
 
 use self::{
     backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},

@@ -1,6 +1,6 @@
 use rdkafka::error::KafkaError;
 
-use super::app_engine::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
+use crate::engine::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
 
 
 #[derive(Debug, thiserror::Error)]

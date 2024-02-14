@@ -1,4 +1,4 @@
-use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData};
+use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData, sync::Arc};
 
 use crate::pipeline::message::{FromMessage, PatchMessage, Message};
 
@@ -7,10 +7,10 @@ use pin_project_lite::pin_project;
 use super::MessageStream;
 
 pin_project! {
-    pub struct MessageMap<S, F, E, R, K, V> {
+    pub struct MapMessage<S, F, E, R, K, V> {
         #[pin]
         stream: S,
-        callback: F,
+        callback: Arc<F>,
         _extractor_type: PhantomData<E>,
         _reassembler_type: PhantomData<R>,
         _source_key_type: PhantomData<K>,
@@ -18,8 +18,8 @@ pin_project! {
     }
 }
 
-impl <S, F, E, R, K, V> MessageMap<S, F, E, R, K, V> {
-    pub fn new(stream: S, callback: F) -> Self {
+impl <S, F, E, R, K, V> MapMessage<S, F, E, R, K, V> {
+    pub fn new(stream: S, callback: Arc<F>) -> Self {
         Self {
             stream,
             callback,
@@ -31,9 +31,9 @@ impl <S, F, E, R, K, V> MessageMap<S, F, E, R, K, V> {
     }
 }
 
-impl <S, F, E, R, K, V, RK, RV> MessageStream<RK, RV> for MessageMap<S, F, E, R, K, V> 
+impl <S, F, E, R, K, V, RK, RV> MessageStream<RK, RV> for MapMessage<S, F, E, R, K, V> 
 where S: MessageStream<K, V>,
-    F: FnMut(E) -> R,
+    F: Fn(E) -> R,
     E: FromMessage<K, V>, 
     R: PatchMessage<K, V, RK, RV>,
     Self: Sized 

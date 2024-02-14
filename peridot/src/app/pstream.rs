@@ -7,9 +7,12 @@ use rdkafka::{message::{BorrowedMessage, OwnedMessage}, consumer::{stream_consum
 use tokio::sync::broadcast::Receiver;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::state::backend::CommitLog;
+use crate::{
+    engine::{EngineState, util::{AtMostOnce, AtLeastOnce, ExactlyOnce}, QueueForwarder},
+    state::backend::CommitLog, pipeline::{pipeline::Pipeline, serde_ext::PDeserialize},
+};
 
-use super::{app_engine::{EngineState, util::{AtMostOnce, AtLeastOnce, ExactlyOnce}}, extensions::Commit, PeridotPartitionQueue, wrappers::{MessageContext, FromOwnedMessage}};
+use super::{extensions::Commit, PeridotPartitionQueue};
 
 pub struct PStream<G = ExactlyOnce> {
     output_stream: UnboundedReceiverStream<OwnedMessage>,
@@ -37,6 +40,28 @@ impl <G> PStream<G> {
             commit_waker: Arc::new(commit_waker),
             phantom_data: PhantomData,
         }
+    }
+
+    pub fn new_new<KS, VS>(
+        // topic: String,
+        //commit_logs: Arc<CommitLog>,
+        //engine_state: Arc<AtomicCell<EngineState>>,
+        //commit_waker: Receiver<Commit>,
+        //queue_receiver: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
+    ) -> Pipeline<KS, VS> 
+    where
+        KS: PDeserialize,
+        VS: PDeserialize,
+    {
+        let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        Self::start_new_forwarding_thread(queue_sender);
+
+        Pipeline::new(queue_receiver)
+    }
+
+    pub fn start_new_forwarding_thread(forwarder: QueueForwarder) {
+        unimplemented!("")
     }
 
     pub fn start_forwarding_thread(
@@ -71,28 +96,9 @@ impl <G> PStream<G> {
             }
         });
     }
-}
 
-impl PStream<AtMostOnce> {
-    pub fn stream<M>(self) -> impl Stream<Item = M>
-    where M: From<OwnedMessage>
+    pub fn stream<S>(self) -> UnboundedReceiverStream<OwnedMessage> 
     {
-        self.output_stream.map(From::<OwnedMessage>::from)
-    }
-}
-
-impl PStream<AtLeastOnce> {
-    pub fn stream<M>(self) -> impl Stream<Item = M>
-    where M: From<OwnedMessage>
-    {
-        self.output_stream.map(From::<OwnedMessage>::from)
-    }
-}
-
-impl PStream<ExactlyOnce> {
-    pub fn stream<M, S>(self) -> impl Stream<Item = M>
-    where M: FromOwnedMessage<S> + MessageContext
-    {
-        self.output_stream.map(FromOwnedMessage::from_owned_message)
+        self.output_stream
     }
 }

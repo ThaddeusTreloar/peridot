@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
-use peridot::app::app_engine::util::{AtLeastOnce, ExactlyOnce};
+use peridot::app::engine::util::{AtLeastOnce, ExactlyOnce};
 use peridot::app::ptable::{PTable, PeridotTable};
 use peridot::app::wrappers::{ValueMessage, MessageKey, MessageValue, KeyValueMessage, TransferMessageContext, TransferMessageContextAndKey};
 use peridot::init::init_tracing;

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use peridot::app::app_engine::util::AtLeastOnce;
+use peridot::app::engine::util::AtLeastOnce;
 use peridot::app::ptable::{PTable, PeridotTable};
 use peridot::init::init_tracing;
 use peridot::app::PeridotApp;

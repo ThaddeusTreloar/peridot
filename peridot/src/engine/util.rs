@@ -1,6 +1,29 @@
+use rdkafka::consumer::{Consumer, ConsumerContext};
 use tracing::warn;
 
+pub (crate) trait ConsumerUtils<C>: Consumer<C> 
+where C: ConsumerContext
+{
+    fn get_subscribed_topics(&self) -> Vec<String> {
+        self.subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .iter()
+            .map(|t| t.topic().to_string())
+            .collect::<Vec<String>>()
+    }
 
+    fn is_subscribed_to(&self, topic: &str) -> bool {
+        self.subscription()
+            .expect("Failed to get subscription.")
+            .elements()
+            .iter()
+            .map(|t| t.topic())
+            .any(|t|t == topic)
+    }
+}
+
+impl <T, C> ConsumerUtils<C> for T where T: Consumer<C>, C: ConsumerContext {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryGuarantee {
@@ -30,9 +53,12 @@ where
 
 pub trait DeliveryGuaranteeType {}
 
+#[derive(Default)]
 pub struct AtMostOnce {}
 impl DeliveryGuaranteeType for AtMostOnce {}
+#[derive(Default)]
 pub struct AtLeastOnce {}
 impl DeliveryGuaranteeType for AtLeastOnce {}
+#[derive(Default)]
 pub struct ExactlyOnce {}
 impl DeliveryGuaranteeType for ExactlyOnce {}

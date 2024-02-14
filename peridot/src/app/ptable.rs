@@ -1,27 +1,14 @@
-use std::{sync::Arc, pin::Pin, task::{Context, Poll}};
+use std::sync::Arc;
 
-use futures::{Stream, stream::empty, StreamExt, Sink};
-use rdkafka::{
-    consumer::{stream_consumer::StreamPartitionQueue, StreamConsumer},
-    ClientConfig, message::BorrowedMessage,
-};
-use tracing::info;
-
-use crate::{
-    app::extensions::PeridotConsumerContext,
-    state::{
-        backend::{
-            persistent::PersistentStateBackend, ReadableStateBackend, StateBackend,
-            WriteableStateBackend,
-        },
-        StateStore,
-    }, stream::{types::{KeyValue, IntoRecordParts}, self},
+use crate::state::{
+    backend::{
+        persistent::PersistentStateBackend, ReadableStateBackend, StateBackend,
+        WriteableStateBackend,
+    },
+    StateStore,
 };
 
-use super::{
-    app_engine::{AppEngine},
-    error::{PeridotAppCreationError, PeridotAppRuntimeError},
-};
+use super::error::PeridotAppRuntimeError;
 
 pub trait PeridotTable<K, V, B>
 where
@@ -41,7 +28,7 @@ where
     _value_type: std::marker::PhantomData<V>,
 }
 
-impl <'a, K, V, B> PTable<'a, K, V, B>
+impl<'a, K, V, B> PTable<'a, K, V, B>
 where
     B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
     K: Send + Sync + 'static,
