@@ -17,7 +17,7 @@ use tracing::info;
 
 use crate::{
     app::extensions::PeridotConsumerContext,
-    engine::{util::{AtLeastOnce, ExactlyOnce}, QueueMetadata}, pipeline::{serde_ext::PSerialize, message::{MessageStream, PipelineStage}},
+    engine::{util::{AtLeastOnce, ExactlyOnce}, QueueMetadataProtoype}, pipeline::{serde_ext::PSerialize, message::stream::{MessageStream, PipelineStage}},
 };
 
 use super::config::PeridotConfig;

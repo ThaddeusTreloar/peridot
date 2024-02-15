@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use rdkafka::message::{BorrowedMessage, Message as KafkaMessage, BorrowedHeaders, Headers as KafkaHeaders};
 
 use crate::pipeline::serde_ext::PDeserialize;
@@ -45,32 +47,42 @@ pub struct Message<K, V> {
     value: V // TODO: Option?
 }
 
+impl <K, V> Display for Message<K, V> 
+where K: Display,
+      V: Display
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Message {{ topic: {}, timestamp: {:?}, partition: {}, offset: {}, headers: {:?}, key: {}, value: {} }}", 
+            self.topic, self.timestamp, self.partition, self.offset, self.headers, self.key, self.value)
+    }
+}
+
 impl <K, V> Message<K, V> {
-    fn key(&self) -> &K {
+    pub fn key(&self) -> &K {
         &self.key
     }
 
-    fn value(&self) -> &V {
+    pub fn value(&self) -> &V {
         &self.value
     }
 
-    fn topic(&self) -> &str {
+    pub fn topic(&self) -> &str {
         &self.topic
     }
 
-    fn timestamp(&self) -> rdkafka::message::Timestamp {
+    pub fn timestamp(&self) -> rdkafka::message::Timestamp {
         self.timestamp
     }
 
-    fn partition(&self) -> i32 {
+    pub fn partition(&self) -> i32 {
         self.partition
     }
 
-    fn offset(&self) -> i64 {
+    pub fn offset(&self) -> i64 {
         self.offset
     }
 
-    fn headers(&self) -> &MessageHeaders {
+    pub fn headers(&self) -> &MessageHeaders {
         &self.headers
     }
 }
@@ -173,8 +185,8 @@ where K: Clone,
 }
 
 pub struct KeyValue<K, V> {
-    key: K,
-    value: V
+    pub key: K,
+    pub value: V
 }
 
 impl <K, V> From<(K, V)> for KeyValue<K, V> {

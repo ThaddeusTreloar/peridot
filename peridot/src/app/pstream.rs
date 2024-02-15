@@ -1,6 +1,6 @@
 use std::{sync::Arc, marker::PhantomData};
 
-use tracing::error;
+use tracing::{error, info};
 use crossbeam::atomic::AtomicCell;
 use futures::{Stream, StreamExt, stream::empty};
 use rdkafka::{message::{BorrowedMessage, OwnedMessage}, consumer::{stream_consumer::StreamPartitionQueue, ConsumerContext}, error::KafkaError};
@@ -8,97 +8,54 @@ use tokio::sync::broadcast::Receiver;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{
-    engine::{EngineState, util::{AtMostOnce, AtLeastOnce, ExactlyOnce}, QueueForwarder},
-    state::backend::CommitLog, pipeline::{pipeline::Pipeline, serde_ext::PDeserialize},
+    engine::{EngineState, util::{AtMostOnce, AtLeastOnce, ExactlyOnce}, QueueForwarder, QueueMetadataProtoype, RawQueueReceiver, Queue},
+    state::backend::CommitLog, pipeline::{serde_ext::PDeserialize, pipeline::stream::stream::Pipeline},
 };
 
 use super::{extensions::Commit, PeridotPartitionQueue};
 
-pub struct PStream<G = ExactlyOnce> {
-    output_stream: UnboundedReceiverStream<OwnedMessage>,
-    engine_state: Arc<AtomicCell<EngineState>>,
-    commit_logs: Arc<CommitLog>,
+pub struct PStream {
+    // output_stream: UnboundedReceiverStream<OwnedMessage>,
+    // engine_state: Arc<AtomicCell<EngineState>>,
+    // commit_logs: Arc<CommitLog>,
+    consumer_metadata: Arc<QueueMetadataProtoype>,
     commit_waker: Arc<Receiver<Commit>>,
-    phantom_data: PhantomData<G>,
 }
 
-impl <G> PStream<G> {
-    pub fn new(topic: String,
-        commit_logs: Arc<CommitLog>,
-        engine_state: Arc<AtomicCell<EngineState>>,
-        commit_waker: Receiver<Commit>,
-        queue_receiver: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
-    ) -> Self {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+async fn forwarding_thread(
+    prototype_metadata: Arc<QueueMetadataProtoype>,
+    mut reciever: RawQueueReceiver, 
+    forwarder: QueueForwarder
+) {
+    while let Some((partition, queue)) = reciever.recv().await {
+        let queue_metadata = prototype_metadata.map(partition);
 
-        Self::start_forwarding_thread(sender, queue_receiver);
+        info!("Recieved new queue item for topic: {}, partition: {}", queue_metadata.source_topic(), queue_metadata.partition());
 
-        Self {
-            output_stream: UnboundedReceiverStream::new(receiver),
-            engine_state,
-            commit_logs,
-            commit_waker: Arc::new(commit_waker),
-            phantom_data: PhantomData,
-        }
+        forwarder.send((queue_metadata, queue))
+            .expect("Failed to send queue item");
     }
+}
 
-    pub fn new_new<KS, VS>(
-        // topic: String,
-        //commit_logs: Arc<CommitLog>,
-        //engine_state: Arc<AtomicCell<EngineState>>,
-        //commit_waker: Receiver<Commit>,
-        //queue_receiver: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
-    ) -> Pipeline<KS, VS> 
+impl PStream {
+    pub fn new<KS, VS, G>(
+        queue_metadata_prototype: QueueMetadataProtoype,
+        raw_queue_receiver: RawQueueReceiver,
+    ) -> Pipeline<KS, VS, G>
     where
         KS: PDeserialize,
         VS: PDeserialize,
     {
+        let qmp_ref = Arc::new(queue_metadata_prototype);
         let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-        Self::start_new_forwarding_thread(queue_sender);
+        tokio::spawn(
+            forwarding_thread(
+                qmp_ref,
+                raw_queue_receiver,
+                queue_sender,
+        ));
 
         Pipeline::new(queue_receiver)
-    }
-
-    pub fn start_new_forwarding_thread(forwarder: QueueForwarder) {
-        unimplemented!("")
-    }
-
-    pub fn start_forwarding_thread(
-        sender: tokio::sync::mpsc::UnboundedSender<OwnedMessage>,
-        mut queue_receiver: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
-    ) {
-        tokio::spawn(async move {
-            let sender = sender;
-
-            while let Some(queue) = queue_receiver.recv().await {
-                let new_sender = sender.clone();
-
-                tokio::spawn(async move {
-                    while let msg = queue.recv().await {
-                        match msg {
-                            Ok(msg) => {
-                                match new_sender.send(msg.detach()) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        error!("Error sending message: {}", e);
-                                        break;
-                                    }
-                                };
-                            }
-                            Err(e) => {
-                                error!("Error receiving message: {}", e);
-                                break;
-                            }
-                        }
-                    }
-                });
-            }
-        });
-    }
-
-    pub fn stream(self) -> UnboundedReceiverStream<OwnedMessage> 
-    {
-        self.output_stream
     }
 }

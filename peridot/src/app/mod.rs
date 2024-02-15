@@ -14,7 +14,7 @@ use tracing::info;
 use crate::{
     app::extensions::PeridotConsumerContext,
     engine::{AppEngine, util::{ExactlyOnce, DeliveryGuaranteeType, AtMostOnce, AtLeastOnce}},
-    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
+    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend}, pipeline::{serde_ext::PDeserialize, pipeline::stream::stream::Pipeline},
 };
 
 use self::{
@@ -95,9 +95,13 @@ where G: DeliveryGuaranteeType
         Ok(AppEngine::<G>::table(self.engine.clone(), topic.to_string()).await?)
     }
 
-    pub async fn stream(&self, topic: &str) -> Result<PStream<G>, PeridotAppRuntimeError> {
+    pub fn stream<KS, VS>(&self, topic: &str) -> Result<Pipeline<KS, VS, G>, PeridotAppRuntimeError> 
+    where
+        KS: PDeserialize,
+        VS: PDeserialize
+    {
         info!("Creating stream for topic: {}", topic);
-        Ok(AppEngine::<G>::stream(self.engine.clone(), topic.to_string()).await?)
+        Ok(self.engine.clone().stream(topic.to_string())?)
     }
 
     pub async fn sink<K, V>(&self, topic: &str) -> Result<PSinkBuilder<G>, PeridotAppRuntimeError> {

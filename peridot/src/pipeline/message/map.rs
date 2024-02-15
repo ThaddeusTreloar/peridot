@@ -1,15 +1,21 @@
-use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData, sync::Arc};
+use std::{
+    marker::PhantomData,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
-use crate::pipeline::message::{FromMessage, PatchMessage, Message};
+use crate::pipeline::message::types::{FromMessage, Message, PatchMessage};
 
 use pin_project_lite::pin_project;
+use tracing::info;
 
-use super::MessageStream;
+use super::stream::MessageStream;
 
 pin_project! {
-    pub struct MapMessage<S, F, E, R, K, V> {
+    pub struct MapMessage<K, V, M, F, E, R> {
         #[pin]
-        stream: S,
+        stream: M,
         callback: Arc<F>,
         _extractor_type: PhantomData<E>,
         _reassembler_type: PhantomData<R>,
@@ -18,8 +24,8 @@ pin_project! {
     }
 }
 
-impl <S, F, E, R, K, V> MapMessage<S, F, E, R, K, V> {
-    pub fn new(stream: S, callback: Arc<F>) -> Self {
+impl<K, V, M, F, E, R> MapMessage<K, V, M, F, E, R> {
+    pub fn new(stream: M, callback: Arc<F>) -> Self {
         Self {
             stream,
             callback,
@@ -31,22 +37,27 @@ impl <S, F, E, R, K, V> MapMessage<S, F, E, R, K, V> {
     }
 }
 
-impl <S, F, E, R, K, V, RK, RV> MessageStream<RK, RV> for MapMessage<S, F, E, R, K, V> 
-where S: MessageStream<K, V>,
+impl<K, V, M, F, E, R, RK, RV> MessageStream<RK, RV> for MapMessage<K, V, M, F, E, R>
+where
+    M: MessageStream<K, V>,
     F: Fn(E) -> R,
-    E: FromMessage<K, V>, 
+    E: FromMessage<K, V>,
     R: PatchMessage<K, V, RK, RV>,
-    Self: Sized 
+    Self: Sized,
 {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Message<RK, RV>>> {
         let this = self.project();
         let next = this.stream.poll_next(cx);
 
+        info!("Polling next message for mapping...");
+
         let msg = match next {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(None) => return Poll::Ready(None),
-            Poll::Ready(Some(msg)) => msg
+            Poll::Ready(Some(msg)) => msg,
         };
+
+        info!("Found message, mapping...");
 
         let extractor = E::from_message(&msg);
 

@@ -1,32 +1,44 @@
-use std::{
-    fmt::Display,
-    marker::PhantomData,
-    sync::Arc,
-    time::Duration,
-};
-
+use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
+use std::ops::Deref;
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use rdkafka::{
-    consumer::{stream_consumer::StreamPartitionQueue, Consumer, StreamConsumer},
-    producer::{PARTITION_UA, BaseProducer, Producer},
-    ClientConfig, TopicPartitionList, config::FromClientConfig, topic_partition_list::TopicPartitionListElem,
+    consumer::Consumer,
+    producer::{Producer, PARTITION_UA},
+    topic_partition_list::TopicPartitionListElem,
+    ClientConfig, TopicPartitionList,
 };
-use tokio::{select, sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender}};
+use tokio::{
+    select,
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+};
 use tracing::{debug, error, info, warn};
 
-use crate::{state::{
-    backend::{
-        persistent::PersistentStateBackend, ReadableStateBackend, StateBackend,
-        WriteableStateBackend, CommitLog,
-    },
-    StateStore,
-}, app::psink::PSinkBuilder};
+use crate::{
+    app::psink::PSinkBuilder,
+    state::{
+        backend::{
+            CommitLog, ReadableStateBackend, StateBackend,
+            WriteableStateBackend,
+        },
+        StateStore,
+    }, pipeline::{pipeline::stream::stream::Pipeline, serde_ext::PDeserialize},
+};
 
-use self::{error::{PeridotEngineCreationError, PeridotEngineRuntimeError}, util::{DeliveryGuarantee, ExactlyOnce, DeliveryGuaranteeType, AtLeastOnce, AtMostOnce, ConsumerUtils}};
+use self::{
+    error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
+    util::{
+        ConsumerUtils, DeliveryGuaranteeType,
+        ExactlyOnce,
+    },
+};
 
 use crate::app::{
-    extensions::{Commit, OwnedRebalance, PeridotConsumerContext}, PeridotConsumer, PeridotPartitionQueue, ptable::PTable, pstream::PStream, psink::PSink, config::PeridotConfig,
+    config::PeridotConfig,
+    extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
+    pstream::PStream,
+    ptable::PTable,
+    PeridotConsumer, PeridotPartitionQueue,
 };
 
 pub mod error;
@@ -57,24 +69,32 @@ pub enum StateType {
 }
 
 pub type Queue = (QueueMetadata, PeridotPartitionQueue);
+
 pub type QueueForwarder = UnboundedSender<Queue>;
 pub type QueueReceiver = UnboundedReceiver<Queue>;
 
+pub type RawQueue = (i32, PeridotPartitionQueue);
+
+pub type RawQueueForwarder = UnboundedSender<RawQueue>;
+pub type RawQueueReceiver = UnboundedReceiver<RawQueue>;
+
 pub struct AppEngine<G = ExactlyOnce>
-where G: DeliveryGuaranteeType
+where
+    G: DeliveryGuaranteeType,
 {
     config: PeridotConfig,
     consumer: Arc<PeridotConsumer>,
     waker_context: Arc<PeridotConsumerContext>,
-    downstreams: Arc<DashMap<String, QueueForwarder>>,
+    downstreams: Arc<DashMap<String, RawQueueForwarder>>,
     downstream_commit_logs: Arc<CommitLog>,
     state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
     _delivery_guarantee: PhantomData<G>,
 }
 
-impl <G> AppEngine<G> 
-where G: DeliveryGuaranteeType
+impl<G> AppEngine<G>
+where
+    G: DeliveryGuaranteeType,
 {
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
         let pre_rebalance_waker = self.waker_context.pre_rebalance_waker();
@@ -91,12 +111,12 @@ where G: DeliveryGuaranteeType
         Ok(())
     }
 
-    pub fn from_config(config: & PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
+    pub fn from_config(config: &PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
         let context = PeridotConsumerContext::default();
         let consumer = config
             .clients_config()
             .create_with_context(context.clone())?;
-    
+
         Ok(Self {
             config: config.clone(),
             consumer: Arc::new(consumer),
@@ -131,6 +151,8 @@ where G: DeliveryGuaranteeType
                     .collect();
 
                 let mut count = 0;
+
+                info!("New Assigned partitions: {:?}", topic_partitions);
 
                 for (topic, partition) in topic_partitions.into_iter() {
                     count += 1;
@@ -167,18 +189,23 @@ where G: DeliveryGuaranteeType
                             if local_committed_offset < group_offset {
                                 let (low_watermark, _) = consumer
                                     .client()
-                                    .fetch_watermarks(topic.as_str(), partition, Duration::from_secs(1))
+                                    .fetch_watermarks(
+                                        topic.as_str(),
+                                        partition,
+                                        Duration::from_secs(1),
+                                    )
                                     .expect("Failed to fetch watermarks");
 
-                                info!("Locally Committed Offset: {}, Low watermark: {}", local_committed_offset, low_watermark);
+                                info!(
+                                    "Locally Committed Offset: {}, Low watermark: {}",
+                                    local_committed_offset, low_watermark
+                                );
 
-                                let max_offset = std::cmp::max(local_committed_offset, low_watermark);
+                                let max_offset =
+                                    std::cmp::max(local_committed_offset, low_watermark);
 
                                 // TODO: Seek to max(local_committed_offset, low watermark)
-                                info!(
-                                    "Seeking to max(lco, lwm) offset: {}",
-                                    max_offset
-                                );
+                                info!("Seeking to max(lco, lwm) offset: {}", max_offset);
                                 consumer
                                     .seek(
                                         topic.as_str(),
@@ -278,7 +305,8 @@ where G: DeliveryGuaranteeType
                     let topic = consumer_tp.topic();
                     let partition = consumer_tp.partition();
 
-                    let (_, high_watermark) = consumer.client()
+                    let (_, high_watermark) = consumer
+                        .client()
                         .fetch_watermarks(topic, partition, Duration::from_secs(1))
                         .expect("Failed to fetch watermarks");
 
@@ -313,12 +341,10 @@ where G: DeliveryGuaranteeType
                                     topic, partition, consumer_offset, high_watermark
                                 );
 
-                                let assignment = consumer
-                                    .assignment()
-                                    .expect("Failed to get assignment");
+                                let assignment =
+                                    consumer.assignment().expect("Failed to get assignment");
 
-                                let assignment_elements = assignment
-                                    .elements();
+                                let assignment_elements = assignment.elements();
 
                                 let stream_topics = assignment_elements
                                     .iter()
@@ -332,7 +358,7 @@ where G: DeliveryGuaranteeType
                                 }
 
                                 consumer.pause(&tp_list).expect("Failed to pause consumer");
-                                
+
                                 continue 'outer;
                             }
                             state => {
@@ -345,12 +371,9 @@ where G: DeliveryGuaranteeType
 
                 if consumer_state.load() == EngineState::Lagging {
                     consumer_state.store(EngineState::Running);
-                    let assignment = consumer
-                        .assignment()
-                        .expect("Failed to get assignment");
+                    let assignment = consumer.assignment().expect("Failed to get assignment");
 
-                    let assignment_elements = assignment
-                        .elements();
+                    let assignment_elements = assignment.elements();
 
                     let stream_topics = assignment_elements
                         .iter()
@@ -397,15 +420,15 @@ where G: DeliveryGuaranteeType
             .into_iter()
             .map(|tp| tp.topic().to_string())
             .collect::<Vec<String>>();
-    
+
         if subscription.contains(&topic) {
             return Err(PeridotEngineRuntimeError::TableCreationError(
                 error::TableCreationError::TableAlreadyExists,
             ));
         }
-    
+
         subscription.push(topic.clone());
-    
+
         app_engine
             .consumer
             .subscribe(
@@ -416,21 +439,22 @@ where G: DeliveryGuaranteeType
                     .as_slice(),
             )
             .expect("Failed to subscribe to topic.");
-    
+
         app_engine.state_streams.insert(topic.clone());
-    
+
         let (queue_sender, queue_receiver) =
-            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
-    
-        //app_engine.downstreams.insert(topic.clone(), queue_sender);
-    
+            tokio::sync::mpsc::unbounded_channel();
+
+        app_engine.downstreams.insert(topic.clone(), queue_sender);
+
         let commit_waker = app_engine.waker_context.commit_waker();
-    
+
         let backend = B::with_topic_name_and_commit_log(
-            topic.as_str(), 
-            app_engine.downstream_commit_logs.clone()
-        ).await;
-    
+            topic.as_str(),
+            app_engine.downstream_commit_logs.clone(),
+        )
+        .await;
+
         let state_store: StateStore<B, V> = StateStore::try_new(
             topic,
             backend,
@@ -438,56 +462,50 @@ where G: DeliveryGuaranteeType
             commit_waker,
             queue_receiver,
         )?;
-    
+
         Ok(PTable::<K, V, B>::new(Arc::new(state_store)))
     }
-    
-    pub async fn stream(
-        app_engine: Arc<AppEngine<G>>,
+
+    pub fn stream<KS, VS>(
+        self: Arc<AppEngine<G>>,
         topic: String,
-    ) -> Result<PStream<G>, PeridotEngineRuntimeError> {
-    
-        let mut subscription = app_engine
-            .consumer
-            .subscription()
-            .expect("Failed to get subscription.")
-            .elements()
-            .into_iter()
-            .map(|tp| tp.topic().to_string())
-            .collect::<Vec<String>>();
-    
+    ) -> Result<Pipeline<KS, VS, G>, PeridotEngineRuntimeError> 
+    where
+        KS: PDeserialize,
+        VS: PDeserialize
+    {
+        let mut subscription = self.consumer.get_subscribed_topics();
+
         if subscription.contains(&topic) {
-            return Err(PeridotEngineRuntimeError::TableCreationError(
-                error::TableCreationError::TableAlreadyExists,
-            ));
+            return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
         }
-    
+
         subscription.push(topic.clone());
-    
-        app_engine
+
+        self
             .consumer
             .subscribe(
                 subscription
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<&str>>()
-                    .as_slice(),
+                .iter()
+                .map(Deref::deref)
+                .collect::<Vec<_>>()
+                .as_slice(),
             )
             .expect("Failed to subscribe to topic.");
-    
-        let (queue_sender, queue_receiver) =
-            tokio::sync::mpsc::channel::<StreamPartitionQueue<PeridotConsumerContext>>(1024);
-    
-        //app_engine.downstreams.insert(topic.clone(), queue_sender);
-    
-        let commit_waker = app_engine.waker_context.commit_waker();
-    
-        Ok(PStream::new(
+
+        let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        self.downstreams.insert(topic.clone(), queue_sender);
+
+        let queue_metadata_prototype = QueueMetadataProtoype::new(
+            self.config.clients_config().clone(), 
+            self.consumer.clone(), 
             topic,
-            app_engine.downstream_commit_logs.clone(),
-            app_engine.engine_state.clone(),
-            commit_waker,
-            queue_receiver,
+        );
+
+        Ok(PStream::new(
+            queue_metadata_prototype, 
+            queue_receiver
         ))
     }
 
@@ -497,37 +515,78 @@ where G: DeliveryGuaranteeType
     ) -> Result<PSinkBuilder<G>, PeridotEngineRuntimeError> {
         if app_engine.consumer.is_subscribed_to(&topic) {
             return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
-        } 
+        }
 
         Ok(PSinkBuilder::new(topic, app_engine.config.clone()))
     }
 }
 
-#[derive(Default)]
-pub struct QueueMetadata<G=ExactlyOnce> {
+#[derive(Clone)]
+pub struct QueueMetadataProtoype {
     clients_config: ClientConfig,
-    consumer_ref: Option<Arc<StreamConsumer>>,
-    dest_topic: String,
-    partition: i32,
+    consumer_ref: Arc<PeridotConsumer>,
     source_topic: String,
-    _delivery_guarantee: PhantomData<G>,
 }
 
-impl <Mode> QueueMetadata<Mode> {
+impl QueueMetadataProtoype {
     pub fn new(
         clients_config: ClientConfig,
-        consumer_ref: Arc<StreamConsumer>,
-        dest_topic: String,
+        consumer_ref: Arc<PeridotConsumer>,
+        source_topic: String,
+    ) -> Self {
+        Self {
+            clients_config,
+            consumer_ref,
+            source_topic,
+        }
+    }
+
+    pub fn map(&self, partition: i32) -> QueueMetadata {
+        QueueMetadata {
+            clients_config: self.clients_config.clone(),
+            consumer_ref: self.consumer_ref.clone(),
+            partition,
+            source_topic: self.source_topic.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct QueueMetadata {
+    clients_config: ClientConfig,
+    consumer_ref: Arc<PeridotConsumer>,
+    partition: i32,
+    source_topic: String,
+}
+
+impl QueueMetadata {
+    pub fn new(
+        clients_config: ClientConfig,
+        consumer_ref: Arc<PeridotConsumer>,
         partition: i32,
         source_topic: String,
     ) -> Self {
         Self {
             clients_config,
-            consumer_ref: Some(consumer_ref),
-            dest_topic,
+            consumer_ref,
             partition,
             source_topic,
-            _delivery_guarantee: PhantomData,
         }
+    }
+
+    pub fn partition(&self) -> i32 {
+        self.partition
+    }
+
+    pub fn source_topic(&self) -> &str {
+        self.source_topic.as_str()
+    }
+
+    pub fn client_config(&self) -> &ClientConfig {
+        &self.clients_config
+    }
+
+    pub fn consumer(&self) -> Arc<PeridotConsumer> {
+        self.consumer_ref.clone()
     }
 }

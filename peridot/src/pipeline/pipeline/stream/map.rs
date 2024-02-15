@@ -7,14 +7,14 @@ use std::{
 use futures::Stream;
 use pin_project_lite::pin_project;
 
-use crate::pipeline::message::{MessageStream, types::{FromMessage, PatchMessage}, PipelineStage, map::MapMessage};
+use crate::pipeline::message::{stream::{MessageStream, PipelineStage}, types::{FromMessage, PatchMessage}, map::MapMessage};
 
 use super::PipelineStream;
 
 pin_project! {
-    pub struct MapPipeline<S, M, K, V, F, E, R, RK, RV>
+    pub struct MapPipeline<S, K, V, RK, RV, M, F, E, R, >
     where 
-        S: PipelineStream<M, K, V>,
+        S: PipelineStream<K, V, M>,
         M: MessageStream<K, V>,
         F: Fn(E) -> R,
         E: FromMessage<K, V>,
@@ -33,9 +33,9 @@ pin_project! {
     }
 }
 
-impl <S, M, K, V, F, E, R, RK, RV> MapPipeline<S, M, K, V, F, E, R, RK, RV>
+impl <S, K, V, RK, RV, M, F, E, R, > MapPipeline<S, K, V, RK, RV, M, F, E, R, >
 where 
-    S: PipelineStream<M, K, V>,
+    S: PipelineStream<K, V, M>,
     M: MessageStream<K, V>,
     F: Fn(E) -> R,
     E: FromMessage<K, V>,
@@ -56,15 +56,15 @@ where
     }
 }
 
-impl<S, M, K, V, F, E, R, RK, RV> PipelineStream<MapMessage<M, F, E, R, K, V>, RK, RV> for MapPipeline<S, M, K, V, F, E, R, RK, RV>
+impl<S, K, V, RK, RV, M, F, E, R, > PipelineStream<RK, RV, MapMessage<K, V, M, F, E, R>> for MapPipeline<S, K, V, RK, RV, M, F, E, R, >
 where
-    S: PipelineStream<M, K, V>,
+    S: PipelineStream<K, V, M>,
     M: MessageStream<K, V>,
     F: Fn(E) -> R,
     E: FromMessage<K, V>,
     R: PatchMessage<K, V, RK, RV>,
 {
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<MapMessage<M, F, E, R, K, V>, RK, RV>>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<RK, RV, MapMessage<K, V, M, F, E, R>>>> {
         let this = self.project();
 
         match this.inner.poll_next(cx) {

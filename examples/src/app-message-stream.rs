@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,8 +9,9 @@ use peridot::app::ptable::{PTable, PeridotTable};
 use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
 use peridot::app::PeridotApp;
+use peridot::pipeline::message::sink::PrintSink;
 use peridot::pipeline::message::types::{Value, KeyValue};
-use peridot::pipeline::pipeline::PipelineStreamExt;
+use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStreamSinkExt};
 use peridot::pipeline::serde_ext::Json;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use peridot::state::backend::persistent::PersistentStateBackend;
@@ -49,10 +51,29 @@ pub struct ChangeOfAddress {
     postcode: String,
 }
 
+impl Display for ChangeOfAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ChangeOfAddress {{ address: {}, city: {}, state: {}, postcode: {} }}", self.address, self.city, self.state, self.postcode)
+    }
+}
+
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct Client {
     owner_type: String,
     owner: String,
+}
+
+fn extract_city(Value{ value }: Value<ChangeOfAddress>) -> Value<String> {
+    info!("Processing change of address: {:?}", value);
+    Value::from(value.city)
+}
+
+fn passthrough(Value{ value }: Value<String>) -> Value<String> {
+    Value::from(value)
+}
+
+fn kv_passthrough(kv: KeyValue<String, String>) -> KeyValue<String, String> {
+    kv
 }
 
 #[tokio::main]
@@ -61,52 +82,26 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut source = ClientConfig::new();
 
-    let group = "rust-test25";
+    let group = "rust-test28";
 
     source
         .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
         .set("group.id", group)
-        .set("auto.offset.reset", "latest")
+        .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
     let app = Arc::new(PeridotApp::<ExactlyOnce>::from_client_config(&source)?);
 
-    let table = app
-        .table::<String, ConsentGrant, InMemoryStateBackend<_>>("consent.Client")
-        .await?;
+    //let _table = app
+    //    .table::<String, ConsentGrant, InMemoryStateBackend<_>>("consent.Client")
+    //    .await?;
 
-    let stream = app
-        .stream("changeOfAddress").await?
-        .stream()
-        .map(|f| async {
-            f
-        }).map(
-            |f| {
-                f
-            }
-        ).filter_map(
-            |s| {
-                Some(s)
-            }
-        );
-
-    let engine = app.engine_ref();
-
-    let pstream = PStream::<ExactlyOnce>::new_new::<String, Json<ChangeOfAddress>>();
-
-    let mappped = pstream.map(
-        |v: Value<ChangeOfAddress>| {
-            KeyValue::from((String::from("Asd"), v.value.city))
-        }
-    );
-
-    //let mut sink = app
-    //    .sink::<String, Json<ChangeOfAddress>>("genericTopic").await?;
-    
     app.run().await?;
-    
+
+    let _mappped = app.stream::<String, Json<ChangeOfAddress>>("changeOfAddress")?
+        .sink::<PrintSink<String, Json<ChangeOfAddress>>>("someTopic").await;
 
     Ok(())
 }
