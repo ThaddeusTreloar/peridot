@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::broadcast::Receiver;
 use tracing::{info, trace};
 
-use crate::{app::{extensions::Commit, PeridotPartitionQueue}, engine::EngineState};
+use crate::{app::{extensions::Commit, PeridotPartitionQueue}, engine::{EngineState, RawQueue, RawQueueReceiver}};
 
 use self::{
     backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
@@ -83,7 +83,7 @@ where
         backend: T,
         state: Arc<AtomicCell<EngineState>>,
         commit_waker: Receiver<Commit>,
-        stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
+        stream_queue: RawQueueReceiver,
     ) -> Result<Self, StateStoreCreationError> {
         let state_store = StateStore {
             topic: Arc::new(topic),
@@ -101,12 +101,12 @@ where
 
     fn start_update_thread(
         &self,
-        mut stream_queue: tokio::sync::mpsc::Receiver<PeridotPartitionQueue>,
+        mut stream_queue: RawQueueReceiver,
     ) {
         let store = self.backend.clone();
 
         tokio::spawn(async move {
-            while let Some(queue) = stream_queue.recv().await {
+            while let Some((_, queue)) = stream_queue.recv().await {
                 tokio::spawn(start_partition_update_thread(queue, store.clone()));
             }
         });

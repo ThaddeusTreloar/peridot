@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, string::FromUtf8Error, fmt::Debug, error::Error};
+use std::{marker::PhantomData, string::FromUtf8Error, error::Error};
 
 pub trait PSerialize 
 {
