@@ -17,6 +17,8 @@ To be considered an MVP this library should provide the following features:
 - [ ] Changelogs
 - [ ] Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
 - [ ] Windowed operations
+- [ ] Result 'style' dead letter support (impl FromResidual)
+- [ ] Schema Registry Integration 
 
 ## Example
 
