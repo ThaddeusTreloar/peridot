@@ -25,6 +25,7 @@ use crate::{
     }, pipeline::{pipeline::stream::stream::Pipeline, serde_ext::PDeserialize},
 };
 
+use self::partition_queue::StreamPeridotPartitionQueue;
 use self::{
     error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
     util::{
@@ -38,10 +39,11 @@ use crate::app::{
     extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
     pstream::PStream,
     ptable::PTable,
-    PeridotConsumer, PeridotPartitionQueue,
+    PeridotConsumer,
 };
 
 pub mod error;
+pub mod partition_queue;
 pub mod sinks;
 pub mod util;
 
@@ -68,12 +70,12 @@ pub enum StateType {
     InMemory,
 }
 
-pub type Queue = (QueueMetadata, PeridotPartitionQueue);
+pub type Queue = (QueueMetadata, StreamPeridotPartitionQueue);
 
 pub type QueueForwarder = UnboundedSender<Queue>;
 pub type QueueReceiver = UnboundedReceiver<Queue>;
 
-pub type RawQueue = (i32, PeridotPartitionQueue);
+pub type RawQueue = (i32, StreamPeridotPartitionQueue);
 
 pub type RawQueueForwarder = UnboundedSender<RawQueue>;
 pub type RawQueueReceiver = UnboundedReceiver<RawQueue>;
@@ -222,10 +224,12 @@ where
                         if let Some(queue_sender) = queue_sender {
                             let queue_sender = queue_sender.value();
 
+                            let partition_queue = StreamPeridotPartitionQueue::new(partition_queue);
+
                             info!("Sending partition queue to downstream: {}", topic);
 
                             queue_sender // TODO: Why is this blocking?
-                                .send((Default::default(), partition_queue))
+                                .send((partition, partition_queue))
                                 .expect("Failed to send partition queue");
                         } else {
                             error!("No downstream found for topic: {}", topic);
@@ -241,12 +245,15 @@ where
                 }
 
                 select! {
-                    message = consumer.recv() => {
-                        error!("Unexpected consumer message: {:?}", message);
-                        // TODO: decide on the behaviour here because this should be unreachable
-                        // panic!("Unexpected consumer message: {:?}", message);
-                        // break 'outer;
-                    },
+                    () = async {
+                        loop {
+                            if let Some(message) = consumer.poll(Duration::from_millis(0)) {
+                                info!("Unexpected consumer message: {:?}", message);
+                            }
+
+                            tokio::time::sleep(Duration::from_millis(2500)).await;
+                        }
+                    } => {},
                     _rebalance = waker.recv() => {
                         debug!("Rebalance waker received: {:?}", _rebalance);
                         state.store(EngineState::Stopped);

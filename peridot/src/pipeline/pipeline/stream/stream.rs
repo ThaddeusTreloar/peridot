@@ -35,12 +35,12 @@ where
     }
 }
 
-impl<'a, KS, VS> PipelineStream<KS::Output, VS::Output, QueueConnector<'a, KS, VS>> for Pipeline<KS, VS>
+impl<'a, KS, VS> PipelineStream<KS::Output, VS::Output, QueueConnector<KS, VS>> for Pipeline<KS, VS>
 where
     KS: PDeserialize,
     VS: PDeserialize,
 {
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<KS::Output, VS::Output, QueueConnector<'a, KS, VS>>>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<KS::Output, VS::Output, QueueConnector<KS, VS>>>> {
         let (metadata, queue) = match self.queue_stream.poll_recv(cx) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(None) => return Poll::Ready(None),

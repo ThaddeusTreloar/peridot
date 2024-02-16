@@ -101,7 +101,8 @@ async fn main() -> Result<(), anyhow::Error> {
     app.run().await?;
 
     let _mappped = app.stream::<String, Json<ChangeOfAddress>>("changeOfAddress")?
-        .sink::<PrintSink<String, Json<ChangeOfAddress>>>("someTopic").await;
+        .map(extract_city)
+        .sink::<PrintSink<String, String>>("someTopic").await;
 
     Ok(())
 }

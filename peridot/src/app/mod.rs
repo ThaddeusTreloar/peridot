@@ -6,7 +6,7 @@ use std::{
 
 use futures::Future;
 use rdkafka::{
-    consumer::{stream_consumer::StreamPartitionQueue, StreamConsumer},
+    consumer::{stream_consumer::StreamPartitionQueue, StreamConsumer, BaseConsumer},
     ClientConfig,
 };
 use tracing::info;
@@ -32,8 +32,7 @@ pub mod psink;
 pub mod pstream;
 pub mod ptable;
 
-pub type PeridotConsumer = StreamConsumer<PeridotConsumerContext>;
-pub type PeridotPartitionQueue = StreamPartitionQueue<PeridotConsumerContext>;
+pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
 
 #[derive()]
 pub struct PeridotApp<G = ExactlyOnce> 

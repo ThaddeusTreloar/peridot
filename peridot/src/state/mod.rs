@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::broadcast::Receiver;
 use tracing::{info, trace};
 
-use crate::{app::{extensions::Commit, PeridotPartitionQueue}, engine::{EngineState, RawQueue, RawQueueReceiver}};
+use crate::{app::extensions::Commit, engine::{EngineState, RawQueueReceiver, partition_queue::StreamPeridotPartitionQueue}};
 
 use self::{
     backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
@@ -40,21 +40,13 @@ where
     _type: PhantomData<U>,
 }
 
-async fn start_partition_update_thread<C, R, T>(
-    parition_queue: StreamPartitionQueue<C, R>,
+async fn start_partition_update_thread<T>(
+    parition_queue: StreamPeridotPartitionQueue,
     store: Arc<impl WriteableStateBackend<T>>,
 ) where
-    C: ConsumerContext,
     T: serde::de::DeserializeOwned + Send + Sync + 'static,
 {
     parition_queue
-        .stream()
-        .filter_map(|item| async {
-            match item {
-                Ok(i) => Some(i),
-                Err(_) => None,
-            }
-        })
         .for_each(|msg| {
             let store_ref = store.clone();
 

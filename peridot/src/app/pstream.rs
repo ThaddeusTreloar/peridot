@@ -12,7 +12,7 @@ use crate::{
     state::backend::CommitLog, pipeline::{serde_ext::PDeserialize, pipeline::stream::stream::Pipeline},
 };
 
-use super::{extensions::Commit, PeridotPartitionQueue};
+use super::extensions::Commit;
 
 pub struct PStream {
     // output_stream: UnboundedReceiverStream<OwnedMessage>,
