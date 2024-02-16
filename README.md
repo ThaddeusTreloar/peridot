@@ -20,6 +20,9 @@ To be considered an MVP this library should provide the following features:
 - [ ] Result 'style' dead letter support (impl FromResidual)
 - [ ] Schema Registry Integration 
 
+Peridot Adjacent Features:
+- [ ] Schema registry build dependency for codegen
+
 ## Example
 
 Using tables:
