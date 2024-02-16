@@ -70,7 +70,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app = Arc::new(PeridotApp::<ExactlyOnce>::from_client_config(&source)?);
+    let app = PeridotApp::<ExactlyOnce>::from_client_config(&source)?;
 
     let table = app
         .table::<String, Json<ConsentGrant>, InMemoryStateBackend<_, _>>("consent.Client")
@@ -81,11 +81,18 @@ async fn main() -> Result<(), anyhow::Error> {
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-        let consent_grant = table.get_store()
+        match table.get_store()
             .unwrap()
-            .get(&String::from("Oliver")).await;
+            .get(&String::from("Oliver")).await 
+        {
+            Some(consent_grant) => {
+                info!("Got consent grant: {:?}", consent_grant);
+            },
+            None => {
+                info!("No consent grant found");
+            }
+        };
 
-        info!("Got consent grant: {:?}", consent_grant);
     }
 
     Ok(())

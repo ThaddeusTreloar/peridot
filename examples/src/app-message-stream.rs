@@ -91,7 +91,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app = Arc::new(PeridotApp::<ExactlyOnce>::from_client_config(&source)?);
+    let app = PeridotApp::from_client_config(&source)?;
 
     //let _table = app
     //    .table::<String, ConsentGrant, InMemoryStateBackend<_>>("consent.Client")
@@ -100,7 +100,9 @@ async fn main() -> Result<(), anyhow::Error> {
     app.run().await?;
 
     let _mappped = app.stream::<String, Json<ChangeOfAddress>>("changeOfAddress")?
-        .map(extract_city)
+        .map(|kv: KeyValue<String, ChangeOfAddress>| {
+            KeyValue::from((kv.key, kv.value.address))
+        })
         .sink::<PrintSink<String, String>>("someTopic").await;
 
     Ok(())
