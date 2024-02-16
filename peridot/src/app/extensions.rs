@@ -1,13 +1,15 @@
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 
 use rdkafka::{
     consumer::ConsumerContext,
     error::KafkaError,
     topic_partition_list::{self, TopicPartitionListElem},
-    ClientContext,
+    ClientContext, util::Timeout,
 };
 use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tracing::error;
+
+use super::config::PeridotConfig;
 
 #[derive(Debug, Clone)]
 pub struct Commit {
@@ -75,6 +77,7 @@ pub struct PeridotConsumerContext {
     pre_rebalance_waker: Sender<OwnedRebalance>,
     post_rebalance_waker: Sender<OwnedRebalance>,
     commit_waker: Sender<Commit>,
+    max_poll_interval: Timeout,
 }
 
 impl Clone for PeridotConsumerContext {
@@ -83,6 +86,7 @@ impl Clone for PeridotConsumerContext {
             pre_rebalance_waker: self.pre_rebalance_waker.clone(),
             post_rebalance_waker: self.post_rebalance_waker.clone(),
             commit_waker: self.commit_waker.clone(),
+            max_poll_interval: self.max_poll_interval,
         }
     }
 }
@@ -98,12 +102,28 @@ impl Default for PeridotConsumerContext {
         PeridotConsumerContext {
             pre_rebalance_waker,
             post_rebalance_waker,
-            commit_waker,
+            commit_waker,                   // The default max_poll_interval is 5 minutes
+            max_poll_interval: Timeout::After(Duration::from_millis(300000)),
         }
     }
 }
 
 impl PeridotConsumerContext {
+    pub fn from_config(config: &PeridotConfig) -> Self {
+        let mut this = Self::default();
+
+        if let Some(interval) = config.get("max.poll.interval.ms") {
+            this.max_poll_interval = Timeout::After(
+                Duration::from_millis(
+                    interval
+                    .parse()
+                    .expect("Invalid max.poll.interval.ms")
+                ));
+        }
+
+        this
+    }
+
     pub fn wakers(&self) -> ContextWakers {
         ContextWakers {
             pre_rebalance_waker: self.pre_rebalance_waker.subscribe(),
@@ -202,5 +222,9 @@ impl ConsumerContext for PeridotConsumerContext {
                 error!("Failed to commit offsets: {}", e);
             }
         }
+    }
+
+    fn main_queue_min_poll_interval(&self) -> Timeout {
+        self.max_poll_interval.clone()
     }
 }

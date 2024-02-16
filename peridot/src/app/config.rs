@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use rdkafka::ClientConfig;
+use rdkafka::{ClientConfig, util::Timeout};
 use tracing::warn;
 
 use crate::help;
@@ -43,7 +43,7 @@ impl PeridotConfig {
             self.clients_config.set("enable.auto.commit", "false");
         }
     }
-
+    
     pub fn set(&mut self, key: &str, value: &str) {
         if self.fields.contains(key) {
             self.app_config.insert(key.to_string(), value.to_string());

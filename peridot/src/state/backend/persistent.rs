@@ -1,15 +1,17 @@
 
 use std::{path::Path, sync::Arc};
 
-use surrealdb::{Surreal, engine::local::{File, Db}};
+use serde::de::DeserializeOwned;
+use surrealdb::{Surreal, engine::local::{File, Db}, sql::Id};
 use tracing::info;
 
 use super::{ReadableStateBackend, WriteableStateBackend, error::BackendCreationError, StateBackend, CommitLog};
 
-pub struct PersistentStateBackend<T> {
+pub struct PersistentStateBackend<K, V> {
     store: Surreal<Db>,
     commit_log: Arc<CommitLog>,
-    _type: std::marker::PhantomData<T>
+    _key_type: std::marker::PhantomData<K>,
+    _value_type: std::marker::PhantomData<V>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -41,8 +43,10 @@ impl From<Vec<OffsetStruct>> for CommitLog {
     }
 }
 
-impl <T> PersistentStateBackend<T> 
-where T: Send + Sync + 'static
+impl <K, V> PersistentStateBackend<K, V> 
+where 
+    K: Send + Sync,
+    V: Send + Sync,
 {
     pub async fn try_from_file(path: &Path) -> Result<Self, BackendCreationError> {
         let store = Surreal::new::<File>(path).await?;
@@ -60,10 +64,11 @@ where T: Send + Sync + 'static
 
         info!("Commit log: {:?}", commit_log);
 
-        let backend: PersistentStateBackend<T> = PersistentStateBackend {
+        let backend = Self {
             store,
             commit_log,
-            _type: Default::default()
+            _key_type: std::marker::PhantomData,
+            _value_type: std::marker::PhantomData,
         };
 
         Ok(backend)
@@ -87,18 +92,21 @@ where T: Send + Sync + 'static
 
         info!("Commit log: {:?}", commit_log);
 
-        let backend: PersistentStateBackend<T> = PersistentStateBackend {
+        let backend = Self {
             store,
             commit_log,
-            _type: Default::default()
+            _key_type: std::marker::PhantomData,
+            _value_type: std::marker::PhantomData,
         };
 
         Ok(backend)
     }
 }
 
-impl <T> StateBackend for PersistentStateBackend<T> 
-where T: Send + Sync + 'static
+impl <K, V> StateBackend for PersistentStateBackend<K, V> 
+where 
+    K: Send + Sync,
+    V: Send + Sync,
 {
     async fn with_topic_name(topic_name: &str) -> Self {
         let state_db_filename = format!("peridot.{}.db", topic_name);
@@ -160,35 +168,39 @@ where T: Send + Sync + 'static
     }
 }
 
-impl <T> ReadableStateBackend<T> for PersistentStateBackend<T> 
-where T: Clone + Send + Sync + 'static + for<'de> serde::Deserialize<'de>
+impl <K, V> ReadableStateBackend<K, V> for PersistentStateBackend<K, V> 
+where 
+    K: Send + Sync + Into<Id> + Clone,
+    V: Send + Sync + Clone + DeserializeOwned,
 {
-    async fn get(&self, key: &str) -> Option<T> {
+    async fn get(&self, key: &K) -> Option<V> {
         self.store
-            .select(("state", key)).await
+            .select(("state", key.clone())).await
             .expect("Failed to get value from db")
     }
 }
 
-impl <T> WriteableStateBackend<T> for PersistentStateBackend<T> 
-where T: Send + Sync + 'static + for<'de> serde::Deserialize<'de> + serde::Serialize
+impl <K, V> WriteableStateBackend<K, V> for PersistentStateBackend<K, V> 
+where 
+    K: Send + Sync + Into<Id> + Clone,
+    V: Send + Sync + Clone + serde::Serialize + DeserializeOwned,
 {
-    async fn set(&self, key: &str, value: T) -> Option<T> {
+    async fn set(&self, key: &K, value: V) -> Option<V> {
         if let Some(old_value) = self.store
-            .select(("state", key)).await
+            .select(("state", key.clone())).await
             .expect("Failed to get value from db") {
 
             self.store
-                .update::<Option<T>>(("state", key))
-                .content::<T>(value)
+                .update::<Option<V>>(("state", key.clone()))
+                .content::<V>(value)
                 .await
                 .expect("Failed to set value in db");
 
             Some(old_value)
         } else {
             self.store
-                .create::<Option<T>>(("state", key))
-                .content::<T>(value)
+                .create::<Option<V>>(("state", key.clone()))
+                .content::<V>(value)
                 .await
                 .expect("Failed to set value in db");
 
@@ -196,7 +208,7 @@ where T: Send + Sync + 'static + for<'de> serde::Deserialize<'de> + serde::Seria
         }
     }
     
-    async fn delete(&self, _key: &str) -> Option<T> {
+    async fn delete(&self, _key: &K) -> Option<V> {
         unimplemented!("Delete not implemented")
     }
 }

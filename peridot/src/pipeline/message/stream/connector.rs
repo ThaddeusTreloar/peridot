@@ -4,13 +4,13 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{StreamExt, Stream};
+use futures::Stream;
 use pin_project_lite::pin_project;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::{
     pipeline::{
-        message::types::{Message, TryFromBorrowedMessage, TryFromOwnedMessage},
+        message::types::{Message, TryFromOwnedMessage},
         serde_ext::PDeserialize,
     }, engine::partition_queue::StreamPeridotPartitionQueue,
 };
@@ -53,15 +53,11 @@ where
     ) -> Poll<Option<Message<KS::Output, VS::Output>>> {
         let this = self.project();
 
-        info!("Polling kafka message stream.");
-
         let raw_msg = match this.input.poll_next(cx) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(None) => return Poll::Ready(None),
             Poll::Ready(Some(val)) => val,
         };
-
-        info!("Found message. Deserialising and passing along.");
 
         let msg = match <Message<KS::Output, VS::Output> as TryFromOwnedMessage<KS, VS>>::try_from_owned_message(raw_msg) {
             Err(e) => {

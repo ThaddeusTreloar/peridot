@@ -2,15 +2,10 @@ use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use crossbeam::atomic::AtomicCell;
 use futures::{Future, StreamExt};
-use rdkafka::{
-    consumer::{stream_consumer::StreamPartitionQueue, ConsumerContext},
-    Message,
-};
-use serde::de::DeserializeOwned;
-use tokio::sync::broadcast::Receiver;
-use tracing::{info, trace};
+use rdkafka::{Message, consumer::Consumer, TopicPartitionList};
+use tracing::info;
 
-use crate::{app::extensions::Commit, engine::{EngineState, RawQueueReceiver, partition_queue::StreamPeridotPartitionQueue}};
+use crate::{app::PeridotConsumer, engine::{EngineState, RawQueueReceiver, partition_queue::StreamPeridotPartitionQueue}, pipeline::serde_ext::PDeserialize};
 
 use self::{
     backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
@@ -20,73 +15,91 @@ use self::{
 pub mod backend;
 pub mod error;
 
-pub trait ReadableStateStore<T> {
-    fn get(&self, key: &str) -> impl Future<Output = Option<T>>;
+pub trait ReadableStateStore<K, V> {
+    fn get(&self, key: &K) -> impl Future<Output = Option<V>>;
 }
 
-pub trait WriteableStateStore<T> {
-    fn set(&self, key: &str, value: T) -> impl Future<Output = Option<T>>;
-    fn delete(&self, key: &str) -> impl Future<Output = Option<T>>;
+pub trait WriteableStateStore<K, V> {
+    fn set(&self, key: K, value: V) -> impl Future<Output = Option<V>>;
+    fn delete(&self, key: K) -> impl Future<Output = Option<V>>;
 }
 
-pub struct StateStore<'a, T, U>
+pub struct StateStore<KS, VS, T>
 where
-    U: DeserializeOwned + Send + Sync + 'static,
+    KS: PDeserialize,
+    VS: PDeserialize,
+    //U: DeserializeOwned + Send + Sync + 'static,
 {
-    topic: Arc<String>,
+    topic: String,
     backend: Arc<T>,
     state: Arc<AtomicCell<EngineState>>,
-    _lifetime: &'a PhantomData<()>,
-    _type: PhantomData<U>,
+    consumer_ref: Arc<PeridotConsumer>,
+    _key_serialiser: PhantomData<KS>,
+    _value_serialiser: PhantomData<VS>,
 }
 
-async fn start_partition_update_thread<T>(
+async fn start_partition_update_thread<KS, VS>(
+    topic: String,
+    partition: i32,
     parition_queue: StreamPeridotPartitionQueue,
-    store: Arc<impl WriteableStateBackend<T>>,
+    consumer_ref: Arc<PeridotConsumer>,
+    store: Arc<impl WriteableStateBackend<KS::Output, VS::Output>>,
 ) where
-    T: serde::de::DeserializeOwned + Send + Sync + 'static,
+    KS: PDeserialize + Send + Sync,
+    VS: PDeserialize + Send + Sync,
+    KS::Output: Send + Sync,
+    VS::Output: Send + Sync,
 {
     parition_queue
         .for_each(|msg| {
             let store_ref = store.clone();
+            let consumer_ref = consumer_ref.clone();
+            let topic_ref = topic.as_str();
 
             async move {
-                let raw_key = msg.key().expect("No key");
-                trace!("Key: {:?}", raw_key);
-                let key = String::from_utf8_lossy(raw_key).to_string();
-                let raw_value = msg.payload().expect("No value");
-                trace!("Value: {:?}", raw_value);
-                let value =
-                    serde_json::from_slice::<T>(raw_value).expect("Failed to deserialize value");
+                let raw_key = msg.key().unwrap();
+
+                let key = KS::deserialize(raw_key).expect("Failed to deserialise key");
+
+                let raw_value = msg.payload().unwrap();
+
+                let value = VS::deserialize(raw_value).expect("Failed to deserialise value");
 
                 store_ref.set(&key, value).await;
+
+                let mut topic_partition_list = TopicPartitionList::default();
+                topic_partition_list.add_partition_offset(topic_ref, partition, rdkafka::Offset::Offset(msg.offset() + 1)).expect("Failed to add partition offset");
+                consumer_ref.commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async).expect("Failed to make async commit in state store");
             }
         })
         .await;
 }
 
-impl<'a, T, U> StateStore<'a, T, U>
+impl<KS, VS, T> StateStore<KS, VS, T>
 where
-    T: StateBackend + ReadableStateBackend<U> + WriteableStateBackend<U> + Send + Sync + 'static,
-    U: DeserializeOwned + Send + Sync + 'static,
+    KS: PDeserialize + Send + Sync + 'static,
+    VS: PDeserialize + Send + Sync + 'static,
+    KS::Output: Send + Sync + 'static,
+    VS::Output: Send + Sync + 'static,
+    T: StateBackend + ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output> + Send + Sync + 'static,
 {
     pub fn try_new(
         topic: String,
         backend: T,
+        consumer_ref: Arc<PeridotConsumer>,
         state: Arc<AtomicCell<EngineState>>,
-        commit_waker: Receiver<Commit>,
         stream_queue: RawQueueReceiver,
     ) -> Result<Self, StateStoreCreationError> {
         let state_store = StateStore {
-            topic: Arc::new(topic),
+            topic: topic,
             backend: Arc::new(backend),
             state,
-            _lifetime: &PhantomData,
-            _type: PhantomData,
+            consumer_ref,
+            _key_serialiser: PhantomData,
+            _value_serialiser: PhantomData,
         };
 
         state_store.start_update_thread(stream_queue);
-        state_store.start_commit_listener(commit_waker);
 
         Ok(state_store)
     }
@@ -96,39 +109,24 @@ where
         mut stream_queue: RawQueueReceiver,
     ) {
         let store = self.backend.clone();
+        let consumer_ref = self.consumer_ref.clone();
+        let topic = self.topic.clone();
 
         tokio::spawn(async move {
-            while let Some((_, queue)) = stream_queue.recv().await {
-                tokio::spawn(start_partition_update_thread(queue, store.clone()));
-            }
-        });
-    }
-
-    fn start_commit_listener(&self, mut waker: Receiver<Commit>) {
-        let store = self.backend.clone();
-        let table_topic = self.topic.clone();
-
-        tokio::spawn(async move {
-            while let Ok(message) = waker.recv().await {
-                let Commit {topic, partition, offset} = message;
-
-                if table_topic.as_str() == topic.as_str() && offset > 0 {
-                    info!("Committing offset: {}-{}:{}", topic, partition, offset);
-                    store.commit_offset(topic.as_str(), partition, offset).await;
-                } else {
-                    info!("Table: {}, ignoring commit: {}-{}:{}", table_topic, topic, partition, offset);
-                }
+            while let Some((partition, queue)) = stream_queue.recv().await {
+                tokio::spawn(start_partition_update_thread::<KS, VS>(topic.clone(), partition, queue, consumer_ref.clone(), store.clone()));
             }
         });
     }
 }
 
-impl<'a, T, U> ReadableStateStore<U> for StateStore<'a, T, U>
+impl<KS, VS, T> ReadableStateStore<KS::Output, VS::Output> for StateStore<KS, VS, T>
 where
-    T: ReadableStateBackend<U> + WriteableStateBackend<U>,
-    U: DeserializeOwned + Clone + Send + Sync + 'static,
+    KS: PDeserialize,
+    VS: PDeserialize,
+    T: ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
 {
-    async fn get(&self, key: &str) -> Option<U> {
+    async fn get(&self, key: &KS::Output) -> Option<VS::Output> {
         while let EngineState::Lagging
         | EngineState::Stopped
         | EngineState::Rebalancing

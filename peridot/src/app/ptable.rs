@@ -1,55 +1,65 @@
 use std::sync::Arc;
 
-use crate::state::{
+use crate::{state::{
     backend::{
         persistent::PersistentStateBackend, ReadableStateBackend, StateBackend,
         WriteableStateBackend,
     },
     StateStore,
-};
+}, pipeline::serde_ext::PDeserialize};
 
 use super::error::PeridotAppRuntimeError;
 
-pub trait PeridotTable<K, V, B>
+pub trait PeridotTable<KS, VS, B>
 where
-    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
-    K: Send + Sync + 'static,
-    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    B: StateBackend,
+    KS: PDeserialize + Send + Sync,
+    VS: PDeserialize + Send + Sync,
+    KS::Output: Send + Sync,
+    VS::Output: Send + Sync,
 {
-    fn get_store(&self) -> Result<Arc<StateStore<'_, B, V>>, PeridotAppRuntimeError>;
+    fn get_store(&self) -> Result<Arc<StateStore<KS, VS, B>>, PeridotAppRuntimeError>;
 }
 
-pub struct PTable<'a, K, V, B = PersistentStateBackend<V>>
+pub struct PTable<KS, VS, B>
 where
-    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    KS: PDeserialize + Send + Sync,
+    VS: PDeserialize + Send + Sync,
+    KS::Output: Send + Sync,
+    VS::Output: Send + Sync,
+    B: StateBackend,
 {
-    store: Arc<StateStore<'a, B, V>>,
-    _key_type: std::marker::PhantomData<K>,
-    _value_type: std::marker::PhantomData<V>,
+    store: Arc<StateStore<KS, VS, B>>,
+    _key_serialiser_type: std::marker::PhantomData<KS>,
+    _value_serialiser_type: std::marker::PhantomData<VS>,
 }
 
-impl<'a, K, V, B> PTable<'a, K, V, B>
+impl<KS, VS, B> PTable<KS, VS, B>
 where
-    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
-    K: Send + Sync + 'static,
-    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    B: StateBackend + ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
+    KS: PDeserialize + Send + Sync,
+    VS: PDeserialize + Send + Sync,
+    KS::Output: Send + Sync,
+    VS::Output: Send + Sync,
 {
-    pub fn new(store: Arc<StateStore<'a, B, V>>) -> Self {
+    pub fn new(store: Arc<StateStore<KS, VS, B>>) -> Self {
         PTable {
             store,
-            _key_type: std::marker::PhantomData,
-            _value_type: std::marker::PhantomData,
+            _key_serialiser_type: std::marker::PhantomData,
+            _value_serialiser_type: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a, K, V, B> PeridotTable<K, V, B> for PTable<'a, K, V, B>
+impl<KS, VS, B> PeridotTable<KS, VS, B> for PTable<KS, VS, B>
 where
-    B: StateBackend + ReadableStateBackend<V> + WriteableStateBackend<V> + Send + Sync + 'static,
-    K: Send + Sync + 'static,
-    V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+    B: StateBackend + ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
+    KS: PDeserialize + Send + Sync,
+    VS: PDeserialize + Send + Sync,
+    KS::Output: Send + Sync,
+    VS::Output: Send + Sync,
 {
-    fn get_store(&self) -> Result<Arc<StateStore<'_, B, V>>, PeridotAppRuntimeError> {
+    fn get_store(&self) -> Result<Arc<StateStore<KS, VS, B>>, PeridotAppRuntimeError> {
         Ok(self.store.clone())
     }
 }

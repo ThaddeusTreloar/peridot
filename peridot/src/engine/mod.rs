@@ -2,6 +2,8 @@ use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
 use std::ops::Deref;
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
+use rdkafka::consumer::ConsumerContext;
+use rdkafka::util::Timeout;
 use rdkafka::{
     consumer::Consumer,
     producer::{Producer, PARTITION_UA},
@@ -114,7 +116,8 @@ where
     }
 
     pub fn from_config(config: &PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
-        let context = PeridotConsumerContext::default();
+        let context = PeridotConsumerContext::from_config(config);
+        
         let consumer = config
             .clients_config()
             .create_with_context(context.clone())?;
@@ -246,16 +249,33 @@ where
 
                 select! {
                     () = async {
+                        
+                        let max_poll_interval = match consumer
+                            .context()
+                            .main_queue_min_poll_interval() 
+                        {
+                            Timeout::Never => Duration::default(),
+                            Timeout::After(duration) => duration / 2
+                        };
+
                         loop {
+                            // To keep the consumer alive we must poll at least
+                            // every 'max.poll.interval.ms'. We are polling with 
+                            // a 0 second timeout for two reasons:
+                            //  - using any timeout will block a runtime thread
+                            //  - the blocked thread will not be cancellable by the select block
                             if let Some(message) = consumer.poll(Duration::from_millis(0)) {
                                 info!("Unexpected consumer message: {:?}", message);
                             }
 
-                            tokio::time::sleep(Duration::from_millis(2500)).await;
+                            // Instead we can use sleep for the interval.
+                            tokio::time::sleep(Duration::from_secs(1)).await;
                         }
-                    } => {},
+                    } => {
+                        error!("Broke consumer poll loop");
+                    },
                     _rebalance = waker.recv() => {
-                        debug!("Rebalance waker received: {:?}", _rebalance);
+                        info!("Rebalance waker received: {:?}", _rebalance);
                         state.store(EngineState::Stopped);
                     },
                 };
@@ -405,19 +425,21 @@ where
         });
     }
 
-    pub async fn table<K, V, B>(
+    pub async fn table<KS, VS, B>(
         app_engine: Arc<AppEngine<G>>,
         topic: String,
-    ) -> Result<PTable<'static, K, V, B>, PeridotEngineRuntimeError>
+    ) -> Result<PTable<KS, VS, B>, PeridotEngineRuntimeError>
     where
         B: StateBackend
-            + ReadableStateBackend<V>
-            + WriteableStateBackend<V>
+            + ReadableStateBackend<KS::Output, VS::Output>
+            + WriteableStateBackend<KS::Output, VS::Output>
             + Send
             + Sync
             + 'static,
-        K: Send + Sync + 'static,
-        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+        KS: PDeserialize + Send + Sync + 'static,
+        VS: PDeserialize + Send + Sync + 'static,
+        KS::Output: Send + Sync + 'static,
+        VS::Output: Send + Sync + 'static,
     {
         let mut subscription = app_engine
             .consumer
@@ -462,15 +484,15 @@ where
         )
         .await;
 
-        let state_store: StateStore<B, V> = StateStore::try_new(
+        let state_store: StateStore<KS, VS, B> = StateStore::try_new(
             topic,
             backend,
+            app_engine.consumer.clone(),
             app_engine.engine_state.clone(),
-            commit_waker,
             queue_receiver,
         )?;
 
-        Ok(PTable::<K, V, B>::new(Arc::new(state_store)))
+        Ok(PTable::<KS, VS, B>::new(Arc::new(state_store)))
     }
 
     pub fn stream<KS, VS>(

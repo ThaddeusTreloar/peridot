@@ -116,15 +116,14 @@ where
         self: Pin<&mut Self>,
         message: Message<KS::Input, VS::Input>,
     ) -> Result<(), Self::Error> {
-        info!("Sending message: {}", message);
-
+        
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");
-
-        info!("Serialised message: {{ key: {:?}, value: {:?} }}", ser_key, ser_value);
-
+    
+        info!("Debug Sink: Sending message: {}", message);
+        info!("Debug Sink: Serialised message: {{ key: {:?}, value: {:?} }}", ser_key, ser_value);
         info!(
-            "Queue metadata: {{ partition: {}, source_topic: {} }}",
+            "Debug Sink: Queue metadata: {{ partition: {}, source_topic: {} }}",
             self.queue_metadata.partition(),
             self.queue_metadata.source_topic()
         );

@@ -77,21 +77,23 @@ where G: DeliveryGuaranteeType
         Ok(())
     }
 
-    pub async fn table<K, V, B>(
+    pub async fn table<KS, VS, B>(
         &self,
         topic: &str,
-    ) -> Result<PTable<K, V, B>, PeridotAppRuntimeError>
+    ) -> Result<PTable<KS, VS, B>, PeridotAppRuntimeError>
     where
         B: StateBackend
-            + ReadableStateBackend<V>
-            + WriteableStateBackend<V>
+            + ReadableStateBackend<KS::Output, VS::Output>
+            + WriteableStateBackend<KS::Output, VS::Output>
             + Send
             + Sync
             + 'static,
-        K: Send + Sync + 'static,
-        V: Send + Sync + 'static + for<'de> serde::Deserialize<'de>,
+        KS: PDeserialize + Send + Sync + 'static,
+        VS: PDeserialize + Send + Sync + 'static,
+        KS::Output: Send + Sync + 'static,
+        VS::Output: Send + Sync + 'static,
     {
-        Ok(AppEngine::<G>::table(self.engine.clone(), topic.to_string()).await?)
+        Ok(AppEngine::<G>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
     }
 
     pub fn stream<KS, VS>(&self, topic: &str) -> Result<Pipeline<KS, VS, G>, PeridotAppRuntimeError> 

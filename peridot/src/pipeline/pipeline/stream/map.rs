@@ -4,7 +4,6 @@ use std::{
     task::{Context, Poll}, sync::Arc,
 };
 
-use futures::Stream;
 use pin_project_lite::pin_project;
 
 use crate::pipeline::message::{stream::{MessageStream, PipelineStage}, types::{FromMessage, PatchMessage}, map::MapMessage};

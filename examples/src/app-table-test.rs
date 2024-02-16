@@ -1,25 +1,22 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
-use std::time::Duration;
 
 use futures::StreamExt;
-use peridot::app::pstream::PStream;
 use peridot::app::ptable::{PTable, PeridotTable};
 use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
 use peridot::app::PeridotApp;
 use peridot::pipeline::message::sink::PrintSink;
-use peridot::pipeline::message::types::{Value, KeyValue};
-use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStreamSinkExt};
+use peridot::pipeline::pipeline::sink::PipelineSinkExt;
+use peridot::pipeline::pipeline::stream::PipelineStreamSinkExt;
 use peridot::pipeline::serde_ext::Json;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
-use peridot::state::backend::persistent::PersistentStateBackend;
 use rdkafka::ClientConfig;
 
 use peridot::state::ReadableStateStore;
-use rdkafka::config::{RDKafkaLogLevel, FromClientConfig};
-use rdkafka::producer::{BaseProducer, Producer};
+use rdkafka::config::RDKafkaLogLevel;
+use tokio::select;
 use tracing::info;
 use tracing::level_filters::LevelFilter;
 
@@ -57,31 +54,13 @@ impl Display for ChangeOfAddress {
     }
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-struct Client {
-    owner_type: String,
-    owner: String,
-}
-
-fn extract_city(Value{ value }: Value<ChangeOfAddress>) -> Value<String> {
-    Value::from(value.city)
-}
-
-fn passthrough(Value{ value }: Value<String>) -> Value<String> {
-    Value::from(value)
-}
-
-fn kv_passthrough(kv: KeyValue<String, String>) -> KeyValue<String, String> {
-    kv
-}
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
 
     let mut source = ClientConfig::new();
 
-    let group = "rust-test28";
+    let group = "rust-test53";
 
     source
         .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
@@ -93,15 +72,21 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = Arc::new(PeridotApp::<ExactlyOnce>::from_client_config(&source)?);
 
-    //let _table = app
-    //    .table::<String, ConsentGrant, InMemoryStateBackend<_>>("consent.Client")
-    //    .await?;
+    let table = app
+        .table::<String, Json<ConsentGrant>, InMemoryStateBackend<_, _>>("consent.Client")
+        .await?;
 
     app.run().await?;
+    
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-    let _mappped = app.stream::<String, Json<ChangeOfAddress>>("changeOfAddress")?
-        .map(extract_city)
-        .sink::<PrintSink<String, String>>("someTopic").await;
+        let consent_grant = table.get_store()
+            .unwrap()
+            .get(&String::from("Oliver")).await;
+
+        info!("Got consent grant: {:?}", consent_grant);
+    }
 
     Ok(())
 }

@@ -14,8 +14,8 @@ name = "app"
 path = "src/app.rs"
 
 [[bin]]
-name = "app-stream"
-path = "src/app-stream.rs"
+name = "app-table-test"
+path = "src/app-table-test.rs"
 
 [[bin]]
 name = "app-stream-eos"

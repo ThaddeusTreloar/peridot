@@ -8,7 +8,6 @@ use std::{
 use crate::pipeline::message::types::{FromMessage, Message, PatchMessage};
 
 use pin_project_lite::pin_project;
-use tracing::info;
 
 use super::stream::MessageStream;
 
@@ -49,15 +48,11 @@ where
         let this = self.project();
         let next = this.stream.poll_next(cx);
 
-        info!("Polling next message for mapping...");
-
         let msg = match next {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(None) => return Poll::Ready(None),
             Poll::Ready(Some(msg)) => msg,
         };
-
-        info!("Found message, mapping...");
 
         let extractor = E::from_message(&msg);
 

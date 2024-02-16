@@ -2,9 +2,6 @@ use rdkafka::error::KafkaError;
 
 use crate::state::error::StateStoreCreationError;
 
-
-
-
 #[derive(Debug, thiserror::Error)]
 pub enum PeridotEngineCreationError {
     #[error("Failed to client: {0}")]

@@ -181,8 +181,6 @@ where
         let ForwardProjection { mut message_stream, mut message_sink, .. } = self.project();
 
         loop {
-            info!("Polling forward internal stream.");
-
             match message_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => {
                     info!("No Messages left for stream, finishing...");
@@ -190,13 +188,10 @@ where
                     return Poll::Ready(())
                 },
                 Poll::Pending => {
-                    info!("Stream pending...");
                     ready!(message_sink.as_mut().poll_commit(cx));
-                    info!("Messages committed");
                     return Poll::Pending;
                 },
                 Poll::Ready(Some(message)) => {
-                    info!("Got message from queue...");
                     message_sink.as_mut().start_send(message).expect("Failed to send message to sink.");
                 },
             };

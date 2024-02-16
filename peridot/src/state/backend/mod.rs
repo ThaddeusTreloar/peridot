@@ -50,13 +50,13 @@ pub trait StateBackend
     fn get_offset(&self, topic: &str, partition: i32) -> impl Future<Output = Option<i64>> + Send;
 }
 
-pub trait ReadableStateBackend<T> {
-    fn get(&self, key: &str) -> impl Future<Output = Option<T>> + Send;
+pub trait ReadableStateBackend<K, V> {
+    fn get(&self, key: &K) -> impl Future<Output = Option<V>> + Send;
 }
 
-pub trait WriteableStateBackend<T> 
+pub trait WriteableStateBackend<K, V> 
 {
-    fn set(&self, key: &str, value: T) -> impl Future<Output = Option<T>> + Send;
-    fn delete(&self, key: &str)-> impl Future<Output = Option<T>> + Send;
+    fn set(&self, key: &K, value: V) -> impl Future<Output = Option<V>> + Send;
+    fn delete(&self, key: &K)-> impl Future<Output = Option<V>> + Send;
 }
 

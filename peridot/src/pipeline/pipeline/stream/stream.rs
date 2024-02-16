@@ -47,7 +47,7 @@ where
             Poll::Ready(Some(val)) => val,
         };
 
-        info!("Received message new queue for topic: {}, parition: {}", metadata.source_topic(), metadata.partition());
+        info!("Received new queue for topic: {}, parition: {}", metadata.source_topic(), metadata.partition());
 
         Poll::Ready(Option::Some(PipelineStage::new(
             metadata,

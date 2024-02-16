@@ -1,16 +1,22 @@
-use std::sync::Arc;
+use std::{sync::Arc, hash::Hash};
 
 use dashmap::DashMap;
 use tracing::info;
 
 use super::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend};
 
-pub struct InMemoryStateBackend<T> {
-    store: DashMap<String, T>,
+pub struct InMemoryStateBackend<K, V>
+where
+    K: Hash + Eq,
+{
+    store: DashMap<K, V>,
     offsets: Arc<CommitLog>,
 }
 
-impl<T> Default for InMemoryStateBackend<T> {
+impl<K, V> Default for InMemoryStateBackend<K, V> 
+where
+    K: Hash + Eq,
+{
     fn default() -> Self {
         InMemoryStateBackend {
             store: Default::default(),
@@ -19,9 +25,10 @@ impl<T> Default for InMemoryStateBackend<T> {
     }
 }
 
-impl<T> StateBackend for InMemoryStateBackend<T>
-where
-    T: Send + Sync + 'static,
+impl<K, V> StateBackend for InMemoryStateBackend<K, V>
+where 
+    K: Send + Sync + Hash + Eq,
+    V: Send + Sync,
 {
     async fn with_topic_name(_topic_name: &str) -> Self {
         Self::default()
@@ -50,24 +57,26 @@ where
     }
 }
 
-impl<T> ReadableStateBackend<T> for InMemoryStateBackend<T>
+impl<K, V> ReadableStateBackend<K, V> for InMemoryStateBackend<K, V>
 where
-    T: Clone + Send + Sync + 'static,
+    K: Send + Sync + Hash + Eq,
+    V: Send + Sync + Clone
 {
-    async fn get(&self, key: &str) -> Option<T> {
+    async fn get(&self, key: &K) -> Option<V> {
         Some(self.store.get(key)?.value().clone())
     }
 }
 
-impl<T> WriteableStateBackend<T> for InMemoryStateBackend<T>
+impl<K, V> WriteableStateBackend<K, V> for InMemoryStateBackend<K, V>
 where
-    T: Send + Sync + 'static,
+    K: Send + Sync + Hash + Eq + Clone,
+    V: Send + Sync + Clone
 {
-    async fn set(&self, key: &str, value: T) -> Option<T> {
-        self.store.insert(key.to_string(), value)
+    async fn set(&self, key: &K, value: V) -> Option<V> {
+        self.store.insert(key.clone(), value)
     }
 
-    async fn delete(&self, key: &str) -> Option<T> {
+    async fn delete(&self, key: &K) -> Option<V> {
         Some(self.store.remove(key)?.1)
     }
 }
