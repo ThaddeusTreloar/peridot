@@ -7,6 +7,7 @@ use std::{
 };
 
 use pin_project_lite::pin_project;
+use rdkafka::{consumer::Consumer, TopicPartitionList};
 use tracing::info;
 
 use crate::{engine::QueueMetadata, pipeline::serde_ext::PSerialize};
@@ -127,6 +128,10 @@ where
             self.queue_metadata.partition(),
             self.queue_metadata.source_topic()
         );
+
+        let mut topic_partition_list = TopicPartitionList::default();
+        topic_partition_list.add_partition_offset(self.queue_metadata.source_topic(), message.partition(), rdkafka::Offset::Offset(message.offset() + 1)).expect("Failed to add partition offset");
+        self.queue_metadata.consumer().commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async).expect("Failed to make async commit in state store");
 
         Ok(())
     }
