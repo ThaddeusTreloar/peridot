@@ -1,16 +1,20 @@
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::StreamExt;
+use futures::future::BoxFuture;
+use futures::{StreamExt, Future};
+use peridot::app::error::PeridotAppRuntimeError;
 use peridot::app::pstream::PStream;
 use peridot::app::ptable::{PTable, PeridotTable};
-use peridot::engine::util::ExactlyOnce;
+use peridot::engine::util::{ExactlyOnce, DeliveryGuaranteeType};
 use peridot::init::init_tracing;
-use peridot::app::PeridotApp;
+use peridot::app::{PeridotApp, AppBuilder};
 use peridot::pipeline::message::sink::PrintSink;
 use peridot::pipeline::message::types::{Value, KeyValue};
+use peridot::pipeline::pipeline::sink::SinkError;
 use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStreamSinkExt};
 use peridot::pipeline::serde_ext::Json;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
@@ -75,13 +79,26 @@ fn kv_passthrough(kv: KeyValue<String, String>) -> KeyValue<String, String> {
     kv
 }
 
+fn map_changes_of_address_to_city(
+    app: &AppBuilder<ExactlyOnce>,
+) -> Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Send>> 
+{
+    Box::pin(
+        app.stream::<String, Json<ChangeOfAddress>>("changeOfAddress").expect("Failed to create stream")
+            .map(|kv: KeyValue<String, ChangeOfAddress>| {
+                KeyValue::from((kv.key, kv.value.address))
+            })
+            .sink::<PrintSink<String, String>>("someTopic")
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
 
     let mut source = ClientConfig::new();
 
-    let group = "rust-test28";
+    let group = "rust-test30";
 
     source
         .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
@@ -91,19 +108,15 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let app = PeridotApp::from_client_config(&source)?;
+    let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
+
+    app.job(map_changes_of_address_to_city);
 
     //let _table = app
     //    .table::<String, ConsentGrant, InMemoryStateBackend<_>>("consent.Client")
     //    .await?;
 
     app.run().await?;
-
-    let _mappped = app.stream::<String, Json<ChangeOfAddress>>("changeOfAddress")?
-        .map(|kv: KeyValue<String, ChangeOfAddress>| {
-            KeyValue::from((kv.key, kv.value.address))
-        })
-        .sink::<PrintSink<String, String>>("someTopic").await;
 
     Ok(())
 }

@@ -10,7 +10,7 @@ use tracing::info;
 
 use crate::{
     engine::util::ExactlyOnce,
-    pipeline::{message::{stream::{MessageStream, PipelineStage}, sink::MessageSink}, serde_ext::PSerialize},
+    pipeline::{message::{stream::{MessageStream, PipelineStage}, sink::MessageSink}, serde_ext::PSerialize}, app::error::PeridotAppRuntimeError,
 };
 
 use super::stream::PipelineStream;
@@ -110,7 +110,7 @@ where
     M: MessageStream<KS::Input, VS::Input> + Send + 'static,
     Si: MessageSink<KS, VS> + Send + 'static,
 {
-    type Output = Result<(), SinkError>;
+    type Output = Result<(), PeridotAppRuntimeError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let SinkProjection { mut queue_stream, sink_topic, ..} = self.project();

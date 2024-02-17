@@ -108,7 +108,7 @@ where
         self.start_queue_distributor(pre_rebalance_waker);
         self.start_commit_listener(commit_waker);
         self.start_rebalance_listener(rebalance_waker);
-        self.start_lag_listener();
+        //self.start_lag_listener();
 
         info!("Engine running...");
 

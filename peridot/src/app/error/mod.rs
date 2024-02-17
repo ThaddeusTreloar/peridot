@@ -19,4 +19,6 @@ pub enum PeridotAppRuntimeError {
     EngineRuntimeError(#[from] PeridotEngineRuntimeError),
     #[error("Sink error: {0}")]
     SinkError(#[from] KafkaError),
+    #[error("Failed to join job: {0}")]
+    JobJoinError(#[from] tokio::task::JoinError),
 }
