@@ -6,6 +6,7 @@ use rdkafka::consumer::ConsumerContext;
 use rdkafka::util::Timeout;
 use rdkafka::{
     consumer::Consumer,
+    message::Message,
     producer::{Producer, PARTITION_UA},
     topic_partition_list::TopicPartitionListElem,
     ClientConfig, TopicPartitionList,
@@ -14,8 +15,9 @@ use tokio::{
     select,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
+use crate::engine::distributor::QueueDistributor;
 use crate::{
     app::psink::PSinkBuilder,
     state::{
@@ -44,6 +46,8 @@ use crate::app::{
     PeridotConsumer,
 };
 
+pub mod tasks;
+pub mod distributor;
 pub mod error;
 pub mod partition_queue;
 pub mod sinks;
@@ -105,7 +109,18 @@ where
         let commit_waker = self.waker_context.commit_waker();
         let rebalance_waker = self.waker_context.post_rebalance_waker();
 
-        self.start_queue_distributor(pre_rebalance_waker);
+        let queue_distributor = QueueDistributor::new(
+            self.consumer.clone(),
+            self.downstreams.clone(),
+            self.downstream_commit_logs.clone(),
+            self.state_streams.clone(),
+            self.engine_state.clone(),
+            pre_rebalance_waker
+        );
+
+        tokio::spawn(queue_distributor);
+
+        //self.start_queue_distributor(pre_rebalance_waker);
         self.start_commit_listener(commit_waker);
         self.start_rebalance_listener(rebalance_waker);
         //self.start_lag_listener();
@@ -143,8 +158,10 @@ where
 
         tokio::spawn(async move {
             loop {
-                debug!("Starting consumer threads...");
+                info!("Starting consumer threads...");
                 let topic_partitions = consumer.assignment().expect("No subscription");
+
+                let gm = consumer.group_metadata();
 
                 // If there is a problem during testing, this may be it.
                 // consumer.resume(&topic_partitions).expect("msg");
@@ -162,7 +179,7 @@ where
                 for (topic, partition) in topic_partitions.into_iter() {
                     count += 1;
 
-                    debug!("Topic: {} Partition: {}", topic, partition);
+                    info!("Topic: {} Partition: {}", topic, partition);
 
                     if partition != PARTITION_UA {
                         let partition_queue = consumer
@@ -229,7 +246,7 @@ where
 
                             let partition_queue = StreamPeridotPartitionQueue::new(partition_queue);
 
-                            info!("Sending partition queue to downstream: {}", topic);
+                            info!("Sending partition queue to downstream: {}, for partition: {}", topic, partition);
 
                             queue_sender // TODO: Why is this blocking?
                                 .send((partition, partition_queue))
@@ -237,6 +254,8 @@ where
                         } else {
                             error!("No downstream found for topic: {}", topic);
                         }
+                    } else {
+                        warn!("Partition not assigned for topic: {}", topic);
                     }
                 }
 
@@ -254,7 +273,7 @@ where
                             .context()
                             .main_queue_min_poll_interval() 
                         {
-                            Timeout::Never => Duration::default(),
+                            Timeout::Never => Duration::from_secs(1),
                             Timeout::After(duration) => duration / 2
                         };
 
@@ -265,11 +284,12 @@ where
                             //  - using any timeout will block a runtime thread
                             //  - the blocked thread will not be cancellable by the select block
                             if let Some(message) = consumer.poll(Duration::from_millis(0)) {
-                                info!("Unexpected consumer message: {:?}", message);
                             }
 
                             // Instead we can use sleep for the interval.
-                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            //tokio::time::sleep(max_poll_interval).await;
+
                         }
                     } => {
                         error!("Broke consumer poll loop");
@@ -279,8 +299,6 @@ where
                         state.store(EngineState::Stopped);
                     },
                 };
-
-                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         });
     }
@@ -322,7 +340,7 @@ where
                 tokio::time::sleep(interval).await;
 
                 if consumer_state.load() == EngineState::Stopped {
-                    debug!("Consumer stopped...");
+                    info!("Consumer stopped...");
                     continue;
                 }
 
@@ -331,6 +349,10 @@ where
                 for consumer_tp in subscription.elements() {
                     let topic = consumer_tp.topic();
                     let partition = consumer_tp.partition();
+
+                    if !state_streams.contains(topic) {
+                        continue;
+                    }
 
                     let (_, high_watermark) = consumer
                         .client()
@@ -349,12 +371,12 @@ where
                         .expect("Failed to convert consumer offset to i64");
 
                     if high_watermark < 0 {
-                        debug!(
+                        info!(
                             "Broker offset not found for topic partition: {}->{}",
                             topic, partition
                         );
                     } else if consumer_offset < 0 {
-                        debug!(
+                        info!(
                             "Consumer offset not found for topic partition: {}->{}",
                             topic, partition
                         );

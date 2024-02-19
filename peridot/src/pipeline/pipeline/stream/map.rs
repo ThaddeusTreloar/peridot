@@ -13,8 +13,7 @@ use super::PipelineStream;
 pin_project! {
     pub struct MapPipeline<S, K, V, RK, RV, M, F, E, R, >
     where 
-        S: PipelineStream<K, V, M>,
-        M: MessageStream<K, V>,
+        S: PipelineStream<K, V>,
         F: Fn(E) -> R,
         E: FromMessage<K, V>,
         R: PatchMessage<K, V, RK, RV>,
@@ -34,7 +33,7 @@ pin_project! {
 
 impl <S, K, V, RK, RV, M, F, E, R, > MapPipeline<S, K, V, RK, RV, M, F, E, R, >
 where 
-    S: PipelineStream<K, V, M>,
+    S: PipelineStream<K, V>,
     M: MessageStream<K, V>,
     F: Fn(E) -> R,
     E: FromMessage<K, V>,
@@ -55,15 +54,18 @@ where
     }
 }
 
-impl<S, K, V, RK, RV, M, F, E, R, > PipelineStream<RK, RV, MapMessage<K, V, M, F, E, R>> for MapPipeline<S, K, V, RK, RV, M, F, E, R, >
+impl<S, K, V, RK, RV, M, F, E, R, > PipelineStream<RK, RV> for MapPipeline<S, K, V, RK, RV, M, F, E, R, >
 where
-    S: PipelineStream<K, V, M>,
+    S: PipelineStream<K, V>,
+    S::M: MessageStream<K, V>,
     M: MessageStream<K, V>,
     F: Fn(E) -> R,
     E: FromMessage<K, V>,
     R: PatchMessage<K, V, RK, RV>,
 {
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<RK, RV, MapMessage<K, V, M, F, E, R>>>> {
+    type M = MapMessage<K, V, S::M, F, E, R>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<RK, RV, MapMessage<K, V, S::M, F, E, R>>>> {
         let this = self.project();
 
         match this.inner.poll_next(cx) {

@@ -60,7 +60,7 @@ pin_project! {
     where
         KS: PSerialize,
         VS: PSerialize,
-        S: PipelineStream<KS::Input, VS::Input, M>,
+        S: PipelineStream<KS::Input, VS::Input>,
         Si: MessageSink<KS, VS>,
         M: MessageStream<KS::Input, VS::Input>,
     {
@@ -79,7 +79,7 @@ impl<KS, VS, S, M, Si, G> Sink<KS, VS, S, M, Si, G>
 where
     KS: PSerialize,
     VS: PSerialize,
-    S: PipelineStream<KS::Input, VS::Input, M>,
+    S: PipelineStream<KS::Input, VS::Input>,
     Si: MessageSink<KS, VS>,
     M: MessageStream<KS::Input, VS::Input>,
 {
@@ -106,13 +106,15 @@ impl<KS, VS, S, M, G, Si> Future for Sink<KS, VS, S, M, Si, G>
 where
     KS: PSerialize + Send + 'static,
     VS: PSerialize + Send + 'static,
-    S: PipelineStream<KS::Input, VS::Input, M> + 'static,
+    S: PipelineStream<KS::Input, VS::Input> + 'static,
+    S::M: MessageStream<KS::Input, VS::Input> + Send + 'static,
     M: MessageStream<KS::Input, VS::Input> + Send + 'static,
     Si: MessageSink<KS, VS> + Send + 'static,
 {
     type Output = Result<(), PeridotAppRuntimeError>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> 
+    {
         let SinkProjection { mut queue_stream, sink_topic, ..} = self.project();
         
         loop {
@@ -180,6 +182,8 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let ForwardProjection { mut message_stream, mut message_sink, .. } = self.project();
 
+        info!("Forwarding messages from stream to sink...");
+
         loop {
             match message_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => {
@@ -188,6 +192,7 @@ where
                     return Poll::Ready(())
                 },
                 Poll::Pending => {
+                    info!("No messages available, waiting...");
                     ready!(message_sink.as_mut().poll_commit(cx));
                     return Poll::Pending;
                 },

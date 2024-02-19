@@ -1,7 +1,7 @@
 use std::{
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
+    task::{Context, Poll}, marker::PhantomData,
 };
 
 use futures::{Future, future::{join_all, BoxFuture}};
@@ -13,8 +13,8 @@ use tracing::info;
 
 use crate::{
     app::extensions::PeridotConsumerContext,
-    engine::{AppEngine, util::{ExactlyOnce, DeliveryGuaranteeType, AtMostOnce, AtLeastOnce}},
-    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend}, pipeline::{serde_ext::PDeserialize, pipeline::stream::stream::Pipeline},
+    engine::{AppEngine, util::{ExactlyOnce, DeliveryGuaranteeType, AtMostOnce, AtLeastOnce}, tasks::{Builder, FromBuilder}},
+    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend}, pipeline::{serde_ext::PDeserialize, pipeline::stream::{stream::Pipeline, PipelineStream}},
 };
 
 use self::{
@@ -36,6 +36,7 @@ pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
 
 type Job = Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Send>>;
 type JobFactory<G> = Box<dyn FnOnce(&AppBuilder<G>) -> Job>;
+
 
 #[derive()]
 pub struct PeridotApp<G = ExactlyOnce> 
@@ -135,6 +136,18 @@ where G: DeliveryGuaranteeType + 'static
         self.jobs.push(Box::new(job));
     }
 
+    pub fn task<KS, VS, RK, RV, F, In, B, S>(&self, topic: &str, handler: F) -> Head<F, KS, VS, RK, RV, In, B, S>
+    where
+        F: Fn(In) -> S,
+        KS: PDeserialize,
+        VS: PDeserialize,
+        In: FromBuilder<KS::Output, VS::Output, B>,
+        B: Builder<KS::Output, VS::Output>,
+        S: PipelineStream<RK, RV>
+    {
+        Head::from_topic(topic.to_string(), handler)
+    }
+
     pub fn engine_ref(&self) -> Arc<AppEngine<G>> {
         self.engine.clone()
     }
@@ -155,5 +168,110 @@ where G: DeliveryGuaranteeType + 'static
         }
 
         Ok(())
+    }
+}
+
+pub struct Head<F, KS, VS, RK, RV, In, B, S>
+where F: Fn(In) -> S,
+    KS: PDeserialize,
+    VS: PDeserialize,
+    In: FromBuilder<KS::Output, VS::Output, B>,
+    B: Builder<KS::Output, VS::Output>,
+    S: PipelineStream<RK, RV>
+{
+    topic: String,
+    handler: F,
+    _handler_input_type: PhantomData<In>,
+    _builder_type: PhantomData<B>,
+    _stream_return: PhantomData<S>,
+    _key_ser_type: PhantomData<KS>,
+    _val_ser_type: PhantomData<VS>,
+    _return_val_type: PhantomData<RK>,
+    _return_key_type: PhantomData<RV>,
+}
+
+impl <F, KS, VS, RK, RV, In, B, S> Head<F, KS, VS, RK, RV, In, B, S>
+where F: Fn(In) -> S,
+    KS: PDeserialize,
+    VS: PDeserialize,
+    In: FromBuilder<KS::Output, VS::Output, B>,
+    B: Builder<KS::Output, VS::Output>,
+    S: PipelineStream<RK, RV> 
+{
+    pub fn from_topic(topic: String, handler: F) -> Self {
+        Self {
+            topic: topic,
+            handler,
+            _handler_input_type: Default::default(),
+            _builder_type: Default::default(),
+            _stream_return: Default::default(),
+            _key_ser_type: Default::default(),
+            _val_ser_type: Default::default(),
+            _return_val_type: Default::default(),
+            _return_key_type: Default::default(),
+        }
+    }
+
+    pub fn and_then<NRK, NRV, N, NS, NI>(self, next: N) -> Next<N, RK, RV, NRK, NRV, NI, Self, NS>
+    where N: Fn(NI) -> NS,
+        NI: FromBuilder<RK, RV, Self>,
+        NS: PipelineStream<NRK, NRV>,
+    {
+        Next {
+            upstream: self,
+            handler: next,
+            _handler_input_type: Default::default(),
+            _builder_type: Default::default(),
+            _stream_return: Default::default(),
+            _key_type: Default::default(),
+            _val_type: Default::default(),
+            _return_key_type: Default::default(),
+            _return_val_type: Default::default(),
+        }
+    }
+}
+
+impl <F, KS, VS, RK, RV, In, B, S> Builder<RK, RV> for Head<F, KS, VS, RK, RV, In, B, S>
+where F: Fn(In) -> S,
+    KS: PDeserialize,
+    VS: PDeserialize,
+    In: FromBuilder<KS::Output, VS::Output, B>,
+    B: Builder<KS::Output, VS::Output>,
+    S: PipelineStream<RK, RV>
+{
+    type Output = S;
+
+    fn generate_pipeline(&self) -> Self::Output {
+        unimplemented!("")
+    }
+}
+
+pub struct Next<F, K, V, RK, RV, In, B, S>
+where F: Fn(In) -> S,
+    In: FromBuilder<K, V, B>,
+    B: Builder<K, V>,
+    S: PipelineStream<RK, RV>
+{
+    upstream: B,
+    handler: F,
+    _handler_input_type: PhantomData<In>,
+    _builder_type: PhantomData<B>,
+    _stream_return: PhantomData<S>,
+    _key_type: PhantomData<K>,
+    _val_type: PhantomData<V>,
+    _return_key_type: PhantomData<RK>,
+    _return_val_type: PhantomData<RV>,
+}
+
+impl <F, K, V, RK, RV, In, B, S> Builder<RK, RV> for Next<F, K, V, RK, RV, In, B, S>
+where F: Fn(In) -> S,
+    In: FromBuilder<K, V, B>,
+    B: Builder<K, V>,
+    S: PipelineStream<RK, RV>
+{
+    type Output = S;
+
+    fn generate_pipeline(&self) -> Self::Output {
+        unimplemented!("")
     }
 }

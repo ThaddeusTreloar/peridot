@@ -9,15 +9,13 @@ use futures::{StreamExt, Future};
 use peridot::app::error::PeridotAppRuntimeError;
 use peridot::app::pstream::PStream;
 use peridot::app::ptable::{PTable, PeridotTable};
-use peridot::engine::tasks::Stream;
 use peridot::engine::util::{ExactlyOnce, DeliveryGuaranteeType};
 use peridot::init::init_tracing;
 use peridot::app::{PeridotApp, AppBuilder};
 use peridot::pipeline::message::sink::PrintSink;
-use peridot::pipeline::message::stream::MessageStream;
 use peridot::pipeline::message::types::{Value, KeyValue};
 use peridot::pipeline::pipeline::sink::SinkError;
-use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStreamSinkExt, PipelineStream};
+use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStreamSinkExt};
 use peridot::pipeline::serde_ext::Json;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use peridot::state::backend::persistent::PersistentStateBackend;
@@ -94,15 +92,39 @@ fn map_changes_of_address_to_city(
     )
 }
 
-fn partial_task<B>(
-    input: Stream<String, ChangeOfAddress, B>,
-) -> impl PipelineStream<String, String> 
-where B: PipelineStream<String, ChangeOfAddress>,
-    B::M: MessageStream<String, ChangeOfAddress>
-{
-    input.map(|kv: KeyValue<String, ChangeOfAddress>| {
-        KeyValue::from((kv.key, kv.value.address))
-    })
+fn sink_handler(s: Stream<String, Json<Client>>) -> IntoStream {
+    unimplemented!("")
+}
+
+fn task_handler(s: Stream<String, Json<Client>>) -> IntoStream {
+    unimplemented!("")
+}
+
+fn task_joiner(left: Stream<String, String>, right: Stream<String, String>) -> IntoStream {
+    unimplemented!("")
+}
+
+trait FromBuilder {}
+
+fn task<F, S, T>(task_name: &str, source_topic: T, cb: F)
+where
+    F: Fn(S) -> IntoStream,
+    S: FromBuilder,
+    T: FromTopicPool {}
+
+fn chain<F, T, S>(task_name: &str, source_task: T, cb: F)
+where
+    F: Fn(S) -> IntoStream,
+    S: FromBuilder,
+    T: FromTaskPool {}
+
+
+fn job<S>(source_task: &str, sink_topic: &str) 
+where S: Sink {}
+
+
+fn trace_task(s: impl Pipeline<K, V>) -> impl Pipeline<K, V> {
+
 }
 
 #[tokio::main]
@@ -111,23 +133,25 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut source = ClientConfig::new();
 
-    let group = "rust-test70";
-    let group_instance = "peridot-instance-1";
+    let group = "rust-test31";
 
     source
         .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
         .set("group.id", group)
-        .set("group.instance.id", group_instance)
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
     let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
 
-    app.job(map_changes_of_address_to_city);
+    let table_a = app.table("my_cool_app");
 
-    let _ = app.task::<String, Json<ChangeOfAddress>, _, _, _, _, _, _>("someTopic", partial_task);
+    let task_a = app.task("addressTopic", task_handler);
+    let task_b = app.task("addressTopic", task_handler)
+        .and_then(filter_handler);
+
+    app.job(task_b(task_a, task_b, table_a));
 
     //let _table = app
     //    .table::<String, ConsentGrant, InMemoryStateBackend<_>>("consent.Client")

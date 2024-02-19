@@ -24,6 +24,8 @@ pub enum PeridotEngineRuntimeError {
     CyclicDependencyError(String),
     #[error("Failed to create producer: {0}")]
     ProducerCreationError(#[from] KafkaError),
+    #[error("Broken rebalance receiver.")]
+    BrokenRebalanceReceiver,
 }
 
 #[derive(Debug, thiserror::Error)]
