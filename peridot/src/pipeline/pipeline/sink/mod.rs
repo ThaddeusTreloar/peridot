@@ -17,11 +17,9 @@ use super::stream::PipelineStream;
 
 pub mod sink;
 
-pub trait PipelineSink<KS, VS, Si>
+pub trait PipelineSink<Si>
 where
-    KS: PSerialize,
-    VS: PSerialize,
-    Si: MessageSink<KS, VS>,
+    Si: MessageSink,
 {
     type Error;
 
@@ -31,7 +29,7 @@ where
     ) -> Poll<Option<Result<(), Self::Error>>>;
 }
 
-pub trait PipelineSinkExt<KS, VS, Si>: PipelineSink<KS, VS, Si>
+/*pub trait PipelineSinkExt<KS, VS, Si>: PipelineSink<KS, VS, Si>
 where
     KS: PSerialize,
     VS: PSerialize,
@@ -52,36 +50,33 @@ where
     P: PipelineSink<KS, VS, Si>,
     Si: MessageSink<KS, VS>,
 {
-}
+}*/
 
 pin_project! {
     #[project = SinkProjection]
-    pub struct Sink<KS, VS, S, M, Si, G = ExactlyOnce>
+    pub struct Sink<KS, VS, S, Si, G = ExactlyOnce>
     where
         KS: PSerialize,
         VS: PSerialize,
-        S: PipelineStream<KS::Input, VS::Input>,
-        Si: MessageSink<KS, VS>,
-        M: MessageStream<KS::Input, VS::Input>,
+        S: PipelineStream,
+        Si: MessageSink,
     {
         #[pin]
         queue_stream: S,
         sink_topic: String,
         _key_serialiser: PhantomData<KS>,
         _value_serialiser: PhantomData<VS>,
-        _queue_type: PhantomData<M>,
         _sink_type: PhantomData<Si>,
         _delivery_guarantee: PhantomData<G>
     }
 }
 
-impl<KS, VS, S, M, Si, G> Sink<KS, VS, S, M, Si, G>
+impl<KS, VS, S, Si, G> Sink<KS, VS, S, Si, G>
 where
     KS: PSerialize,
     VS: PSerialize,
-    S: PipelineStream<KS::Input, VS::Input>,
-    Si: MessageSink<KS, VS>,
-    M: MessageStream<KS::Input, VS::Input>,
+    S: PipelineStream,
+    Si: MessageSink,
 {
     pub fn new(queue_stream: S, topic: String) -> Self {
         Self {
@@ -89,7 +84,6 @@ where
             sink_topic: topic,
             _key_serialiser: PhantomData,
             _value_serialiser: PhantomData,
-            _queue_type: PhantomData,
             _sink_type: PhantomData,
             _delivery_guarantee: PhantomData,
         }
@@ -102,14 +96,12 @@ pub enum SinkError {
     QueueReceiverError(String),
 }
 
-impl<KS, VS, S, M, G, Si> Future for Sink<KS, VS, S, M, Si, G> 
+impl<KS, VS, S, G, Si> Future for Sink<KS, VS, S, Si, G> 
 where
     KS: PSerialize + Send + 'static,
     VS: PSerialize + Send + 'static,
-    S: PipelineStream<KS::Input, VS::Input> + 'static,
-    S::M: MessageStream<KS::Input, VS::Input> + Send + 'static,
-    M: MessageStream<KS::Input, VS::Input> + Send + 'static,
-    Si: MessageSink<KS, VS> + Send + 'static,
+    S: PipelineStream + 'static,
+    Si: MessageSink + Send + 'static,
 {
     type Output = Result<(), PeridotAppRuntimeError>;
 
@@ -141,8 +133,8 @@ pin_project! {
     where
         KS: PSerialize,
         VS: PSerialize,
-        M: MessageStream<KS::Input, VS::Input>,
-        S: MessageSink<KS, VS>,
+        M: MessageStream,
+        S: MessageSink,
     {
         #[pin]
         message_stream: M,
@@ -157,8 +149,8 @@ impl<KS, VS, M, S> Forward<KS, VS, M, S>
 where
     KS: PSerialize,
     VS: PSerialize,
-    M: MessageStream<KS::Input, VS::Input>,
-    S: MessageSink<KS, VS>,
+    M: MessageStream,
+    S: MessageSink,
 {
     pub fn new(message_stream: M, message_sink: S) -> Self {
         Self {
@@ -174,8 +166,8 @@ impl <KS, VS, M, S> Future for Forward<KS, VS, M, S>
 where
     KS: PSerialize,
     VS: PSerialize,
-    M: MessageStream<KS::Input, VS::Input>,
-    S: MessageSink<KS, VS>,
+    M: MessageStream,
+    S: MessageSink,
 {
     type Output = ();
 

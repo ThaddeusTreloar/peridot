@@ -3,7 +3,7 @@ use std::{marker::PhantomData, pin::Pin, task::{Context, Poll}};
 use pin_project_lite::pin_project;
 use tracing::info;
 
-use crate::{pipeline::{serde_ext::PDeserialize, message::stream::{connector::QueueConnector, PipelineStage}}, engine::{util::ExactlyOnce, QueueReceiver}};
+use crate::{pipeline::{serde_ext::PDeserialize, message::stream::{connector::QueueConnector, PipelineStage, MessageStream}}, engine::{util::ExactlyOnce, QueueReceiver}};
 
 use super::PipelineStream;
 
@@ -35,14 +35,14 @@ where
     }
 }
 
-impl<'a, KS, VS, G> PipelineStream<KS::Output, VS::Output> for Pipeline<KS, VS, G>
+impl<'a, KS, VS, G> PipelineStream for Pipeline<KS, VS, G>
 where
     KS: PDeserialize,
     VS: PDeserialize,
 {
-    type M = QueueConnector<KS, VS>;
+    type MStream = QueueConnector<KS, VS>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<KS::Output, VS::Output, Self::M>>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>> {
         let (metadata, queue) = match self.queue_stream.poll_recv(cx) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(None) => return Poll::Ready(None),

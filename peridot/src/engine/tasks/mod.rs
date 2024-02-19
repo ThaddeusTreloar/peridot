@@ -14,8 +14,8 @@ pub enum FromBuilderError {
     GenericError(#[from] PeridotAppRuntimeError),
 }
 
-pub trait Builder<K, V> {
-    type Output: PipelineStream<K, V>;
+pub trait Builder {
+    type Output: PipelineStream;
 
     fn generate_pipeline(&self) -> Self::Output;
 }
@@ -26,7 +26,7 @@ pub struct IngressTask<KS, VS, G> {
     _val_ser: PhantomData<VS>,
 }
 
-impl <KS, VS, G> Builder<KS::Output, VS::Output> for IngressTask<KS, VS, G>
+impl <KS, VS, G> Builder for IngressTask<KS, VS, G>
 where 
     G: DeliveryGuaranteeType,
     KS: PDeserialize,
@@ -39,9 +39,9 @@ where
     }
 }
 
-pub trait FromBuilder<K, V, B> 
+pub trait FromBuilder<B> 
 where 
-    B: Builder<K, V>,
+    B: Builder,
 {
     type Output;
 
@@ -58,12 +58,12 @@ pin_project! {
     }
 }
 
-impl <K, V, P> PipelineStream<K, V> for Stream<K, V, P>
-where P: PipelineStream<K, V>
+impl <K, V, P> PipelineStream for Stream<K, V, P>
+where P: PipelineStream
 {
-    type M = P::M;
+    type MStream = P::MStream;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<K, V, P::M>>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>> {
         let this = self.project();
 
         match this.inner.poll_next(cx) {
@@ -78,9 +78,9 @@ where P: PipelineStream<K, V>
     }
 }
 
-impl <K, V, B> FromBuilder<K, V, B> for Stream<K, V, B::Output> 
+impl <K, V, B> FromBuilder<B> for Stream<K, V, B::Output> 
 where 
-    B: Builder<K, V>,
+    B: Builder,
 {
     type Output = Self;
 

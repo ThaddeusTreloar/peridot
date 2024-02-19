@@ -93,7 +93,7 @@ fn map_changes_of_address_to_city(
             .sink::<PrintSink<String, String>>("someTopic")
     )
 }
-
+/*
 fn partial_task<B>(
     input: Stream<String, ChangeOfAddress, B>,
 ) -> impl PipelineStream<String, String> 
@@ -103,7 +103,7 @@ where B: PipelineStream<String, ChangeOfAddress>,
     input.map(|kv: KeyValue<String, ChangeOfAddress>| {
         KeyValue::from((kv.key, kv.value.address))
     })
-}
+} */
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

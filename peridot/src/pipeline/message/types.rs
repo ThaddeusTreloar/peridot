@@ -185,8 +185,11 @@ pub trait FromMessage<K, V> {
     fn from_message(msg: &Message<K, V>) -> Self;
 }
 
-pub trait PatchMessage<K, V, RK, RV> {
-    fn patch(self, msg: Message<K, V>) -> Message<RK, RV>;
+pub trait PatchMessage<K, V> {
+    type RK;
+    type RV;
+
+    fn patch(self, msg: Message<K, V>) -> Message<Self::RK, Self::RV>;
 }
 
 
@@ -212,11 +215,14 @@ where V: Clone
     }
 }
 
-impl <K, V, VR> PatchMessage<K, V, K, VR> for Value<VR> 
+impl <K, V, VR> PatchMessage<K, V> for Value<VR> 
 where K: Clone,
     V: Clone
 {
-    fn patch(self, Message { topic, timestamp, partition, offset, headers, key, value }: Message<K, V>) -> Message<K, VR> {
+    type RK = K;
+    type RV = VR;
+
+    fn patch(self, Message { topic, timestamp, partition, offset, headers, key, value }: Message<K, V>) -> Message<Self::RK, Self::RV> {
         let _ = value;
 
         Message {
@@ -254,9 +260,12 @@ where K: Clone,
     }
 }
 
-impl <K, V, KR, VR> PatchMessage<K, V, KR, VR> for KeyValue<KR, VR> 
+impl <K, V, KR, VR> PatchMessage<K, V> for KeyValue<KR, VR>
 {
-    fn patch(self, Message { topic, timestamp, partition, offset, headers, key, value }: Message<K, V>) -> Message<KR, VR> {
+    type RK = KR;
+    type RV = VR;
+
+    fn patch(self, Message { topic, timestamp, partition, offset, headers, key, value }: Message<K, V>) -> Message<Self::RK, Self::RV> {
         let _ = key;
         let _ = value;
 
@@ -284,8 +293,11 @@ impl <K, V> FromMessage<K, V> for Headers {
     }
 }
 
-impl <K, V> PatchMessage<K, V, K, V> for Headers {
-    fn patch(self, Message { topic, timestamp, partition, offset, headers, key, value }: Message<K, V>) -> Message<K, V> {
+impl <K, V> PatchMessage<K, V> for Headers {
+    type RK = K;
+    type RV = V;
+
+    fn patch(self, Message { topic, timestamp, partition, offset, headers, key, value }: Message<K, V>) -> Message<Self::RK, Self::RV> {
         let _ = headers;
 
         Message {

@@ -12,39 +12,39 @@ use pin_project_lite::pin_project;
 use super::stream::MessageStream;
 
 pin_project! {
-    pub struct MapMessage<K, V, M, F, E, R> {
+    pub struct MapMessage<M, F, E, R> {
         #[pin]
         stream: M,
         callback: Arc<F>,
-        _extractor_type: PhantomData<E>,
-        _reassembler_type: PhantomData<R>,
-        _source_key_type: PhantomData<K>,
-        _source_value_type: PhantomData<V>,
+        _extractor: PhantomData<E>,
+        _patcher: PhantomData<R>,
     }
 }
 
-impl<K, V, M, F, E, R> MapMessage<K, V, M, F, E, R> {
+impl<M, F, E, R> MapMessage<M, F, E, R> 
+{
     pub fn new(stream: M, callback: Arc<F>) -> Self {
         Self {
             stream,
             callback,
-            _extractor_type: PhantomData,
-            _reassembler_type: PhantomData,
-            _source_key_type: PhantomData,
-            _source_value_type: PhantomData,
+            _extractor: PhantomData,
+            _patcher: PhantomData,
         }
     }
 }
 
-impl<K, V, M, F, E, R, RK, RV> MessageStream<RK, RV> for MapMessage<K, V, M, F, E, R>
+impl<M, F, E, R> MessageStream for MapMessage<M, F, E, R>
 where
-    M: MessageStream<K, V>,
+    M: MessageStream,
     F: Fn(E) -> R,
-    E: FromMessage<K, V>,
-    R: PatchMessage<K, V, RK, RV>,
+    E: FromMessage<M::KeyType, M::ValueType>,
+    R: PatchMessage<M::KeyType, M::ValueType>,
     Self: Sized,
 {
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Message<RK, RV>>> {
+    type KeyType = R::RK;
+    type ValueType = R::RV;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
         let this = self.project();
         let next = this.stream.poll_next(cx);
 

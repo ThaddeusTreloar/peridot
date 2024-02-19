@@ -9,47 +9,40 @@ use super::sink::Sink;
 pub mod map;
 pub mod stream;
 
-pub trait PipelineStream<K, V> 
+pub trait PipelineStream
 {
-    type M;
+    type MStream: MessageStream;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<K, V, Self::M>>>;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>>;
 }
 
-pub trait PipelineStreamExt<K, V>: PipelineStream<K, V> 
+pub trait PipelineStreamExt: PipelineStream
 {
-    fn map<RK, RV, E, R, F>(self, f: F) -> MapPipeline<Self, K, V, RK, RV, Self::M, F, E, R>
+    fn map<F, E, R>(self, f: F) -> MapPipeline<Self, F, E, R>
     where
-        F: Fn(E) -> R,
-        E: FromMessage<K, V>,
-        R: PatchMessage<K, V, RK, RV>,
         Self: Sized,
-        Self::M: MessageStream<K, V>
     {
         MapPipeline::new(self, f)
     }
 }
 
-pub trait PipelineStreamSinkExt<KS, VS>: PipelineStream<KS::Input, VS::Input> 
-where 
-    KS: PSerialize,
-    VS: PSerialize,
+pub trait PipelineStreamSinkExt: PipelineStream
 {
-    fn sink<Si>(self, topic: &str) -> Sink<KS, VS, Self, Self::M, Si>
+    fn sink<KS, VS, Si>(self, topic: &str) -> Sink<KS, VS, Self, <Self as PipelineStream>::MStream, Si>
     where
-        Si: MessageSink<KS, VS> + Send + 'static,
+        KS: PSerialize,
+        VS: PSerialize,
+        Si: MessageSink + Send + 'static,
+        <Self as PipelineStream>::MStream: MessageSink,
         Self: Sized,
-        Self::M: MessageStream<KS::Input, VS::Input>
     {
         Sink::new(self, String::from(topic))
     }
 }
 
-impl <P, K, V> PipelineStreamExt<K, V> for P
-where P: PipelineStream<K, V>{}
+impl <P> PipelineStreamExt for P
+where P: PipelineStream{}
 
-impl <P, KS, VS> PipelineStreamSinkExt<KS, VS> for P
+impl <P> PipelineStreamSinkExt for P
 where 
-    KS: PSerialize,
-    VS: PSerialize,
-    P: PipelineStream<KS::Input, VS::Input>{}
+    P: PipelineStream {}

@@ -42,11 +42,14 @@ impl<KS, VS> From<StreamPeridotPartitionQueue> for QueueConnector<KS, VS> {
     }
 }
 
-impl<KS, VS> MessageStream<KS::Output, VS::Output> for QueueConnector<KS, VS>
+impl<KS, VS> MessageStream for QueueConnector<KS, VS>
 where
     KS: PDeserialize,
     VS: PDeserialize,
 {
+    type KeyType = KS::Output;
+    type ValueType = VS::Output;
+
     fn poll_next(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

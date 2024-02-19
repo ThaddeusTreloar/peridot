@@ -1,9 +1,10 @@
 use std::{
+    error::Error,
     fmt::Display,
     marker::PhantomData,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll}, error::Error,
+    task::{Context, Poll},
 };
 
 use pin_project_lite::pin_project;
@@ -14,12 +15,10 @@ use crate::{engine::QueueMetadata, pipeline::serde_ext::PSerialize};
 
 use super::types::Message;
 
-pub trait MessageSink<KS, VS>
-where
-    KS: PSerialize,
-    VS: PSerialize,
-{
+pub trait MessageSink {
     type Error: Error;
+    type KeySerialiser: PSerialize;
+    type ValueSerialiser: PSerialize;
 
     fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self
     where
@@ -31,7 +30,10 @@ where
     ) -> Poll<Option<Result<(), Self::Error>>>;
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<KS::Input, VS::Input>,
+        message: Message<
+            <Self::KeySerialiser as PSerialize>::Input,
+            <Self::ValueSerialiser as PSerialize>::Input,
+        >,
     ) -> Result<(), Self::Error>;
     fn poll_commit(
         self: Pin<&mut Self>,
@@ -43,10 +45,7 @@ where
     ) -> Poll<Option<Result<(), Self::Error>>>;
 }
 
-pub trait MessageSinkExt<KS, VS>: MessageSink<KS, VS>
-where
-    KS: PSerialize,
-    VS: PSerialize,
+pub trait MessageSinkExt: MessageSink
 {
     fn sink(self) -> ()
     where
@@ -56,13 +55,13 @@ where
     }
 }
 
-impl<P, KS, VS> MessageSinkExt<KS, VS> for P
-where
-    P: MessageSink<KS, VS>,
-    KS: PSerialize,
-    VS: PSerialize,
-{
-}
+//impl<P, KS, VS> MessageSinkExt<KS, VS> for P
+//where
+//    P: MessageSink<KS, VS>,
+//    KS: PSerialize,
+//    VS: PSerialize,
+//{
+//}
 
 pin_project! {
     pub struct PrintSink<KS, VS>
@@ -93,7 +92,7 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum PrintSinkError {}
 
-impl<KS, VS> MessageSink<KS, VS> for PrintSink<KS, VS>
+impl<KS, VS> MessageSink for PrintSink<KS, VS>
 where
     KS: PSerialize,
     VS: PSerialize,
@@ -101,6 +100,8 @@ where
     VS::Input: Display,
 {
     type Error = PrintSinkError;
+    type KeySerialiser = KS;
+    type ValueSerialiser = VS;
 
     fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self {
         Self::new(queue_metadata)
@@ -117,12 +118,14 @@ where
         self: Pin<&mut Self>,
         message: Message<KS::Input, VS::Input>,
     ) -> Result<(), Self::Error> {
-        
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");
-    
+
         info!("Debug Sink: Sending message: {}", message);
-        info!("Debug Sink: Serialised message: {{ key: {:?}, value: {:?} }}", ser_key, ser_value);
+        info!(
+            "Debug Sink: Serialised message: {{ key: {:?}, value: {:?} }}",
+            ser_key, ser_value
+        );
         info!(
             "Debug Sink: Queue metadata: {{ partition: {}, source_topic: {} }}",
             self.queue_metadata.partition(),
@@ -130,8 +133,17 @@ where
         );
 
         let mut topic_partition_list = TopicPartitionList::default();
-        topic_partition_list.add_partition_offset(self.queue_metadata.source_topic(), message.partition(), rdkafka::Offset::Offset(message.offset() + 1)).expect("Failed to add partition offset");
-        self.queue_metadata.consumer().commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async).expect("Failed to make async commit in state store");
+        topic_partition_list
+            .add_partition_offset(
+                self.queue_metadata.source_topic(),
+                message.partition(),
+                rdkafka::Offset::Offset(message.offset() + 1),
+            )
+            .expect("Failed to add partition offset");
+        self.queue_metadata
+            .consumer()
+            .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)
+            .expect("Failed to make async commit in state store");
 
         Ok(())
     }

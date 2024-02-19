@@ -11,61 +11,42 @@ use crate::pipeline::message::{stream::{MessageStream, PipelineStage}, types::{F
 use super::PipelineStream;
 
 pin_project! {
-    pub struct MapPipeline<S, K, V, RK, RV, M, F, E, R, >
+    pub struct MapPipeline<S, F, E, R>
     where 
-        S: PipelineStream<K, V>,
-        F: Fn(E) -> R,
-        E: FromMessage<K, V>,
-        R: PatchMessage<K, V, RK, RV>,
+        S: PipelineStream,
     {
         #[pin]
         inner: S,
         callback: Arc<F>,
-        _pipeline_type: PhantomData<PipelineStage<M, K, V>>,
-        _input_key_type: PhantomData<K>,
-        _input_value_type: PhantomData<V>,
-        _output_key_type: PhantomData<RK>,
-        _output_value_type: PhantomData<RV>,
-        _extractor_type: PhantomData<E>,
-        _reassembler_type: PhantomData<R>,
+        _extractor: PhantomData<E>,
+        _patcher: PhantomData<R>,
     }
 }
 
-impl <S, K, V, RK, RV, M, F, E, R, > MapPipeline<S, K, V, RK, RV, M, F, E, R, >
+impl <S, F, E, R> MapPipeline<S, F, E, R>
 where 
-    S: PipelineStream<K, V>,
-    M: MessageStream<K, V>,
-    F: Fn(E) -> R,
-    E: FromMessage<K, V>,
-    R: PatchMessage<K, V, RK, RV>
+    S: PipelineStream,
 {
     pub fn new(inner: S, callback: F) -> Self {
         Self {
             inner,
             callback: Arc::new(callback),
-            _pipeline_type: PhantomData,
-            _input_key_type: PhantomData,
-            _input_value_type: PhantomData,
-            _output_key_type: PhantomData,
-            _output_value_type: PhantomData,
-            _extractor_type: PhantomData,
-            _reassembler_type: PhantomData,
+            _extractor: PhantomData,
+            _patcher: PhantomData,
         }
     }
 }
 
-impl<S, K, V, RK, RV, M, F, E, R, > PipelineStream<RK, RV> for MapPipeline<S, K, V, RK, RV, M, F, E, R, >
+impl<S, F, E, R> PipelineStream for MapPipeline<S, F, E, R>
 where
-    S: PipelineStream<K, V>,
-    S::M: MessageStream<K, V>,
-    M: MessageStream<K, V>,
+    S: PipelineStream,
     F: Fn(E) -> R,
-    E: FromMessage<K, V>,
-    R: PatchMessage<K, V, RK, RV>,
+    E: FromMessage<<<S as PipelineStream>::MStream as MessageStream>::KeyType, <<S as PipelineStream>::MStream as MessageStream>::ValueType>,
+    R: PatchMessage<<<S as PipelineStream>::MStream as MessageStream>::KeyType, <<S as PipelineStream>::MStream as MessageStream>::ValueType>,
 {
-    type M = MapMessage<K, V, S::M, F, E, R>;
+    type MStream = MapMessage<S::MStream, F, E, R>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<RK, RV, MapMessage<K, V, S::M, F, E, R>>>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>> {
         let this = self.project();
 
         match this.inner.poll_next(cx) {
