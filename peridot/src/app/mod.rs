@@ -158,14 +158,14 @@ where G: DeliveryGuaranteeType + 'static
         self.jobs.push(Box::new(job));
     }
 
-    pub fn job_from_pipeline<KS, VS, Si, R>(&mut self, topic: &str, pipeline: R) 
+    pub fn job_from_pipeline<Si, R>(&mut self, topic: &str, pipeline: R) 
     where
         R: PipelineStream + Send + 'static,
-        KS: PSerialize<R::KeyType> + Send + 'static,
-        VS: PSerialize<R::ValueType> + Send + 'static,
-        Si: MessageSink<R::KeyType, R::ValueType> + Send + 'static,
+        Si: MessageSink + Send + 'static,
+        Si::KeySerType: PSerialize<Input = R::KeyType> + Send + 'static,
+        Si::ValueSerType: PSerialize<Input = R::ValueType> + Send + 'static,
     {
-        let job = pipeline.sink::<KS, VS, Si>(topic);
+        let job = pipeline.sink::<Si>(topic);
 
         self.job(Box::pin(job));
     }
@@ -278,13 +278,13 @@ where
         (self.handler)(self.input)
     }
 
-    pub fn into_topic<KS, VS, Si>(self, topic: &str) 
+    pub fn into_topic<Si>(self, topic: &str) 
     where
-        KS: PSerialize<R::KeyType> + Send + 'static,
-        VS: PSerialize<R::ValueType> + Send + 'static,
-        Si: MessageSink<R::KeyType,R::ValueType> + Send + 'static,
+        Si: MessageSink + Send + 'static,
+        Si::KeySerType: PSerialize<Input = R::KeyType> + Send + 'static,
+        Si::ValueSerType: PSerialize<Input = R::ValueType> + Send + 'static,
     {
-        let job = (self.handler)(self.input).sink::<KS, VS, Si>(topic);
+        let job = (self.handler)(self.input).sink::<Si>(topic);
 
         self.app.job(Box::pin(job));
     }

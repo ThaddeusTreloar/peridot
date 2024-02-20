@@ -30,14 +30,11 @@ pub trait PipelineStreamExt: PipelineStream
 
 pub trait PipelineStreamSinkExt: PipelineStream
 {
-    fn sink<KS, VS, Si>(self, topic: &str) -> Sink<KS, VS, Self, Si>
+    fn sink<Si>(self, topic: &str) -> Sink<Self, Si>
     where
-        KS: PSerialize<<<Self as PipelineStream>::MStream as MessageStream>::KeyType>,
-        VS: PSerialize<<<Self as PipelineStream>::MStream as MessageStream>::ValueType>,
-        Si: MessageSink<
-            <<Self as PipelineStream>::MStream as MessageStream>::KeyType,
-            <<Self as PipelineStream>::MStream as MessageStream>::ValueType
-        > + Send + 'static,
+        Si: MessageSink + Send + 'static,
+        Si::KeySerType: PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::KeyType>,
+        Si::ValueSerType: PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::ValueType>,
         Self: Sized,
     {
         Sink::new(self, String::from(topic))

@@ -91,7 +91,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut source = ClientConfig::new();
 
-    let group = "rust-test70";
+    let group = "rust-test71";
     let group_instance = "peridot-instance-1";
 
     source
@@ -109,9 +109,9 @@ async fn main() -> Result<(), anyhow::Error> {
 
     app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress", partial_task)
         .and_then(filtering_task)
-        .into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
+        .into_topic::<PrintSink<String, String>>("genericTopic");
 
-    let task_b = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress2", partial_task)
+    /*let task_b = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress2", partial_task)
         .into_pipeline();
 
     let task_c = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress3", partial_task)
@@ -121,7 +121,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let joined_task = join_task(task_b, task_c);
 
-    app.job_from_pipeline::<String, String, PrintSink<String, String, _, _>, _>("sinkTopic", joined_task);
+    app.job_from_pipeline::<PrintSink<String, String>, _>("sinkTopic", joined_task);*/
 
     app.run().await?;
 
