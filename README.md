@@ -23,6 +23,10 @@ To be considered an MVP this library should provide the following features:
 Peridot Adjacent Features:
 - [ ] Schema registry build dependency for codegen
 
+Stretch Goals:
+- [ ] Lazy pipeline initialisation
+- [ ] Lazy message deserialisation
+
 ## Example
 
 Tasks can be created with pipeline templates as such:
