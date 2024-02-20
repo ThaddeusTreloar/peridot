@@ -3,7 +3,7 @@ use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData};
 use pin_project_lite::pin_project;
 use tracing::info;
 
-use crate::{app::{AppBuilder, error::PeridotAppRuntimeError, Task}, pipeline::{pipeline::{stream::{stream::Pipeline, PipelineStream, PipelineStreamSinkExt}, sink::Sink}, serde_ext::{PDeserialize, PSerialize}, message::{sink::MessageSink, stream::{MessageStream, PipelineStage, connector::QueueConnector}, types::{FromMessage, KeyValue}}}};
+use crate::{app::{AppBuilder, error::PeridotAppRuntimeError, SubTask}, pipeline::{pipeline::{stream::{stream::Pipeline, PipelineStream, PipelineStreamSinkExt}, sink::Sink}, serde_ext::{PDeserialize, PSerialize}, message::{sink::MessageSink, stream::{MessageStream, PipelineStage, connector::QueueConnector}, types::{FromMessage, KeyValue}}}};
 
 use super::{util::DeliveryGuaranteeType, AppEngine};
 

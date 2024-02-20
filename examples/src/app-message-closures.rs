@@ -107,21 +107,21 @@ async fn main() -> Result<(), anyhow::Error> {
 
     //let table_a = app.table::<String, Topic, _>("topicTable");
 
-    app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress", partial_task)
-        .and_then(filtering_task)
-        .into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
+    app.task::<String, Json<ChangeOfAddress>, _, _>(
+        "changeOfAddress", 
+        |input| input.map(
+            |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
+        )
+    ).into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
 
-    let task_b = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress2", partial_task)
-        .into_pipeline();
-
-    let task_c = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress3", partial_task)
-        .into_pipeline();
-
-    let htask = app.head_task::<String, Json<ChangeOfAddress>>("topic");
-
-    let joined_task = join_task(task_b, task_c);
-
-    app.job_from_pipeline::<String, String, PrintSink<String, String, _, _>, _>("sinkTopic", joined_task);
+    app.task::<String, Json<ChangeOfAddress>, _, _>(
+        "changeOfAddress", 
+        |input| input.map(
+            |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
+        )
+    ).map(
+        |kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value))
+    ).into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
 
     app.run().await?;
 

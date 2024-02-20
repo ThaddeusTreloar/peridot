@@ -25,8 +25,6 @@ Peridot Adjacent Features:
 
 ## Example
 
-Using tables:
-
 ```
 use peridot::prelude::*;
 
@@ -44,56 +42,14 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = PeridotApp::from_client_config(&source)?;
 
-    let table = app
-        .table::<String, Json<ConsentGrant>, InMemoryStateBackend<_, _>>("clientsTopic")
-        .await?;
+    app.task::<String, Json<Client>, _, _>(
+        "clientTopic", 
+        |input| input.map(
+            |kv: KeyValue<String, Client>| KeyValue::from((kv.key, kv.value.owner))
+        )
+    ).into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
 
     app.run().await?;
-
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-        match table.get_store()
-            .unwrap()
-            .get(&String::from("Oliver")).await 
-        {
-            Some(client) => {
-                info!("Got client record: {:?}", client);
-            },
-            None => {
-                info!("No client record found");
-            }
-        };
-    }
-}
-```
-
-Using streams:
-
-```
-use peridot::prelude::*;
-
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-struct Client {
-    owner_type: String,
-    owner: String,
-}
-
-#[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
-    let mut source = ClientConfig::new();
-
-    ... some normal kafka configuration ...
-
-    let app = PeridotApp::from_client_config(&source)?;
-
-    app.run().await?;
-
-    let _ = app.stream::<String, Json<Client>>("clientTopic")?
-        .map(|kv: Value<Client>| {
-            Value::from(kv.value.owner_type)
-        })
-        .sink::<PrintSink<String, String>>("clientTypesTopic").await;
 
     Ok(())
 }

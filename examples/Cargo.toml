@@ -22,6 +22,10 @@ name = "app-stream-eos"
 path = "src/app-stream-eos.rs"
 
 [[bin]]
+name = "app-message-closures"
+path = "src/app-message-closures.rs"
+
+[[bin]]
 name = "app-message-stream"
 path = "src/app-message-stream.rs"
 

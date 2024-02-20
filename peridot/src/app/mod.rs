@@ -14,7 +14,7 @@ use tracing::info;
 use crate::{
     app::extensions::PeridotConsumerContext,
     engine::{AppEngine, util::{ExactlyOnce, DeliveryGuaranteeType, AtMostOnce, AtLeastOnce}, tasks::{Builder, FromBuilder, Stream}},
-    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend}, pipeline::{serde_ext::{PDeserialize, PSerialize}, pipeline::stream::{stream::Pipeline, PipelineStream, PipelineStreamSinkExt}, message::{stream::{connector::QueueConnector, MessageStream}, sink::MessageSink}},
+    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend}, pipeline::{serde_ext::{PDeserialize, PSerialize}, pipeline::stream::{stream::Pipeline, PipelineStream, PipelineStreamSinkExt, PipelineStreamExt, map::MapPipeline}, message::{stream::{connector::QueueConnector, MessageStream}, sink::MessageSink, types::{FromMessage, PatchMessage}}},
 };
 
 use self::{
@@ -115,7 +115,17 @@ where G: DeliveryGuaranteeType + 'static
         })
     }
 
-    pub fn task<'a, KS, VS, F, R>(&'a mut self, topic: &'a str, handler: F) -> Task<'a, F, Pipeline<KS, VS, G>, R, G>
+    pub fn head_task<'a, KS, VS>(&'a mut self, topic: &'a str) -> HeadTask<'a, Pipeline<KS, VS, G>, G>
+    where 
+        KS: PDeserialize + Send + 'static,
+        VS: PDeserialize + Send + 'static
+    {
+        let input: Pipeline<KS, VS, G> = self.app_builder.stream(topic).expect("Failed to create topic");
+
+        HeadTask::new(self, input)
+    }
+
+    pub fn task<'a, KS, VS, F, R>(&'a mut self, topic: &'a str, handler: F) -> SubTask<'a, F, Pipeline<KS, VS, G>, R, G>
     where 
         F: Fn(Pipeline<KS, VS, G>) -> R,
         R: PipelineStream + Send + 'static,
@@ -125,7 +135,7 @@ where G: DeliveryGuaranteeType + 'static
     {
         let input: Pipeline<KS, VS, G> = self.app_builder.stream(topic).expect("Failed to create topic");
 
-        Task::new(self, handler, input)
+        SubTask::new(self, handler, input)
     }
 
     pub fn from_config(mut config: PeridotConfig) -> Result<Self, PeridotAppCreationError> {
@@ -183,7 +193,34 @@ where G: DeliveryGuaranteeType + 'static
 }
 
 #[must_use = "pipelines do nothing unless patched to a topic"]
-pub struct Task<'a, F, I, R, G>
+pub struct HeadTask<'a, R, G>
+where 
+    R: PipelineStream,
+    G: DeliveryGuaranteeType
+{
+    app: &'a mut PeridotApp<G>,
+    output: R,
+}
+
+impl <'a, R, G> HeadTask<'a, R, G>
+where
+    R: PipelineStream + 'static,
+    G: DeliveryGuaranteeType + 'static
+{
+    fn new(app: &'a mut PeridotApp<G>, handler: R) -> Self {
+        Self {
+            app,
+            output: handler,
+        }
+    }
+}
+
+pub trait Task {
+    
+}
+
+#[must_use = "pipelines do nothing unless patched to a topic"]
+pub struct SubTask<'a, F, I, R, G>
 where 
     F: Fn(I) -> R,
     I: PipelineStream,
@@ -195,7 +232,7 @@ where
     input: I,
 }
 
-impl <'a, F, I, R, G> Task<'a, F, I, R, G>
+impl <'a, F, I, R, G> SubTask<'a, F, I, R, G>
 where 
     F: Fn(I) -> R,
     I: PipelineStream,
@@ -211,13 +248,30 @@ where
         }
     }
 
-    pub fn and_then<F1, R1>(self, next: F1) -> Task<'a, F1, R, R1, G>
+    pub fn and_then<F1, R1>(self, next: F1) -> SubTask<'a, F1, R, R1, G>
     where 
         F1: Fn(R) -> R1,
         R1: PipelineStream + Send + 'static,
         R1::MStream: Send + 'static,
     {
-        Task::<'a>::new(self.app, next, (self.handler)(self.input))
+        SubTask::<'a>::new(self.app, next, (self.handler)(self.input))
+    }
+
+    pub fn map<MF, ME, MR>(self, next: MF) -> SubTask<'a, 
+        impl Fn(R) -> MapPipeline<R, MF, ME, MR>, 
+        R, MapPipeline<R, MF, ME, MR>, 
+        G
+    >
+    where 
+        MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
+        ME: FromMessage<R::KeyType, R::ValueType> + Send + 'static,
+        MR: PatchMessage<R::KeyType, R::ValueType> + Send + 'static,
+    {
+        SubTask::<'a>::new(
+            self.app, 
+            move |input|input.map(next.clone()), 
+            (self.handler)(self.input)
+        )
     }
 
     pub fn into_pipeline(self) -> R {
