@@ -13,7 +13,6 @@ use rdkafka::ClientConfig;
 use rdkafka::config::RDKafkaLogLevel;
 use tracing::level_filters::LevelFilter;
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Topic {
     topic_name: String,
@@ -52,6 +51,8 @@ struct Client {
     owner_type: String,
     owner: String,
 }
+
+//type PeridotStream = impl PipelineStream<KeyType = String, ValueType = String> + Send;
 
 fn partial_task(
     input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,

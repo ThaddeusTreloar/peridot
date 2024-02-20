@@ -91,7 +91,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut source = ClientConfig::new();
 
-    let group = "rust-test70";
+    let group = "rust-test35";
     let group_instance = "peridot-instance-1";
 
     source
@@ -105,15 +105,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
 
-    //let table_a = app.table::<String, Topic, _>("topicTable");
-
-    app.task::<String, Json<ChangeOfAddress>, _, _>(
-        "changeOfAddress", 
-        |input| input.map(
-            |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
-        )
-    ).into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
-
     app.task::<String, Json<ChangeOfAddress>, _, _>(
         "changeOfAddress", 
         |input| input.map(
@@ -121,7 +112,7 @@ async fn main() -> Result<(), anyhow::Error> {
         )
     ).map(
         |kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value))
-    ).into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
+    ).into_topic::<PrintSink<String, String>>("genericTopic");
 
     app.run().await?;
 
