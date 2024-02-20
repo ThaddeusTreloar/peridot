@@ -73,16 +73,6 @@ struct Client {
     owner: String,
 }
 
-fn partial_task(
-    input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
-) -> impl PipelineStream<KeyType = String, ValueType = String> + Send
-{
-    input.map(|kv: KeyValue<String, ChangeOfAddress>| {
-        KeyValue::from((kv.key, kv.value.address))
-    })
-}
-
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let mut source = ClientConfig::new();
@@ -91,7 +81,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = PeridotApp::from_client_config(&source)?;
 
-    app.head_task::<String, Json<Client>, _, _>("clientTopic")
+    app.head_task::<String, Json<Client>>("clientTopic")
         .map(
             |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
         )
