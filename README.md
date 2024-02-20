@@ -54,7 +54,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let app = PeridotApp::from_client_config(&source)?;
 
     app.task::<String, Json<Client>, _, _>("clientTopic", partial_task)
-        .into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
+        .into_topic::<PrintSink<String, String>>("genericTopic");
 
     app.run().await?;
 
@@ -85,7 +85,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .map(
             |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
         )
-        .into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
+        .into_topic::<PrintSink<String, String>>("genericTopic");
 
     app.run().await?;
 
