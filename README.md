@@ -25,6 +25,7 @@ Peridot Adjacent Features:
 
 ## Example
 
+Tasks can be created with pipeline templates as such:
 ```
 use peridot::prelude::*;
 
@@ -34,6 +35,16 @@ struct Client {
     owner: String,
 }
 
+fn partial_task(
+    input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
+) -> impl PipelineStream<KeyType = String, ValueType = String> + Send
+{
+    input.map(|kv: KeyValue<String, ChangeOfAddress>| {
+        KeyValue::from((kv.key, kv.value.address))
+    })
+}
+
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let mut source = ClientConfig::new();
@@ -42,12 +53,49 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = PeridotApp::from_client_config(&source)?;
 
-    app.task::<String, Json<Client>, _, _>(
-        "clientTopic", 
-        |input| input.map(
-            |kv: KeyValue<String, Client>| KeyValue::from((kv.key, kv.value.owner))
+    app.task::<String, Json<Client>, _, _>("clientTopic", partial_task)
+        .into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
+
+    app.run().await?;
+
+    Ok(())
+}
+```
+
+You can also use closures directly:
+
+```
+use peridot::prelude::*;
+
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+struct Client {
+    owner_type: String,
+    owner: String,
+}
+
+fn partial_task(
+    input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
+) -> impl PipelineStream<KeyType = String, ValueType = String> + Send
+{
+    input.map(|kv: KeyValue<String, ChangeOfAddress>| {
+        KeyValue::from((kv.key, kv.value.address))
+    })
+}
+
+
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+    let mut source = ClientConfig::new();
+
+    ... some normal kafka configuration ...
+
+    let app = PeridotApp::from_client_config(&source)?;
+
+    app.head_task::<String, Json<Client>, _, _>("clientTopic")
+        .map(
+            |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
         )
-    ).into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
+        .into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
 
     app.run().await?;
 
