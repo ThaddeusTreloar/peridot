@@ -37,9 +37,11 @@ where
 
 impl<'a, KS, VS, G> PipelineStream for Pipeline<KS, VS, G>
 where
-    KS: PDeserialize,
-    VS: PDeserialize,
+    KS: PDeserialize + Send,
+    VS: PDeserialize + Send,
 {
+    type KeyType = KS::Output;
+    type ValueType = VS::Output;
     type MStream = QueueConnector<KS, VS>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>> {

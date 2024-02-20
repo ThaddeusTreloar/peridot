@@ -11,7 +11,9 @@ pub mod stream;
 
 pub trait PipelineStream
 {
-    type MStream: MessageStream;
+    type KeyType;
+    type ValueType;
+    type MStream: MessageStream<KeyType = Self::KeyType, ValueType = Self::ValueType> + Send;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>>;
 }
@@ -28,12 +30,14 @@ pub trait PipelineStreamExt: PipelineStream
 
 pub trait PipelineStreamSinkExt: PipelineStream
 {
-    fn sink<KS, VS, Si>(self, topic: &str) -> Sink<KS, VS, Self, <Self as PipelineStream>::MStream, Si>
+    fn sink<KS, VS, Si>(self, topic: &str) -> Sink<KS, VS, Self, Si>
     where
-        KS: PSerialize,
-        VS: PSerialize,
-        Si: MessageSink + Send + 'static,
-        <Self as PipelineStream>::MStream: MessageSink,
+        KS: PSerialize<<<Self as PipelineStream>::MStream as MessageStream>::KeyType>,
+        VS: PSerialize<<<Self as PipelineStream>::MStream as MessageStream>::ValueType>,
+        Si: MessageSink<
+            <<Self as PipelineStream>::MStream as MessageStream>::KeyType,
+            <<Self as PipelineStream>::MStream as MessageStream>::ValueType
+        > + Send + 'static,
         Self: Sized,
     {
         Sink::new(self, String::from(topic))

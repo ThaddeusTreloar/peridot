@@ -17,9 +17,9 @@ use super::stream::PipelineStream;
 
 pub mod sink;
 
-pub trait PipelineSink<Si>
+pub trait PipelineSink<Si, K, V>
 where
-    Si: MessageSink,
+    Si: MessageSink<K, V>,
 {
     type Error;
 
@@ -56,10 +56,13 @@ pin_project! {
     #[project = SinkProjection]
     pub struct Sink<KS, VS, S, Si, G = ExactlyOnce>
     where
-        KS: PSerialize,
-        VS: PSerialize,
+        KS: PSerialize<<S::MStream as MessageStream>::KeyType>,
+        VS: PSerialize<<S::MStream as MessageStream>::ValueType>,
         S: PipelineStream,
-        Si: MessageSink,
+        Si: MessageSink<
+            <S::MStream as MessageStream>::KeyType, 
+            <S::MStream as MessageStream>::ValueType
+        >,
     {
         #[pin]
         queue_stream: S,
@@ -73,10 +76,13 @@ pin_project! {
 
 impl<KS, VS, S, Si, G> Sink<KS, VS, S, Si, G>
 where
-    KS: PSerialize,
-    VS: PSerialize,
+    KS: PSerialize<<S::MStream as MessageStream>::KeyType>,
+    VS: PSerialize<<S::MStream as MessageStream>::ValueType>,
     S: PipelineStream,
-    Si: MessageSink,
+    Si: MessageSink<
+        <S::MStream as MessageStream>::KeyType, 
+        <S::MStream as MessageStream>::ValueType
+    >,
 {
     pub fn new(queue_stream: S, topic: String) -> Self {
         Self {
@@ -96,12 +102,16 @@ pub enum SinkError {
     QueueReceiverError(String),
 }
 
-impl<KS, VS, S, G, Si> Future for Sink<KS, VS, S, Si, G> 
+impl<KS, VS, S, Si, G> Future for Sink<KS, VS, S, Si, G> 
 where
-    KS: PSerialize + Send + 'static,
-    VS: PSerialize + Send + 'static,
-    S: PipelineStream + 'static,
-    Si: MessageSink + Send + 'static,
+    KS: PSerialize<<S::MStream as MessageStream>::KeyType> + Send + 'static,
+    VS: PSerialize<<S::MStream as MessageStream>::ValueType> + Send + 'static,
+    S: PipelineStream + Send + 'static,
+    S::MStream: MessageStream + Send + 'static,
+    Si: MessageSink<
+        <S::MStream as MessageStream>::KeyType, 
+        <S::MStream as MessageStream>::ValueType
+    > + Send + 'static,
 {
     type Output = Result<(), PeridotAppRuntimeError>;
 
@@ -120,7 +130,7 @@ where
     
             let message_sink = Si::from_queue_metadata(queue_metadata.clone());
     
-            let join_handle = tokio::spawn(Forward::new(message_stream, message_sink));
+            let join_handle = tokio::spawn(Forward::<KS, VS, _, _>::new(message_stream, message_sink));
 
             info!("Sink thread spawned: {:?}", join_handle)
         }
@@ -131,10 +141,13 @@ pin_project! {
     #[project = ForwardProjection]
     pub struct Forward<KS, VS, M, S>
     where
-        KS: PSerialize,
-        VS: PSerialize,
+        KS: PSerialize<<M as MessageStream>::KeyType>,
+        VS: PSerialize<<M as MessageStream>::ValueType>,
         M: MessageStream,
-        S: MessageSink,
+        S: MessageSink<
+            <M as MessageStream>::KeyType,
+            <M as MessageStream>::ValueType
+        >,
     {
         #[pin]
         message_stream: M,
@@ -147,10 +160,13 @@ pin_project! {
 
 impl<KS, VS, M, S> Forward<KS, VS, M, S>
 where
-    KS: PSerialize,
-    VS: PSerialize,
+    KS: PSerialize<<M as MessageStream>::KeyType>,
+    VS: PSerialize<<M as MessageStream>::ValueType>,
     M: MessageStream,
-    S: MessageSink,
+    S: MessageSink<
+        <M as MessageStream>::KeyType,
+        <M as MessageStream>::ValueType
+    >,
 {
     pub fn new(message_stream: M, message_sink: S) -> Self {
         Self {
@@ -164,10 +180,13 @@ where
 
 impl <KS, VS, M, S> Future for Forward<KS, VS, M, S>
 where
-    KS: PSerialize,
-    VS: PSerialize,
+    KS: PSerialize<<M as MessageStream>::KeyType>,
+    VS: PSerialize<<M as MessageStream>::ValueType>,
     M: MessageStream,
-    S: MessageSink,
+    S: MessageSink<
+        <M as MessageStream>::KeyType,
+        <M as MessageStream>::ValueType
+    >,
 {
     type Output = ();
 

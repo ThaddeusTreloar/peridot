@@ -15,10 +15,8 @@ use crate::{engine::QueueMetadata, pipeline::serde_ext::PSerialize};
 
 use super::types::Message;
 
-pub trait MessageSink {
+pub trait MessageSink<K, V> {
     type Error: Error;
-    type KeySerialiser: PSerialize;
-    type ValueSerialiser: PSerialize;
 
     fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self
     where
@@ -30,10 +28,7 @@ pub trait MessageSink {
     ) -> Poll<Option<Result<(), Self::Error>>>;
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<
-            <Self::KeySerialiser as PSerialize>::Input,
-            <Self::ValueSerialiser as PSerialize>::Input,
-        >,
+        message: Message<K,V>,
     ) -> Result<(), Self::Error>;
     fn poll_commit(
         self: Pin<&mut Self>,
@@ -45,7 +40,7 @@ pub trait MessageSink {
     ) -> Poll<Option<Result<(), Self::Error>>>;
 }
 
-pub trait MessageSinkExt: MessageSink
+pub trait MessageSinkExt<K, V>: MessageSink<K, V>
 {
     fn sink(self) -> ()
     where
@@ -64,27 +59,31 @@ pub trait MessageSinkExt: MessageSink
 //}
 
 pin_project! {
-    pub struct PrintSink<KS, VS>
+    pub struct PrintSink<KS, VS, K, V>
     where
-        KS: PSerialize,
-        VS: PSerialize,
+        KS: PSerialize<K>,
+        VS: PSerialize<V>,
     {
         queue_metadata: Arc<QueueMetadata>,
         _key_serialiser_type: PhantomData<KS>,
         _value_serialiser_type: PhantomData<VS>,
+        _key_type: PhantomData<K>,
+        _value_type: PhantomData<V>,
     }
 }
 
-impl<KS, VS> PrintSink<KS, VS>
+impl<KS, VS, K, V> PrintSink<KS, VS, K, V>
 where
-    KS: PSerialize,
-    VS: PSerialize,
+    KS: PSerialize<K>,
+    VS: PSerialize<V>,
 {
     pub fn new(queue_metadata: QueueMetadata) -> Self {
         Self {
             queue_metadata: Arc::new(queue_metadata),
             _key_serialiser_type: PhantomData,
             _value_serialiser_type: PhantomData,
+            _key_type: PhantomData,
+            _value_type: PhantomData,
         }
     }
 }
@@ -92,16 +91,14 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum PrintSinkError {}
 
-impl<KS, VS> MessageSink for PrintSink<KS, VS>
+impl<KS, VS, K, V> MessageSink<K, V> for PrintSink<KS, VS, K, V>
 where
-    KS: PSerialize,
-    VS: PSerialize,
-    KS::Input: Display,
-    VS::Input: Display,
+    KS: PSerialize<K>,
+    VS: PSerialize<V>,
+    K: Display,
+    V: Display,
 {
     type Error = PrintSinkError;
-    type KeySerialiser = KS;
-    type ValueSerialiser = VS;
 
     fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self {
         Self::new(queue_metadata)
@@ -116,7 +113,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<KS::Input, VS::Input>,
+        message: Message<K, V>,
     ) -> Result<(), Self::Error> {
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");

@@ -248,6 +248,41 @@ impl <K, V> From<(K, V)> for KeyValue<K, V> {
     }
 }
 
+impl <K, V> FromMessage<K, V> for (K, V) 
+where
+    K: Clone,
+    V: Clone
+{
+    fn from_message(msg: &Message<K, V>) -> Self {
+        (msg.key().clone(), msg.value().clone())
+    }
+}
+
+impl <K, V, KR, VR> PatchMessage<K, V> for (KR, VR) {
+    type RK = KR;
+    type RV = VR;
+
+    fn patch(self, Message { topic, timestamp, partition, offset, headers, key, value }: Message<K, V>) -> Message<Self::RK, Self::RV> {
+        Message {
+            topic,
+            timestamp,
+            partition,
+            offset,
+            headers,
+            key: self.0,
+            value: self.1
+        }
+    }
+}
+
+impl <K, V> FromMessage<K, V> for V
+where V: Clone
+{
+    fn from_message(msg: &Message<K, V>) -> Self {
+        msg.value().clone()
+    }
+}
+
 impl <K, V> FromMessage<K, V> for KeyValue<K, V> 
 where K: Clone,
       V: Clone

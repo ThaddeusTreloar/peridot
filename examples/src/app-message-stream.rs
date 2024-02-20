@@ -1,32 +1,16 @@
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
 
-use futures::future::BoxFuture;
-use futures::{StreamExt, Future};
-use peridot::app::error::PeridotAppRuntimeError;
-use peridot::app::pstream::PStream;
-use peridot::app::ptable::{PTable, PeridotTable};
-use peridot::engine::tasks::Stream;
-use peridot::engine::util::{ExactlyOnce, DeliveryGuaranteeType};
+use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
-use peridot::app::{PeridotApp, AppBuilder};
+use peridot::app::PeridotApp;
 use peridot::pipeline::message::sink::PrintSink;
-use peridot::pipeline::message::stream::MessageStream;
 use peridot::pipeline::message::types::{Value, KeyValue};
-use peridot::pipeline::pipeline::sink::SinkError;
-use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStreamSinkExt, PipelineStream};
+use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStream};
 use peridot::pipeline::serde_ext::Json;
-use peridot::state::backend::in_memory::InMemoryStateBackend;
-use peridot::state::backend::persistent::PersistentStateBackend;
 use rdkafka::ClientConfig;
 
-use peridot::state::ReadableStateStore;
-use rdkafka::config::{RDKafkaLogLevel, FromClientConfig};
-use rdkafka::producer::{BaseProducer, Producer};
-use tracing::info;
+use rdkafka::config::RDKafkaLogLevel;
 use tracing::level_filters::LevelFilter;
 
 
@@ -69,41 +53,37 @@ struct Client {
     owner: String,
 }
 
-fn extract_city(Value{ value }: Value<ChangeOfAddress>) -> Value<String> {
-    Value::from(value.city)
-}
-
-fn passthrough(Value{ value }: Value<String>) -> Value<String> {
-    Value::from(value)
-}
-
-fn kv_passthrough(kv: KeyValue<String, String>) -> KeyValue<String, String> {
-    kv
-}
-
-fn map_changes_of_address_to_city(
-    app: &AppBuilder<ExactlyOnce>,
-) -> Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Send>> 
-{
-    Box::pin(
-        app.stream::<String, Json<ChangeOfAddress>>("changeOfAddress").expect("Failed to create stream")
-            .map(|kv: KeyValue<String, ChangeOfAddress>| {
-                KeyValue::from((kv.key, kv.value.address))
-            })
-            .sink::<PrintSink<String, String>>("someTopic")
-    )
-}
-/*
-fn partial_task<B>(
-    input: Stream<String, ChangeOfAddress, B>,
-) -> impl PipelineStream<String, String> 
-where B: PipelineStream<String, ChangeOfAddress>,
-    B::M: MessageStream<String, ChangeOfAddress>
+fn partial_task(
+    input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
+) -> impl PipelineStream<KeyType = String, ValueType = String> + Send
 {
     input.map(|kv: KeyValue<String, ChangeOfAddress>| {
         KeyValue::from((kv.key, kv.value.address))
+    }).map(|(key, value)| {
+        (key, value)
+    }).map(|value: String|{
+        Value::from(value)
     })
-} */
+}
+
+fn filtering_task(
+    input: impl PipelineStream<KeyType = String, ValueType = String> + Send,
+) -> impl PipelineStream<KeyType = String, ValueType = String> + Send
+{
+    input.map(|kv: KeyValue<String, String>| {
+        KeyValue::from((kv.key, kv.value))
+    })
+}
+
+fn join_task(
+    input1: impl PipelineStream<KeyType = String, ValueType = String> + Send,
+    _input2: impl PipelineStream<KeyType = String, ValueType = String> + Send,
+) -> impl PipelineStream<KeyType = String, ValueType = String> + Send
+{
+    input1.map(|kv: KeyValue<String, String>| {
+        KeyValue::from((kv.key, kv.value))
+    })
+}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -125,13 +105,21 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
 
-    app.job(map_changes_of_address_to_city);
+    //let table_a = app.table::<String, Topic, _>("topicTable");
 
-    let _ = app.task::<String, Json<ChangeOfAddress>, _, _, _, _, _, _>("someTopic", partial_task);
+    app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress", partial_task)
+        .and_then(filtering_task)
+        .into_topic::<String, String, PrintSink<String, String, _, _>>("genericTopic");
 
-    //let _table = app
-    //    .table::<String, ConsentGrant, InMemoryStateBackend<_>>("consent.Client")
-    //    .await?;
+    let task_b = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress2", partial_task)
+        .into_pipeline();
+
+    let task_c = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress3", partial_task)
+        .into_pipeline();
+
+    let joined_task = join_task(task_b, task_c);
+
+    app.job_from_pipeline::<String, String, PrintSink<String, String, _, _>, _>("sinkTopic", joined_task);
 
     app.run().await?;
 

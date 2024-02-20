@@ -40,10 +40,12 @@ where
 impl<S, F, E, R> PipelineStream for MapPipeline<S, F, E, R>
 where
     S: PipelineStream,
-    F: Fn(E) -> R,
-    E: FromMessage<<<S as PipelineStream>::MStream as MessageStream>::KeyType, <<S as PipelineStream>::MStream as MessageStream>::ValueType>,
-    R: PatchMessage<<<S as PipelineStream>::MStream as MessageStream>::KeyType, <<S as PipelineStream>::MStream as MessageStream>::ValueType>,
+    F: Fn(E) -> R + Send + Sync,
+    E: FromMessage<<<S as PipelineStream>::MStream as MessageStream>::KeyType, <<S as PipelineStream>::MStream as MessageStream>::ValueType> + Send,
+    R: PatchMessage<<<S as PipelineStream>::MStream as MessageStream>::KeyType, <<S as PipelineStream>::MStream as MessageStream>::ValueType> + Send,
 {
+    type KeyType = R::RK;
+    type ValueType = R::RV;
     type MStream = MapMessage<S::MStream, F, E, R>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>> {

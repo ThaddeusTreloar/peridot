@@ -3,7 +3,7 @@ use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData};
 use pin_project_lite::pin_project;
 use tracing::info;
 
-use crate::{app::{AppBuilder, error::PeridotAppRuntimeError, Head}, pipeline::{pipeline::{stream::{stream::Pipeline, PipelineStream, PipelineStreamSinkExt}, sink::Sink}, serde_ext::{PDeserialize, PSerialize}, message::{sink::MessageSink, stream::{MessageStream, PipelineStage, connector::QueueConnector}}}};
+use crate::{app::{AppBuilder, error::PeridotAppRuntimeError, Task}, pipeline::{pipeline::{stream::{stream::Pipeline, PipelineStream, PipelineStreamSinkExt}, sink::Sink}, serde_ext::{PDeserialize, PSerialize}, message::{sink::MessageSink, stream::{MessageStream, PipelineStage, connector::QueueConnector}, types::{FromMessage, KeyValue}}}};
 
 use super::{util::DeliveryGuaranteeType, AppEngine};
 
@@ -29,8 +29,8 @@ pub struct IngressTask<KS, VS, G> {
 impl <KS, VS, G> Builder for IngressTask<KS, VS, G>
 where 
     G: DeliveryGuaranteeType,
-    KS: PDeserialize,
-    VS: PDeserialize,
+    KS: PDeserialize + Send,
+    VS: PDeserialize + Send,
 {
     type Output = Pipeline<KS, VS, G>;
 
@@ -48,6 +48,11 @@ where
     fn from_builder(builder: &B, target: &str) -> Result<Self::Output, FromBuilderError>;
 }
 
+pub trait IntoStream: PipelineStream
+{
+    fn into_stream(self) -> Self;
+}
+
 pin_project! {
     pub struct Stream<K, V, P>
     {
@@ -59,8 +64,10 @@ pin_project! {
 }
 
 impl <K, V, P> PipelineStream for Stream<K, V, P>
-where P: PipelineStream
+where P: PipelineStream<KeyType = K, ValueType = V>
 {
+    type KeyType = K;
+    type ValueType = V;
     type MStream = P::MStream;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>> {

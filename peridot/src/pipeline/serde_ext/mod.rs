@@ -1,11 +1,10 @@
 use std::{marker::PhantomData, string::FromUtf8Error, error::Error};
 
-pub trait PSerialize 
+pub trait PSerialize<T>
 {
-    type Input;
     type Error: Error;
 
-    fn serialize(input: &Self::Input) -> Result<Vec<u8>, Self::Error>;
+    fn serialize(input: &T) -> Result<Vec<u8>, Self::Error>;
 }
 
 pub trait PDeserialize 
@@ -21,13 +20,12 @@ pub struct Json<T>
     _type: PhantomData<T>
 }
 
-impl <S> PSerialize for Json<S>
+impl <S> PSerialize<S> for Json<S>
 where S: serde::Serialize
 {
-    type Input = S;
     type Error = serde_json::Error;
 
-    fn serialize(input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
+    fn serialize(input: &S) -> Result<Vec<u8>, Self::Error> {
         serde_json::to_vec(input)
     }
 }
@@ -48,9 +46,8 @@ pub struct Native<T>
     _type: PhantomData<T>
 }
 
-impl PSerialize for String
+impl PSerialize<String> for String
 {
-    type Input = String;
     type Error = FromUtf8Error;
 
     fn serialize(input: &String) -> Result<Vec<u8>, Self::Error> {

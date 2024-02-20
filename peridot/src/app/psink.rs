@@ -46,20 +46,22 @@ impl <G> PSinkBuilder<G> {
     }
 }
 
-pub struct PSink<KS, VS, M, G = ExactlyOnce> 
-where KS: PSerialize,
-    VS: PSerialize,
+pub struct PSink<KS, VS, K, V, M, G = ExactlyOnce> 
+where KS: PSerialize<K>,
+    VS: PSerialize<V>,
     M: MessageStream
 {
     pipeline: PipelineStage<M>,
     _key_ser_type: PhantomData<KS>,
     _value_ser_type: PhantomData<VS>,
+    _key_type: PhantomData<K>,
+    _value_type: PhantomData<V>,
     _delivery_guarantee: PhantomData<G>,
 }
 
-impl <KS, VS, M, G> PSink<KS, VS, M, G>
-where KS: PSerialize,
-    VS: PSerialize,
+impl <KS, VS, K, V, M, G> PSink<KS, VS, K, V, M, G>
+where KS: PSerialize<K>,
+    VS: PSerialize<V>,
     M: MessageStream,
     G: 'static
 {
@@ -68,6 +70,8 @@ where KS: PSerialize,
             pipeline,
             _key_ser_type: PhantomData,
             _value_ser_type: PhantomData,
+            _key_type: PhantomData,
+            _value_type: PhantomData,
             _delivery_guarantee: PhantomData,
         }
     }
