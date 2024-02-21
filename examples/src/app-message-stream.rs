@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
-use peridot::app::PeridotApp;
+use peridot::app::{PeridotApp, Task, IntoTask};
 use peridot::pipeline::message::sink::PrintSink;
 use peridot::pipeline::message::types::{Value, KeyValue};
 use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStream};
@@ -106,23 +106,12 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
 
-    //let table_a = app.table::<String, Topic, _>("topicTable");
-
-    app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress", partial_task)
-        .and_then(filtering_task)
-        .into_topic::<PrintSink<String, String>>("genericTopic");
-
-    /*let task_b = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress2", partial_task)
-        .into_pipeline();
-
-    let task_c = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress3", partial_task)
-        .into_pipeline();
-
-    let htask = app.head_task::<String, Json<ChangeOfAddress>>("topic");
-
-    let joined_task = join_task(task_b, task_c);
-
-    app.job_from_pipeline::<PrintSink<String, String>, _>("sinkTopic", joined_task);*/
+    app.stream_builder()
+        .stream::<String, Json<ChangeOfAddress>>("changeOfAddress").expect("Failed to build pipeline")
+        .map(
+            |val: Value<ChangeOfAddress>| Value::from(val.value.address)
+        ).into_task(&mut app)
+        .into_topic::<PrintSink<String, String>>("generic");
 
     app.run().await?;
 

@@ -29,6 +29,10 @@ path = "src/app-message-closures.rs"
 name = "app-message-stream"
 path = "src/app-message-stream.rs"
 
+[[bin]]
+name = "app-message-task"
+path = "src/app-message-task.rs"
+
 [dependencies]
 crossbeam = "0.8.4"
 futures = "0.3.30"

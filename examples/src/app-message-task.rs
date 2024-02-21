@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
-use peridot::app::{PeridotApp, Task};
+use peridot::app::{PeridotApp, Task, IntoTask};
 use peridot::pipeline::message::sink::PrintSink;
 use peridot::pipeline::message::types::{Value, KeyValue};
 use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStream};
@@ -12,7 +12,6 @@ use rdkafka::ClientConfig;
 
 use rdkafka::config::RDKafkaLogLevel;
 use tracing::level_filters::LevelFilter;
-
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Topic {
@@ -91,7 +90,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut source = ClientConfig::new();
 
-    let group = "rust-test35";
+    let group = "rust-test71";
     let group_instance = "peridot-instance-1";
 
     source
@@ -105,14 +104,26 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
 
+    //let table_a = app.table::<String, Topic, _>("topicTable");
+
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
-        .map(
-            |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
-        ).map(
-            |kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value))
-        ).into_topic::<PrintSink<String, String>>("genericTopic");
+        .and_then(partial_task)
+        .and_then(filtering_task)
+        .into_topic::<PrintSink<String, String>>("genericTopic");
+
+    /*let task_b = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress2", partial_task)
+        .into_pipeline();
+
+    let task_c = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress3", partial_task)
+        .into_pipeline();
+
+    let htask = app.head_task::<String, Json<ChangeOfAddress>>("topic");
+
+    let joined_task = join_task(task_b, task_c);
+
+    app.job_from_pipeline::<PrintSink<String, String>, _>("sinkTopic", joined_task);*/
 
     app.run().await?;
- 
+
     Ok(())
 }
