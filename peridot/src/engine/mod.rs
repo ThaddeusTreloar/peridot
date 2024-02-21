@@ -46,6 +46,7 @@ use crate::app::{
     PeridotConsumer,
 };
 
+pub mod circuit_breaker;
 pub mod tasks;
 pub mod distributor;
 pub mod error;
@@ -453,7 +454,7 @@ where
     ) -> Result<PTable<KS, VS, B>, PeridotEngineRuntimeError>
     where
         B: StateBackend
-            + ReadableStateBackend<KS::Output, VS::Output>
+            + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output>
             + WriteableStateBackend<KS::Output, VS::Output>
             + Send
             + Sync

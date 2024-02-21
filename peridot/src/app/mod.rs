@@ -68,7 +68,7 @@ where G: DeliveryGuaranteeType
     ) -> Result<PTable<KS, VS, B>, PeridotAppRuntimeError>
     where
         B: StateBackend
-            + ReadableStateBackend<KS::Output, VS::Output>
+            + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output>
             + WriteableStateBackend<KS::Output, VS::Output>
             + Send
             + Sync
@@ -287,8 +287,12 @@ where
         ME: FromMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static,
         MR: PatchMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static;
 
-    fn into_table(self, table_name: &str) -> () 
+    fn into_table<S>(self, table_name: &str) -> () 
     where 
+        S: ReadableStateBackend<
+            KeyType = <Self::R as PipelineStream>::KeyType, 
+            ValueType = <Self::R as PipelineStream>::ValueType
+        >,
         Self: Sized
     {
         unimplemented!()

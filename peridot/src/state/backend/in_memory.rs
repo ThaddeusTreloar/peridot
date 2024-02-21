@@ -3,6 +3,8 @@ use std::{sync::Arc, hash::Hash};
 use dashmap::DashMap;
 use tracing::info;
 
+use crate::pipeline::message::types::Message;
+
 use super::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend};
 
 pub struct InMemoryStateBackend<K, V>
@@ -57,12 +59,15 @@ where
     }
 }
 
-impl<K, V> ReadableStateBackend<K, V> for InMemoryStateBackend<K, V>
+impl<K, V> ReadableStateBackend for InMemoryStateBackend<K, V>
 where
     K: Send + Sync + Hash + Eq,
     V: Send + Sync + Clone
 {
-    async fn get(&self, key: &K) -> Option<V> {
+    type KeyType = K;
+    type ValueType = V;
+
+    async fn get(&self, key: &Self::KeyType) -> Option<Self::ValueType> {
         Some(self.store.get(key)?.value().clone())
     }
 }
@@ -72,11 +77,13 @@ where
     K: Send + Sync + Hash + Eq + Clone,
     V: Send + Sync + Clone
 {
-    async fn set(&self, key: &K, value: V) -> Option<V> {
-        self.store.insert(key.clone(), value)
+    async fn commit_update(&self, message: &Message<K, V>) -> Option<Message<K, V>> {
+        self.store.insert(message.key().clone(), message.value().clone());
+        None
     }
 
-    async fn delete(&self, key: &K) -> Option<V> {
-        Some(self.store.remove(key)?.1)
+    async fn delete(&self, key: &K)-> Option<Message<K, V>> {
+        self.store.remove(key);
+        None
     }
 }

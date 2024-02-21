@@ -90,8 +90,9 @@ fn forward_partitions(
     let count = for_downstream.iter().count();
 
     if count == 0 {
-        info!("No assigned partitions for Engine, stopping...");
-        engine_state.store(EngineState::Stopped);
+        info!("No new partitions assigned, skipping...");
+        //info!("No assigned partitions for Engine, stopping...");
+        //engine_state.store(EngineState::Stopped);
     } else {
         for (topic, partition) in for_downstream.into_iter() {
             let queue_sender = downstreams.get(&topic);
@@ -120,7 +121,7 @@ fn forward_partitions(
 
 }
 
-impl  Future for QueueDistributor {
+impl Future for QueueDistributor {
     type Output = Result<(), PeridotEngineRuntimeError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

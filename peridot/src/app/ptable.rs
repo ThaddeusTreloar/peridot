@@ -36,7 +36,7 @@ where
 
 impl<KS, VS, B> PTable<KS, VS, B>
 where
-    B: StateBackend + ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
+    B: StateBackend + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
     KS: PDeserialize + Send + Sync,
     VS: PDeserialize + Send + Sync,
     KS::Output: Send + Sync,
@@ -53,7 +53,7 @@ where
 
 impl<KS, VS, B> PeridotTable<KS, VS, B> for PTable<KS, VS, B>
 where
-    B: StateBackend + ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
+    B: StateBackend + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
     KS: PDeserialize + Send + Sync,
     VS: PDeserialize + Send + Sync,
     KS::Output: Send + Sync,

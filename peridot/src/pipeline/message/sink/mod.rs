@@ -136,6 +136,7 @@ where
                 rdkafka::Offset::Offset(message.offset() + 1),
             )
             .expect("Failed to add partition offset");
+        
         self.queue_metadata
             .consumer()
             .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)

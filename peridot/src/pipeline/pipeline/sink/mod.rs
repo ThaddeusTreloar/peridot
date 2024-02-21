@@ -109,7 +109,7 @@ where
         let SinkProjection { mut queue_stream, sink_topic, ..} = self.project();
         
         loop {
-            let PipelineStage { queue_metadata, message_stream , ..} = match queue_stream.as_mut().poll_next(cx) {
+            let PipelineStage (queue_metadata, message_stream) = match queue_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => return Poll::Ready(Ok(())),
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(q)) => q,

@@ -5,6 +5,8 @@ use serde::de::DeserializeOwned;
 use surrealdb::{Surreal, engine::local::{File, Db}, sql::Id};
 use tracing::info;
 
+use crate::pipeline::message::types::Message;
+
 use super::{ReadableStateBackend, WriteableStateBackend, error::BackendCreationError, StateBackend, CommitLog};
 
 pub struct PersistentStateBackend<K, V> {
@@ -168,12 +170,15 @@ where
     }
 }
 
-impl <K, V> ReadableStateBackend<K, V> for PersistentStateBackend<K, V> 
+impl <K, V> ReadableStateBackend for PersistentStateBackend<K, V> 
 where 
     K: Send + Sync + Into<Id> + Clone,
     V: Send + Sync + Clone + DeserializeOwned,
 {
-    async fn get(&self, key: &K) -> Option<V> {
+    type KeyType = K;
+    type ValueType = V;
+
+    async fn get(&self, key: &Self::KeyType) -> Option<Self::ValueType> {
         self.store
             .select(("state", key.clone())).await
             .expect("Failed to get value from db")
@@ -185,7 +190,7 @@ where
     K: Send + Sync + Into<Id> + Clone,
     V: Send + Sync + Clone + serde::Serialize + DeserializeOwned,
 {
-    async fn set(&self, key: &K, value: V) -> Option<V> {
+    /*async fn set(&self, key: &K, value: V) -> Option<V> {
         if let Some(old_value) = self.store
             .select(("state", key.clone())).await
             .expect("Failed to get value from db") {
@@ -210,5 +215,13 @@ where
     
     async fn delete(&self, _key: &K) -> Option<V> {
         unimplemented!("Delete not implemented")
+    }*/
+
+    async fn commit_update(&self, message: &Message<K, V>) -> Option<Message<K, V>> {
+        None
+    }
+
+    async fn delete(&self, key: &K)-> Option<Message<K, V>> {
+        None
     }
 }

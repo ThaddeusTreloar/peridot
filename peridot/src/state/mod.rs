@@ -14,6 +14,7 @@ use self::{
 
 pub mod backend;
 pub mod error;
+pub mod table;
 
 pub trait ReadableStateStore<K, V> {
     fn get(&self, key: &K) -> impl Future<Output = Option<V>>;
@@ -65,7 +66,7 @@ async fn start_partition_update_thread<KS, VS>(
 
                 let value = VS::deserialize(raw_value).expect("Failed to deserialise value");
 
-                store_ref.set(&key, value).await;
+                //store_ref.commit_update(&key, value).await;
 
                 let mut topic_partition_list = TopicPartitionList::default();
                 topic_partition_list.add_partition_offset(topic_ref, partition, rdkafka::Offset::Offset(msg.offset() + 1)).expect("Failed to add partition offset");
@@ -81,7 +82,7 @@ where
     VS: PDeserialize + Send + Sync + 'static,
     KS::Output: Send + Sync + 'static,
     VS::Output: Send + Sync + 'static,
-    T: StateBackend + ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output> + Send + Sync + 'static,
+    T: StateBackend + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output> + WriteableStateBackend<KS::Output, VS::Output> + Send + Sync + 'static,
 {
     pub fn try_new(
         topic: String,
@@ -104,6 +105,26 @@ where
         Ok(state_store)
     }
 
+    pub fn new_new(
+
+    ) -> () {
+
+
+        // 
+    }
+
+    pub fn new_update_thread() {
+        // wait for new queue
+        // build producer
+        // start update thread
+        // {
+        //      waits for message   
+        //      queues item for production   
+        //      store in state store
+        //      commit transaction, on failure, revert state store changes
+        // }
+    }
+
     fn start_update_thread(
         &self,
         mut stream_queue: RawQueueReceiver,
@@ -124,7 +145,7 @@ impl<KS, VS, T> ReadableStateStore<KS::Output, VS::Output> for StateStore<KS, VS
 where
     KS: PDeserialize,
     VS: PDeserialize,
-    T: ReadableStateBackend<KS::Output, VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
+    T: ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
 {
     async fn get(&self, key: &KS::Output) -> Option<VS::Output> {
         while let EngineState::Lagging

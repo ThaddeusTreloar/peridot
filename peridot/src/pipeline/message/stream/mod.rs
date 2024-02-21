@@ -16,19 +16,19 @@ pub trait MessageStream {
 
 pub trait MessageStreamExt<K, V>: MessageStream {}
 
-pub struct PipelineStage<M> {
-    pub queue_metadata: QueueMetadata,
-    pub message_stream: M,
-}
+pub struct PipelineStage<M>(
+    pub QueueMetadata,
+    pub M,
+);
 
 impl<M> PipelineStage<M>
 where M: MessageStream
 {
     pub fn new(queue_metadata: QueueMetadata, message_stream: M) -> Self {
-        PipelineStage {
+        PipelineStage (
             queue_metadata,
             message_stream,
-        }
+        )
     }
 
     pub fn map<F, E, R>(self, f: Arc<F>) -> PipelineStage<MapMessage<M, F, E, R>>
@@ -38,7 +38,7 @@ where M: MessageStream
         R: PatchMessage<M::KeyType, M::ValueType>,
         Self: Sized,
     {
-        let Self { queue_metadata, message_stream, .. } = self;
+        let PipelineStage(queue_metadata, message_stream) = self;
 
         let wrapped = MapMessage::new(message_stream, f);
 

@@ -54,7 +54,7 @@ impl Stream for StreamPeridotPartitionQueue {
         {
             Some(Ok(message)) => Poll::Ready(
                 Option::Some(
-                        message.detach()
+                    message.detach()
                 )),
             Some(Err(e)) => panic!("Failed to get message from upstream: {}", e),
             None => {

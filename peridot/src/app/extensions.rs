@@ -4,7 +4,7 @@ use rdkafka::{
     consumer::ConsumerContext,
     error::KafkaError,
     topic_partition_list::{self, TopicPartitionListElem},
-    ClientContext, util::Timeout,
+    ClientContext, util::Timeout, producer::ProducerContext,
 };
 use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tracing::error;

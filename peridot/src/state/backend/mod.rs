@@ -3,6 +3,8 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::Future;
 
+use crate::pipeline::message::types::Message;
+
 pub mod in_memory;
 pub mod persistent;
 pub mod error;
@@ -50,13 +52,27 @@ pub trait StateBackend
     fn get_offset(&self, topic: &str, partition: i32) -> impl Future<Output = Option<i64>> + Send;
 }
 
-pub trait ReadableStateBackend<K, V> {
-    fn get(&self, key: &K) -> impl Future<Output = Option<V>> + Send;
+pub trait ReadableStateBackend {
+    type KeyType;
+    type ValueType;
+
+    fn get(&self, key: &Self::KeyType) -> impl Future<Output = Option<Self::ValueType>> + Send;
 }
 
 pub trait WriteableStateBackend<K, V> 
 {
-    fn set(&self, key: &K, value: V) -> impl Future<Output = Option<V>> + Send;
-    fn delete(&self, key: &K)-> impl Future<Output = Option<V>> + Send;
+    fn commit_update(&self, message: &Message<K, V>) -> impl Future<Output = Option<Message<K, V>>> + Send;
+    fn delete(&self, key: &K)-> impl Future<Output = Option<Message<K, V>>> + Send;
 }
 
+// User facing API interface for interacting with a state store
+pub trait BackendView {
+    type KeyType;
+    type ValueType;
+
+    fn get(&self, key: &Self::KeyType) -> impl Future<Output = Option<Self::ValueType>> + Send;
+    // fn all
+    // fn range
+    // fn prefix
+    // fn count
+}

@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use rdkafka::message::{BorrowedMessage, Message as KafkaMessage, BorrowedHeaders, Headers as KafkaHeaders, OwnedMessage, OwnedHeaders};
+use rdkafka::{message::{BorrowedMessage, Message as KafkaMessage, BorrowedHeaders, Headers as KafkaHeaders, OwnedMessage, OwnedHeaders, Header}, producer::BaseRecord};
 
 use crate::pipeline::serde_ext::PDeserialize;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MessageHeaders {
     headers: Vec<(String, Vec<u8>)>
 }
@@ -22,6 +22,22 @@ impl MessageHeaders {
                 None
             }
         }).collect()
+    }
+
+    pub fn into_owned_headers(&self) -> OwnedHeaders {
+        let mut out: OwnedHeaders = Default::default();
+
+        let out = self.headers
+            .iter()
+            .fold(
+                OwnedHeaders::new(),
+                |out, (key, value)| out.insert(Header{
+                    key,
+                    value: Some(value)
+                })
+            );
+
+        out
     }
 }
 
@@ -49,9 +65,27 @@ impl From<&OwnedHeaders> for MessageHeaders {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum PeridotTimestamp {
+    NotAvailable,
+    CreateTime(i64),
+    LogAppendTime(i64),
+}
+
+impl From<rdkafka::message::Timestamp> for PeridotTimestamp {
+    fn from(ts: rdkafka::message::Timestamp) -> Self {
+        match ts {
+            rdkafka::message::Timestamp::NotAvailable => Self::NotAvailable,
+            rdkafka::message::Timestamp::CreateTime(ts) => Self::CreateTime(ts),
+            rdkafka::message::Timestamp::LogAppendTime(ts) => Self::LogAppendTime(ts)
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct Message<K, V> {
     topic: String,
-    timestamp: rdkafka::message::Timestamp,
+    timestamp: PeridotTimestamp,
     partition: i32,
     offset: i64,
     headers: MessageHeaders,
@@ -82,8 +116,8 @@ impl <K, V> Message<K, V> {
         &self.topic
     }
 
-    pub fn timestamp(&self) -> rdkafka::message::Timestamp {
-        self.timestamp
+    pub fn timestamp<'a>(&'a self) -> &'a PeridotTimestamp {
+        &self.timestamp
     }
 
     pub fn partition(&self) -> i32 {
@@ -130,7 +164,7 @@ where KS: PDeserialize,
 
         Ok(Self {
             topic: msg.topic().to_string(),
-            timestamp: msg.timestamp(),
+            timestamp: msg.timestamp().into(),
             partition: msg.partition(),
             offset: msg.offset(),
             headers,
@@ -171,7 +205,7 @@ where KS: PDeserialize,
 
         Ok(Self {
             topic: msg.topic().to_string(),
-            timestamp: msg.timestamp(),
+            timestamp: msg.timestamp().into(),
             partition: msg.partition(),
             offset: msg.offset(),
             headers,
