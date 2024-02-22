@@ -1,16 +1,13 @@
-use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
-use std::ops::Deref;
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use rdkafka::consumer::ConsumerContext;
 use rdkafka::util::Timeout;
 use rdkafka::{
-    consumer::Consumer,
-    message::Message,
-    producer::{Producer, PARTITION_UA},
-    topic_partition_list::TopicPartitionListElem,
+    consumer::Consumer, producer::PARTITION_UA, topic_partition_list::TopicPartitionListElem,
     ClientConfig, TopicPartitionList,
 };
+use std::ops::Deref;
+use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
     select,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -20,22 +17,17 @@ use tracing::{error, info, warn};
 use crate::engine::distributor::QueueDistributor;
 use crate::{
     app::psink::PSinkBuilder,
+    pipeline::{pipeline::stream::stream::Pipeline, serde_ext::PDeserialize},
     state::{
-        backend::{
-            CommitLog, ReadableStateBackend, StateBackend,
-            WriteableStateBackend,
-        },
+        backend::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend},
         StateStore,
-    }, pipeline::{pipeline::stream::stream::Pipeline, serde_ext::PDeserialize},
+    },
 };
 
 use self::partition_queue::StreamPeridotPartitionQueue;
 use self::{
     error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
-    util::{
-        ConsumerUtils, DeliveryGuaranteeType,
-        ExactlyOnce,
-    },
+    util::{ConsumerUtils, DeliveryGuaranteeType, ExactlyOnce},
 };
 
 use crate::app::{
@@ -47,11 +39,11 @@ use crate::app::{
 };
 
 pub mod circuit_breaker;
-pub mod tasks;
 pub mod distributor;
 pub mod error;
 pub mod partition_queue;
 pub mod sinks;
+pub mod tasks;
 pub mod util;
 
 #[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
@@ -116,7 +108,7 @@ where
             self.downstream_commit_logs.clone(),
             self.state_streams.clone(),
             self.engine_state.clone(),
-            pre_rebalance_waker
+            pre_rebalance_waker,
         );
 
         tokio::spawn(queue_distributor);
@@ -133,7 +125,7 @@ where
 
     pub fn from_config(config: &PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
         let context = PeridotConsumerContext::from_config(config);
-        
+
         let consumer = config
             .clients_config()
             .create_with_context(context.clone())?;
@@ -247,7 +239,10 @@ where
 
                             let partition_queue = StreamPeridotPartitionQueue::new(partition_queue);
 
-                            info!("Sending partition queue to downstream: {}, for partition: {}", topic, partition);
+                            info!(
+                                "Sending partition queue to downstream: {}, for partition: {}",
+                                topic, partition
+                            );
 
                             queue_sender // TODO: Why is this blocking?
                                 .send((partition, partition_queue))
@@ -269,10 +264,10 @@ where
 
                 select! {
                     () = async {
-                        
+
                         let max_poll_interval = match consumer
                             .context()
-                            .main_queue_min_poll_interval() 
+                            .main_queue_min_poll_interval()
                         {
                             Timeout::Never => Duration::from_secs(1),
                             Timeout::After(duration) => duration / 2
@@ -280,7 +275,7 @@ where
 
                         loop {
                             // To keep the consumer alive we must poll at least
-                            // every 'max.poll.interval.ms'. We are polling with 
+                            // every 'max.poll.interval.ms'. We are polling with
                             // a 0 second timeout for two reasons:
                             //  - using any timeout will block a runtime thread
                             //  - the blocked thread will not be cancellable by the select block
@@ -494,8 +489,7 @@ where
 
         app_engine.state_streams.insert(topic.clone());
 
-        let (queue_sender, queue_receiver) =
-            tokio::sync::mpsc::unbounded_channel();
+        let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
 
         app_engine.downstreams.insert(topic.clone(), queue_sender);
 
@@ -521,10 +515,10 @@ where
     pub fn stream<KS, VS>(
         self: Arc<AppEngine<G>>,
         topic: String,
-    ) -> Result<Pipeline<KS, VS, G>, PeridotEngineRuntimeError> 
+    ) -> Result<Pipeline<KS, VS, G>, PeridotEngineRuntimeError>
     where
         KS: PDeserialize,
-        VS: PDeserialize
+        VS: PDeserialize,
     {
         let mut subscription = self.consumer.get_subscribed_topics();
 
@@ -534,14 +528,13 @@ where
 
         subscription.push(topic.clone());
 
-        self
-            .consumer
+        self.consumer
             .subscribe(
                 subscription
-                .iter()
-                .map(Deref::deref)
-                .collect::<Vec<_>>()
-                .as_slice(),
+                    .iter()
+                    .map(Deref::deref)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .expect("Failed to subscribe to topic.");
 
@@ -550,15 +543,12 @@ where
         self.downstreams.insert(topic.clone(), queue_sender);
 
         let queue_metadata_prototype = QueueMetadataProtoype::new(
-            self.config.clients_config().clone(), 
-            self.consumer.clone(), 
+            self.config.clients_config().clone(),
+            self.consumer.clone(),
             topic,
         );
 
-        Ok(PStream::new(
-            queue_metadata_prototype, 
-            queue_receiver
-        ))
+        Ok(PStream::new(queue_metadata_prototype, queue_receiver))
     }
 
     pub async fn sink(

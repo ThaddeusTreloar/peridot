@@ -21,8 +21,7 @@ pin_project! {
     }
 }
 
-impl<M, F, E, R> MapMessage<M, F, E, R> 
-{
+impl<M, F, E, R> MapMessage<M, F, E, R> {
     pub fn new(stream: M, callback: Arc<F>) -> Self {
         Self {
             stream,
@@ -44,7 +43,10 @@ where
     type KeyType = R::RK;
     type ValueType = R::RV;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
         let this = self.project();
         let next = this.stream.poll_next(cx);
 

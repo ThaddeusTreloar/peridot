@@ -4,7 +4,8 @@ use rdkafka::{
     consumer::ConsumerContext,
     error::KafkaError,
     topic_partition_list::{self, TopicPartitionListElem},
-    ClientContext, util::Timeout, producer::ProducerContext,
+    util::Timeout,
+    ClientContext,
 };
 use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tracing::error;
@@ -20,7 +21,11 @@ pub struct Commit {
 
 impl Display for Commit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Commit: {}-{}:{}", self.topic, self.partition, self.offset)
+        write!(
+            f,
+            "Commit: {}-{}:{}",
+            self.topic, self.partition, self.offset
+        )
     }
 }
 
@@ -102,7 +107,7 @@ impl Default for PeridotConsumerContext {
         PeridotConsumerContext {
             pre_rebalance_waker,
             post_rebalance_waker,
-            commit_waker,                   // The default max_poll_interval is 5 minutes
+            commit_waker, // The default max_poll_interval is 5 minutes
             max_poll_interval: Timeout::After(Duration::from_millis(300000)),
         }
     }
@@ -113,12 +118,9 @@ impl PeridotConsumerContext {
         let mut this = Self::default();
 
         if let Some(interval) = config.get("max.poll.interval.ms") {
-            this.max_poll_interval = Timeout::After(
-                Duration::from_millis(
-                    interval
-                    .parse()
-                    .expect("Invalid max.poll.interval.ms")
-                ));
+            this.max_poll_interval = Timeout::After(Duration::from_millis(
+                interval.parse().expect("Invalid max.poll.interval.ms"),
+            ));
         }
 
         this

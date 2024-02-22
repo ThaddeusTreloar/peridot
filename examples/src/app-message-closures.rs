@@ -110,7 +110,7 @@ async fn main() -> Result<(), anyhow::Error> {
             |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
         ).map(
             |kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value))
-        ).into_topic::<PrintSink<String, String>>("genericTopic");
+        ).into_topic::<String, String>("genericTopic");
 
     app.run().await?;
  

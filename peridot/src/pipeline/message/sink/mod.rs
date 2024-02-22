@@ -30,7 +30,10 @@ pub trait MessageSink {
     ) -> Poll<Option<Result<(), Self::Error>>>;
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<<Self::KeySerType as PSerialize>::Input, <Self::ValueSerType as PSerialize>::Input>,
+        message: Message<
+            <Self::KeySerType as PSerialize>::Input,
+            <Self::ValueSerType as PSerialize>::Input,
+        >,
     ) -> Result<(), Self::Error>;
     fn poll_commit(
         self: Pin<&mut Self>,
@@ -112,7 +115,10 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<<Self::KeySerType as PSerialize>::Input, <Self::ValueSerType as PSerialize>::Input>,
+        message: Message<
+            <Self::KeySerType as PSerialize>::Input,
+            <Self::ValueSerType as PSerialize>::Input,
+        >,
     ) -> Result<(), Self::Error> {
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");
@@ -136,7 +142,7 @@ where
                 rdkafka::Offset::Offset(message.offset() + 1),
             )
             .expect("Failed to add partition offset");
-        
+
         self.queue_metadata
             .consumer()
             .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)

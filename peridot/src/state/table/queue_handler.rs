@@ -8,7 +8,10 @@ use futures::{ready, Future};
 use pin_project_lite::pin_project;
 
 use crate::{
-    pipeline::{message::stream::PipelineStage, pipeline::stream::PipelineStream},
+    pipeline::{
+        message::stream::{MessageStream, PipelineStage},
+        pipeline::{sink::PipelineSink, stream::PipelineStream},
+    },
     state::backend::{ReadableStateBackend, WriteableStateBackend},
 };
 
@@ -59,5 +62,23 @@ where
         }
 
         Poll::Ready(())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum QueueReceiverHandlerError {}
+
+impl<B, P> PipelineSink<P::MStream> for QueueReceiverHandler<B, P>
+where
+    P: PipelineStream,
+{
+    type SinkType = TablePartitionHandler<P::MStream>;
+    type Error = QueueReceiverHandlerError;
+
+    fn start_send(
+        self: Pin<&mut Self>,
+        message: PipelineStage<P::MStream>,
+    ) -> Result<(), Self::Error> {
+        let (metadata, queue) = message;
     }
 }

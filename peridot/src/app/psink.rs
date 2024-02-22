@@ -1,23 +1,11 @@
-use std::{
-    marker::PhantomData,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::Duration,
-};
-
-use futures::Sink;
-use rdkafka::{
-    consumer::{Consumer, StreamConsumer},
-    error::KafkaError,
-    producer::{BaseProducer, Producer},
-    TopicPartitionList,
-};
-use tracing::info;
+use std::marker::PhantomData;
 
 use crate::{
-    app::extensions::PeridotConsumerContext,
-    engine::{util::{AtLeastOnce, ExactlyOnce}, QueueMetadataProtoype}, pipeline::{serde_ext::PSerialize, message::stream::{MessageStream, PipelineStage}},
+    engine::util::{AtLeastOnce, ExactlyOnce},
+    pipeline::{
+        message::stream::{MessageStream, PipelineStage},
+        serde_ext::PSerialize,
+    },
 };
 
 use super::config::PeridotConfig;
@@ -29,14 +17,13 @@ pub enum SinkMode {
     Detached,
 }
 
-pub struct PSinkBuilder<G=AtLeastOnce> {
+pub struct PSinkBuilder<G = AtLeastOnce> {
     clients_config: PeridotConfig,
     dest_topic: String,
     _delivery_guarantee: PhantomData<G>,
 }
 
-
-impl <G> PSinkBuilder<G> {
+impl<G> PSinkBuilder<G> {
     pub fn new(dest_topic: String, clients_config: PeridotConfig) -> Self {
         Self {
             clients_config,
@@ -46,10 +33,11 @@ impl <G> PSinkBuilder<G> {
     }
 }
 
-pub struct PSink<KS, VS, M, G = ExactlyOnce> 
-where KS: PSerialize,
+pub struct PSink<KS, VS, M, G = ExactlyOnce>
+where
+    KS: PSerialize,
     VS: PSerialize,
-    M: MessageStream
+    M: MessageStream,
 {
     pipeline: PipelineStage<M>,
     _key_ser_type: PhantomData<KS>,
@@ -57,11 +45,12 @@ where KS: PSerialize,
     _delivery_guarantee: PhantomData<G>,
 }
 
-impl <KS, VS, M, G> PSink<KS, VS, M, G>
-where KS: PSerialize,
+impl<KS, VS, M, G> PSink<KS, VS, M, G>
+where
+    KS: PSerialize,
     VS: PSerialize,
     M: MessageStream,
-    G: 'static
+    G: 'static,
 {
     pub fn new(pipeline: PipelineStage<M>) -> Self {
         Self {

@@ -26,6 +26,11 @@ mod tests {
 
     #[test]
     fn test_help() {
-        assert_eq!(help("auto-commit"), String::from("https://github.com/ThaddeusTreloar/peridot/blob/master/docs/auto-commit.md"));
+        assert_eq!(
+            help("auto-commit"),
+            String::from(
+                "https://github.com/ThaddeusTreloar/peridot/blob/master/docs/auto-commit.md"
+            )
+        );
     }
 }

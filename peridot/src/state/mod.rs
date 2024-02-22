@@ -2,10 +2,14 @@ use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use crossbeam::atomic::AtomicCell;
 use futures::{Future, StreamExt};
-use rdkafka::{Message, consumer::Consumer, TopicPartitionList};
+use rdkafka::{consumer::Consumer, Message, TopicPartitionList};
 use tracing::info;
 
-use crate::{app::PeridotConsumer, engine::{EngineState, RawQueueReceiver, partition_queue::StreamPeridotPartitionQueue}, pipeline::serde_ext::PDeserialize};
+use crate::{
+    app::PeridotConsumer,
+    engine::{partition_queue::StreamPeridotPartitionQueue, EngineState, RawQueueReceiver},
+    pipeline::serde_ext::PDeserialize,
+};
 
 use self::{
     backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
@@ -69,8 +73,16 @@ async fn start_partition_update_thread<KS, VS>(
                 //store_ref.commit_update(&key, value).await;
 
                 let mut topic_partition_list = TopicPartitionList::default();
-                topic_partition_list.add_partition_offset(topic_ref, partition, rdkafka::Offset::Offset(msg.offset() + 1)).expect("Failed to add partition offset");
-                consumer_ref.commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async).expect("Failed to make async commit in state store");
+                topic_partition_list
+                    .add_partition_offset(
+                        topic_ref,
+                        partition,
+                        rdkafka::Offset::Offset(msg.offset() + 1),
+                    )
+                    .expect("Failed to add partition offset");
+                consumer_ref
+                    .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)
+                    .expect("Failed to make async commit in state store");
             }
         })
         .await;
@@ -82,7 +94,12 @@ where
     VS: PDeserialize + Send + Sync + 'static,
     KS::Output: Send + Sync + 'static,
     VS::Output: Send + Sync + 'static,
-    T: StateBackend + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output> + WriteableStateBackend<KS::Output, VS::Output> + Send + Sync + 'static,
+    T: StateBackend
+        + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output>
+        + WriteableStateBackend<KS::Output, VS::Output>
+        + Send
+        + Sync
+        + 'static,
 {
     pub fn try_new(
         topic: String,
@@ -105,12 +122,9 @@ where
         Ok(state_store)
     }
 
-    pub fn new_new(
+    pub fn new_new() -> () {
 
-    ) -> () {
-
-
-        // 
+        //
     }
 
     pub fn new_update_thread() {
@@ -118,24 +132,27 @@ where
         // build producer
         // start update thread
         // {
-        //      waits for message   
-        //      queues item for production   
+        //      waits for message
+        //      queues item for production
         //      store in state store
         //      commit transaction, on failure, revert state store changes
         // }
     }
 
-    fn start_update_thread(
-        &self,
-        mut stream_queue: RawQueueReceiver,
-    ) {
+    fn start_update_thread(&self, mut stream_queue: RawQueueReceiver) {
         let store = self.backend.clone();
         let consumer_ref = self.consumer_ref.clone();
         let topic = self.topic.clone();
 
         tokio::spawn(async move {
             while let Some((partition, queue)) = stream_queue.recv().await {
-                tokio::spawn(start_partition_update_thread::<KS, VS>(topic.clone(), partition, queue, consumer_ref.clone(), store.clone()));
+                tokio::spawn(start_partition_update_thread::<KS, VS>(
+                    topic.clone(),
+                    partition,
+                    queue,
+                    consumer_ref.clone(),
+                    store.clone(),
+                ));
             }
         });
     }
@@ -145,7 +162,8 @@ impl<KS, VS, T> ReadableStateStore<KS::Output, VS::Output> for StateStore<KS, VS
 where
     KS: PDeserialize,
     VS: PDeserialize,
-    T: ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output> + WriteableStateBackend<KS::Output, VS::Output>,
+    T: ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output>
+        + WriteableStateBackend<KS::Output, VS::Output>,
 {
     async fn get(&self, key: &KS::Output) -> Option<VS::Output> {
         while let EngineState::Lagging

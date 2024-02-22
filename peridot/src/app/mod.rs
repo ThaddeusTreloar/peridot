@@ -1,27 +1,33 @@
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll}, marker::PhantomData,
-};
+use std::{fmt::Display, pin::Pin, sync::Arc};
 
-use futures::{Future, future::{join_all, BoxFuture}};
-use rdkafka::{
-    consumer::{stream_consumer::StreamPartitionQueue, StreamConsumer, BaseConsumer},
-    ClientConfig,
-};
+use futures::{future::join_all, Future};
+use rdkafka::{consumer::BaseConsumer, ClientConfig};
 use tracing::info;
 
 use crate::{
     app::extensions::PeridotConsumerContext,
-    engine::{AppEngine, util::{ExactlyOnce, DeliveryGuaranteeType, AtMostOnce, AtLeastOnce}},
-    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend}, pipeline::{serde_ext::{PDeserialize, PSerialize}, pipeline::stream::{stream::Pipeline, PipelineStream, PipelineStreamSinkExt, PipelineStreamExt, map::MapPipeline}, message::{stream::{connector::QueueConnector, MessageStream}, sink::MessageSink, types::{FromMessage, PatchMessage}}},
+    engine::{
+        util::{DeliveryGuaranteeType, ExactlyOnce},
+        AppEngine,
+    },
+    pipeline::{
+        message::types::{FromMessage, PatchMessage},
+        pipeline::{
+            sink::{GenericPipelineSink, PrintSinkFactory},
+            stream::{
+                map::MapPipeline, stream::Pipeline, PipelineStream, PipelineStreamExt,
+                PipelineStreamSinkExt,
+            },
+        },
+        serde_ext::{PDeserialize, PSerialize},
+    },
+    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
 };
 
 use self::{
     config::PeridotConfig,
     error::{PeridotAppCreationError, PeridotAppRuntimeError},
-    psink::{PSink, PSinkBuilder},
-    pstream::PStream,
+    psink::PSinkBuilder,
     ptable::PTable,
 };
 
@@ -38,8 +44,9 @@ type Job = Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Sen
 type JobList = Box<Job>;
 
 #[derive()]
-pub struct PeridotApp<G = ExactlyOnce> 
-where G: DeliveryGuaranteeType
+pub struct PeridotApp<G = ExactlyOnce>
+where
+    G: DeliveryGuaranteeType,
 {
     _config: PeridotConfig,
     jobs: Vec<JobList>,
@@ -48,18 +55,18 @@ where G: DeliveryGuaranteeType
 }
 
 pub struct StreamBuilder<G>
-where G: DeliveryGuaranteeType
+where
+    G: DeliveryGuaranteeType,
 {
     engine: Arc<AppEngine<G>>,
 }
 
-impl<G> StreamBuilder<G> 
-where G: DeliveryGuaranteeType
+impl<G> StreamBuilder<G>
+where
+    G: DeliveryGuaranteeType,
 {
     pub fn from_engine(engine: Arc<AppEngine<G>>) -> Self {
-        Self {
-            engine,
-        }
+        Self { engine }
     }
 
     pub async fn table<KS, VS, B>(
@@ -81,10 +88,10 @@ where G: DeliveryGuaranteeType
         Ok(AppEngine::<G>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
     }
 
-    pub fn stream<KS, VS>(&self, topic: &str) -> Result<Pipeline<KS, VS, G>, PeridotAppRuntimeError> 
+    pub fn stream<KS, VS>(&self, topic: &str) -> Result<Pipeline<KS, VS, G>, PeridotAppRuntimeError>
     where
         KS: PDeserialize,
-        VS: PDeserialize
+        VS: PDeserialize,
     {
         info!("Creating stream for topic: {}", topic);
         Ok(self.engine.clone().stream(topic.to_string())?)
@@ -96,8 +103,9 @@ where G: DeliveryGuaranteeType
     }
 }
 
-impl <G> PeridotApp<G> 
-where G: DeliveryGuaranteeType + 'static
+impl<G> PeridotApp<G>
+where
+    G: DeliveryGuaranteeType + 'static,
 {
     pub fn from_client_config(config: &ClientConfig) -> Result<Self, PeridotAppCreationError> {
         let config = PeridotConfig::from(config);
@@ -115,12 +123,18 @@ where G: DeliveryGuaranteeType + 'static
         })
     }
 
-    pub fn task<'a, KS, VS>(&'a mut self, topic: &'a str) -> TransparentTask<'a, Pipeline<KS, VS, G>, G>
-    where 
+    pub fn task<'a, KS, VS>(
+        &'a mut self,
+        topic: &'a str,
+    ) -> TransparentTask<'a, Pipeline<KS, VS, G>, G>
+    where
         KS: PDeserialize + Send + 'static,
-        VS: PDeserialize + Send + 'static
+        VS: PDeserialize + Send + 'static,
     {
-        let input: Pipeline<KS, VS, G> = self.app_builder.stream(topic).expect("Failed to create topic");
+        let input: Pipeline<KS, VS, G> = self
+            .app_builder
+            .stream(topic)
+            .expect("Failed to create topic");
 
         TransparentTask::new(self, input)
     }
@@ -156,11 +170,12 @@ where G: DeliveryGuaranteeType + 'static
     pub async fn run(self) -> Result<(), PeridotAppRuntimeError> {
         info!("Running PeridotApp");
 
-        let job_results = self.jobs
+        let job_results = self
+            .jobs
             .into_iter()
             .map(|job| tokio::spawn(job))
             .collect::<Vec<_>>();
-        
+
         self.engine.run().await?;
 
         for job_result in join_all(job_results).await {
@@ -173,18 +188,18 @@ where G: DeliveryGuaranteeType + 'static
 
 #[must_use = "pipelines do nothing unless patched to a topic"]
 pub struct TransparentTask<'a, R, G>
-where 
+where
     R: PipelineStream,
-    G: DeliveryGuaranteeType
+    G: DeliveryGuaranteeType,
 {
     app: &'a mut PeridotApp<G>,
     output: R,
 }
 
-impl <'a, R, G> TransparentTask<'a, R, G>
+impl<'a, R, G> TransparentTask<'a, R, G>
 where
     R: PipelineStream + 'static,
-    G: DeliveryGuaranteeType + 'static
+    G: DeliveryGuaranteeType + 'static,
 {
     fn new(app: &'a mut PeridotApp<G>, handler: R) -> Self {
         Self {
@@ -194,16 +209,16 @@ where
     }
 }
 
-impl <'a, R, G> Task<'a, G> for TransparentTask<'a, R, G>
-where 
+impl<'a, R, G> Task<'a, G> for TransparentTask<'a, R, G>
+where
     R: PipelineStream + Send + 'static,
     R::MStream: Send,
-    G: DeliveryGuaranteeType + Send + 'static
+    G: DeliveryGuaranteeType + Send + 'static,
 {
     type R = R;
 
     fn and_then<F1, R1>(self, next: F1) -> MutTask<'a, F1, Self::R, R1, G>
-    where 
+    where
         F1: Fn(Self::R) -> R1,
         R1: PipelineStream + Send + 'static,
         R1::MStream: Send + 'static,
@@ -211,122 +226,153 @@ where
         MutTask::<'a>::new(self.app, next, self.output)
     }
 
-    fn map<MF, ME, MR>(self, next: MF) -> MutTask<'a, 
-        impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>, 
-        Self::R, MapPipeline<Self::R, MF, ME, MR>, 
-        G
+    fn map<MF, ME, MR>(
+        self,
+        next: MF,
+    ) -> MutTask<
+        'a,
+        impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
+        Self::R,
+        MapPipeline<Self::R, MF, ME, MR>,
+        G,
     >
-    where 
+    where
         MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
-        ME: FromMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static,
-        MR: PatchMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        ME: FromMessage<
+                <Self::R as PipelineStream>::KeyType,
+                <Self::R as PipelineStream>::ValueType,
+            > + Send
+            + 'static,
+        MR: PatchMessage<
+                <Self::R as PipelineStream>::KeyType,
+                <Self::R as PipelineStream>::ValueType,
+            > + Send
+            + 'static,
     {
-        MutTask::<'a>::new(
-            self.app, 
-            move |input|input.map(next.clone()), 
-            self.output
-        )
+        MutTask::<'a>::new(self.app, move |input| input.map(next.clone()), self.output)
     }
 
     fn into_pipeline(self) -> Self::R {
         self.output
     }
 
-    fn into_topic<Si>(self, topic: &str) 
+    fn into_topic<KS, VS>(self, topic: &str)
     where
-        Si: MessageSink + Send + 'static,
-        Si::KeySerType: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
-        Si::ValueSerType: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        KS: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
+        <Self::R as PipelineStream>::KeyType: Display,
+        VS: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        <Self::R as PipelineStream>::ValueType: Display,
+        Self: Sized,
     {
-        let job = self.output.sink::<Si>(topic);
+        let sink_factory = PrintSinkFactory::<KS, VS>::new();
+
+        let sink = GenericPipelineSink::new(sink_factory);
+
+        let job = self.output.sink(sink);
 
         self.app.job(Box::pin(job));
     }
 }
 
-pub trait IntoTask 
-{
+pub trait IntoTask {
     type R: PipelineStream;
 
     fn into_task<'a, G>(self, app: &'a mut PeridotApp<G>) -> impl Task<'a, G, R = Self::R>
-        where G: DeliveryGuaranteeType + Send + 'static;
+    where
+        G: DeliveryGuaranteeType + Send + 'static;
 }
 
-impl<P> IntoTask for P 
+impl<P> IntoTask for P
 where
     P: PipelineStream + Send + 'static,
 {
     type R = P;
 
     fn into_task<'a, G>(self, app: &'a mut PeridotApp<G>) -> impl Task<'a, G, R = Self::R>
-    where G: DeliveryGuaranteeType + Send + 'static
+    where
+        G: DeliveryGuaranteeType + Send + 'static,
     {
         TransparentTask::new(app, self)
     }
 }
 
-pub trait Task<'a, G> 
-where 
-    G: DeliveryGuaranteeType
+pub trait Task<'a, G>
+where
+    G: DeliveryGuaranteeType + 'static,
 {
-    type R: PipelineStream;
+    type R: PipelineStream + Send + 'static;
 
     fn and_then<F1, R1>(self, next: F1) -> MutTask<'a, F1, Self::R, R1, G>
-    where 
+    where
         F1: Fn(Self::R) -> R1,
         R1: PipelineStream + Send + 'static,
         R1::MStream: Send + 'static;
 
-    fn map<MF, ME, MR>(self, next: MF) -> MutTask<'a, 
-        impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>, 
-        Self::R, MapPipeline<Self::R, MF, ME, MR>, 
-        G
+    fn map<MF, ME, MR>(
+        self,
+        next: MF,
+    ) -> MutTask<
+        'a,
+        impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
+        Self::R,
+        MapPipeline<Self::R, MF, ME, MR>,
+        G,
     >
-    where 
+    where
         MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
-        ME: FromMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static,
-        MR: PatchMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static;
+        ME: FromMessage<
+                <Self::R as PipelineStream>::KeyType,
+                <Self::R as PipelineStream>::ValueType,
+            > + Send
+            + 'static,
+        MR: PatchMessage<
+                <Self::R as PipelineStream>::KeyType,
+                <Self::R as PipelineStream>::ValueType,
+            > + Send
+            + 'static;
 
-    fn into_table<S>(self, table_name: &str) -> () 
-    where 
+    fn into_table<S>(self, table_name: &str) -> ()
+    where
         S: ReadableStateBackend<
-            KeyType = <Self::R as PipelineStream>::KeyType, 
-            ValueType = <Self::R as PipelineStream>::ValueType
+            KeyType = <Self::R as PipelineStream>::KeyType,
+            ValueType = <Self::R as PipelineStream>::ValueType,
         >,
-        Self: Sized
+        Self: Sized,
     {
         unimplemented!()
     }
 
     fn into_pipeline(self) -> Self::R;
 
-    fn into_topic<Si>(self, topic: &str) 
+    fn into_topic<KS, VS>(self, topic: &str)
     where
-        Si: MessageSink + Send + 'static,
-        Si::KeySerType: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
-        Si::ValueSerType: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static;
+        KS: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
+        <Self::R as PipelineStream>::KeyType: Display,
+        VS: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        <Self::R as PipelineStream>::ValueType: Display,
+        Self: Sized;
 }
 
 #[must_use = "pipelines do nothing unless patched to a topic"]
 pub struct MutTask<'a, F, I, R, G>
-where 
+where
     F: Fn(I) -> R,
     I: PipelineStream,
     R: PipelineStream,
-    G: DeliveryGuaranteeType
+    G: DeliveryGuaranteeType,
 {
     app: &'a mut PeridotApp<G>,
     handler: F,
     input: I,
 }
 
-impl <'a, F, I, R, G> MutTask<'a, F, I, R, G>
-where 
+impl<'a, F, I, R, G> MutTask<'a, F, I, R, G>
+where
     F: Fn(I) -> R,
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
     R::MStream: Send + 'static,
-    G: DeliveryGuaranteeType + 'static
+    G: DeliveryGuaranteeType + 'static,
 {
     pub fn new(app: &'a mut PeridotApp<G>, handler: F, input: I) -> Self {
         Self {
@@ -337,17 +383,17 @@ where
     }
 }
 
-impl <'a, F, I, R, G> Task<'a, G> for MutTask<'a, F, I, R, G>
-where 
+impl<'a, F, I, R, G> Task<'a, G> for MutTask<'a, F, I, R, G>
+where
     F: Fn(I) -> R,
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
-    G: DeliveryGuaranteeType + Send + 'static
+    G: DeliveryGuaranteeType + Send + 'static,
 {
     type R = R;
 
     fn and_then<F1, R1>(self, next: F1) -> MutTask<'a, F1, R, R1, G>
-    where 
+    where
         F1: Fn(R) -> R1,
         R1: PipelineStream + Send + 'static,
         R1::MStream: Send + 'static,
@@ -355,20 +401,33 @@ where
         MutTask::<'a>::new(self.app, next, (self.handler)(self.input))
     }
 
-    fn map<MF, ME, MR>(self, next: MF) -> MutTask<'a, 
-        impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>, 
-        Self::R, MapPipeline<Self::R, MF, ME, MR>, 
-        G
+    fn map<MF, ME, MR>(
+        self,
+        next: MF,
+    ) -> MutTask<
+        'a,
+        impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
+        Self::R,
+        MapPipeline<Self::R, MF, ME, MR>,
+        G,
     >
-    where 
+    where
         MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
-        ME: FromMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static,
-        MR: PatchMessage<<Self::R as PipelineStream>::KeyType, <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        ME: FromMessage<
+                <Self::R as PipelineStream>::KeyType,
+                <Self::R as PipelineStream>::ValueType,
+            > + Send
+            + 'static,
+        MR: PatchMessage<
+                <Self::R as PipelineStream>::KeyType,
+                <Self::R as PipelineStream>::ValueType,
+            > + Send
+            + 'static,
     {
         MutTask::<'a>::new(
-            self.app, 
-            move |input|input.map(next.clone()), 
-            (self.handler)(self.input)
+            self.app,
+            move |input| input.map(next.clone()),
+            (self.handler)(self.input),
         )
     }
 
@@ -376,13 +435,19 @@ where
         (self.handler)(self.input)
     }
 
-    fn into_topic<Si>(self, topic: &str) 
+    fn into_topic<KS, VS>(self, topic: &str)
     where
-        Si: MessageSink + Send + 'static,
-        Si::KeySerType: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
-        Si::ValueSerType: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        KS: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
+        <Self::R as PipelineStream>::KeyType: Display,
+        VS: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        <Self::R as PipelineStream>::ValueType: Display,
+        Self: Sized,
     {
-        let job = (self.handler)(self.input).sink::<Si>(topic);
+        let sink_factory = PrintSinkFactory::<KS, VS>::new();
+
+        let sink = GenericPipelineSink::new(sink_factory);
+
+        let job = (self.handler)(self.input).sink(sink);
 
         self.app.job(Box::pin(job));
     }

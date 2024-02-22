@@ -1,8 +1,9 @@
 use rdkafka::consumer::{Consumer, ConsumerContext};
 use tracing::warn;
 
-pub (crate) trait ConsumerUtils<C>: Consumer<C> 
-where C: ConsumerContext
+pub(crate) trait ConsumerUtils<C>: Consumer<C>
+where
+    C: ConsumerContext,
 {
     fn get_subscribed_topics(&self) -> Vec<String> {
         self.subscription()
@@ -19,11 +20,16 @@ where C: ConsumerContext
             .elements()
             .iter()
             .map(|t| t.topic())
-            .any(|t|t == topic)
+            .any(|t| t == topic)
     }
 }
 
-impl <T, C> ConsumerUtils<C> for T where T: Consumer<C>, C: ConsumerContext {}
+impl<T, C> ConsumerUtils<C> for T
+where
+    T: Consumer<C>,
+    C: ConsumerContext,
+{
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryGuarantee {
@@ -32,9 +38,9 @@ pub enum DeliveryGuarantee {
     ExactlyOnce,
 }
 
-impl <T> From<T> for DeliveryGuarantee
+impl<T> From<T> for DeliveryGuarantee
 where
-    T: Into<String>
+    T: Into<String>,
 {
     fn from(s: T) -> Self {
         let s: String = s.into();
@@ -44,7 +50,10 @@ where
             "at-least-once" => DeliveryGuarantee::AtLeastOnce,
             "exactly-once" => DeliveryGuarantee::ExactlyOnce,
             _ => {
-                warn!("Unknown delivery guarentee: {}. Defaulting to exactly-once", s);
+                warn!(
+                    "Unknown delivery guarentee: {}. Defaulting to exactly-once",
+                    s
+                );
                 DeliveryGuarantee::ExactlyOnce
             }
         }

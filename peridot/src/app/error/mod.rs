@@ -2,7 +2,6 @@ use rdkafka::error::KafkaError;
 
 use crate::engine::error::{PeridotEngineCreationError, PeridotEngineRuntimeError};
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum PeridotAppCreationError {
     #[error("Failed to initialise engine: {0}")]

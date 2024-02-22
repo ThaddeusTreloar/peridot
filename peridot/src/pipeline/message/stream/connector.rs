@@ -9,10 +9,11 @@ use pin_project_lite::pin_project;
 use tracing::error;
 
 use crate::{
+    engine::partition_queue::StreamPeridotPartitionQueue,
     pipeline::{
         message::types::{Message, TryFromOwnedMessage},
         serde_ext::PDeserialize,
-    }, engine::partition_queue::StreamPeridotPartitionQueue,
+    },
 };
 
 use super::MessageStream;

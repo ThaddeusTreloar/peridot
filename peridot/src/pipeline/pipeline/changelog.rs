@@ -12,9 +12,9 @@ pin_project! {
     }
 }
 
-impl <St> Checkpointed<St>
+impl<St> Checkpointed<St>
 where
-    St: Stream
+    St: Stream,
 {
     pub fn new(stream: St) -> Self {
         Self { inner: stream }

@@ -1,9 +1,19 @@
-use std::{marker::PhantomData, pin::Pin, task::{Context, Poll}};
+use std::{
+    marker::PhantomData,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use pin_project_lite::pin_project;
 use tracing::info;
 
-use crate::{pipeline::{serde_ext::PDeserialize, message::stream::{connector::QueueConnector, PipelineStage, MessageStream}}, engine::{util::ExactlyOnce, QueueReceiver}};
+use crate::{
+    engine::{util::ExactlyOnce, QueueReceiver},
+    pipeline::{
+        message::stream::{connector::QueueConnector, PipelineStage},
+        serde_ext::PDeserialize,
+    },
+};
 
 use super::PipelineStream;
 
@@ -20,17 +30,17 @@ pin_project! {
     }
 }
 
-impl <KS, VS, G> Pipeline<KS, VS, G>
-where 
+impl<KS, VS, G> Pipeline<KS, VS, G>
+where
     KS: PDeserialize,
-    VS: PDeserialize 
+    VS: PDeserialize,
 {
     pub fn new(queue_stream: QueueReceiver) -> Self {
         Self {
             queue_stream,
             _key_serialiser: PhantomData,
             _value_serialiser: PhantomData,
-            _delivery_guarantee: PhantomData
+            _delivery_guarantee: PhantomData,
         }
     }
 }
@@ -44,14 +54,21 @@ where
     type ValueType = VS::Output;
     type MStream = QueueConnector<KS, VS>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<PipelineStage<Self::MStream>>> {
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<PipelineStage<Self::MStream>>> {
         let (metadata, queue) = match self.queue_stream.poll_recv(cx) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(None) => return Poll::Ready(None),
             Poll::Ready(Some(val)) => val,
         };
 
-        info!("Received new queue for topic: {}, parition: {}", metadata.source_topic(), metadata.partition());
+        info!(
+            "Received new queue for topic: {}, parition: {}",
+            metadata.source_topic(),
+            metadata.partition()
+        );
 
         Poll::Ready(Option::Some(PipelineStage::new(
             metadata,

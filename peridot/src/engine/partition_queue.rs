@@ -1,5 +1,4 @@
 use std::{
-    marker::PhantomData,
     sync::Arc,
     task::{Poll, Waker},
     time::Duration,
@@ -7,10 +6,7 @@ use std::{
 
 use futures::Stream;
 use parking_lot::Mutex;
-use rdkafka::{
-    consumer::base_consumer::PartitionQueue,
-    message::OwnedMessage,
-};
+use rdkafka::{consumer::base_consumer::PartitionQueue, message::OwnedMessage};
 
 use crate::app::extensions::PeridotConsumerContext;
 
@@ -49,17 +45,11 @@ impl Stream for StreamPeridotPartitionQueue {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        match self.partition_queue
-            .poll(Duration::from_millis(0)) 
-        {
-            Some(Ok(message)) => Poll::Ready(
-                Option::Some(
-                    message.detach()
-                )),
+        match self.partition_queue.poll(Duration::from_millis(0)) {
+            Some(Ok(message)) => Poll::Ready(Option::Some(message.detach())),
             Some(Err(e)) => panic!("Failed to get message from upstream: {}", e),
             None => {
-                self.waker.lock()
-                    .replace(cx.waker().clone());
+                self.waker.lock().replace(cx.waker().clone());
 
                 Poll::Pending
             }

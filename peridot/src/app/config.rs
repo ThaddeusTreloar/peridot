@@ -1,10 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use rdkafka::{ClientConfig, util::Timeout};
+use rdkafka::ClientConfig;
 use tracing::warn;
 
 use crate::help;
-
 
 #[derive(Default, Debug, Clone)]
 pub struct PeridotConfig {
@@ -32,8 +31,7 @@ impl PeridotConfig {
         &self.clients_config
     }
 
-    pub fn clean_config(&mut self) {
-    }
+    pub fn clean_config(&mut self) {}
 
     pub fn disable_auto_commit(&mut self) {
         if let Some("true") = self.clients_config.get("enable.auto.commit") {
@@ -43,7 +41,7 @@ impl PeridotConfig {
             self.clients_config.set("enable.auto.commit", "false");
         }
     }
-    
+
     pub fn set(&mut self, key: &str, value: &str) {
         if self.fields.contains(key) {
             self.app_config.insert(key.to_string(), value.to_string());
@@ -63,8 +61,8 @@ impl PeridotConfig {
 
 impl From<&ClientConfig> for PeridotConfig {
     fn from(clients_config: &ClientConfig) -> Self {
-        let mut new_config = PeridotConfig { 
-            clients_config: clients_config.clone(), 
+        let mut new_config = PeridotConfig {
+            clients_config: clients_config.clone(),
             app_config: Default::default(),
             fields: gen_config_fields(),
         };

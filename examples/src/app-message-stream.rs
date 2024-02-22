@@ -111,7 +111,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .map(
             |val: Value<ChangeOfAddress>| Value::from(val.value.address)
         ).into_task(&mut app)
-        .into_topic::<PrintSink<String, String>>("generic");
+        .into_topic::<String, String>("generic");
 
     app.run().await?;
 

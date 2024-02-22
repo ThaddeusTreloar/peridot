@@ -1,17 +1,27 @@
-use std::{pin::Pin, task::{Context, Poll}, sync::Arc, time::Duration};
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
-use futures::{Future, ready};
+use futures::{ready, Future};
 use pin_project_lite::pin_project;
-use rdkafka::{consumer::Consumer, Message, TopicPartitionList, producer::PARTITION_UA, Offset};
+use rdkafka::{consumer::Consumer, producer::PARTITION_UA, Message, Offset, TopicPartitionList};
 use tokio::sync::broadcast::Receiver;
-use tracing::{error, info, debug};
+use tracing::{debug, error, info};
 
-use crate::{app::{PeridotConsumer, extensions::OwnedRebalance}, state::backend::CommitLog};
+use crate::{
+    app::{extensions::OwnedRebalance, PeridotConsumer},
+    state::backend::CommitLog,
+};
 
-use super::{error::PeridotEngineRuntimeError, RawQueueForwarder, EngineState, partition_queue::StreamPeridotPartitionQueue};
-
+use super::{
+    error::PeridotEngineRuntimeError, partition_queue::StreamPeridotPartitionQueue, EngineState,
+    RawQueueForwarder,
+};
 
 pin_project! {
     #[derive()]
@@ -34,7 +44,7 @@ impl QueueDistributor {
         downstream_commit_logs: Arc<CommitLog>,
         state_streams: Arc<DashSet<String>>,
         engine_state: Arc<AtomicCell<EngineState>>,
-        rebalance_waker: Receiver<OwnedRebalance>
+        rebalance_waker: Receiver<OwnedRebalance>,
     ) -> Self {
         Self {
             consumer,
@@ -43,13 +53,13 @@ impl QueueDistributor {
             state_streams,
             engine_state,
             rebalance_waker,
-            sleep: None
+            sleep: None,
         }
     }
 }
 
 fn forward_partitions(
-    partitions: TopicPartitionList, 
+    partitions: TopicPartitionList,
     state_streams: &Arc<DashSet<String>>,
     downstream_commit_logs: &Arc<CommitLog>,
     consumer: &Arc<PeridotConsumer>,
@@ -57,35 +67,36 @@ fn forward_partitions(
     engine_state: &Arc<AtomicCell<EngineState>>,
 ) {
     info!("Handling rebalance");
-    let (state, mut for_downstream): (Vec<_>, Vec<_>) = partitions.elements().into_iter()
+    let (state, mut for_downstream): (Vec<_>, Vec<_>) = partitions
+        .elements()
+        .into_iter()
         .map(|tp| (tp.topic().to_string(), tp.partition()))
         .filter(|(_, p)| *p != PARTITION_UA)
         .partition(|(t, _)| state_streams.contains(t));
 
-    for_downstream.extend(state 
-        .into_iter()
-        .map(|(t, p)|{
-            let local_offset = downstream_commit_logs
-                .get_offset(t.as_str(), p)
-                .unwrap_or(0);
-            (t, p, local_offset)
-        })
-        .map(|(t, p, o)|{
-            let (lwm, _) = consumer
-                .fetch_watermarks(&t, p, Duration::from_millis(0))
-                .expect("Failed to fetch watermarks");
+    for_downstream.extend(
+        state
+            .into_iter()
+            .map(|(t, p)| {
+                let local_offset = downstream_commit_logs
+                    .get_offset(t.as_str(), p)
+                    .unwrap_or(0);
+                (t, p, local_offset)
+            })
+            .map(|(t, p, o)| {
+                let (lwm, _) = consumer
+                    .fetch_watermarks(&t, p, Duration::from_millis(0))
+                    .expect("Failed to fetch watermarks");
 
-            (t, p, std::cmp::max(o, lwm))
-        })
-        .map(
-            |(t, p, o)| {
-                consumer.seek(
-                    &t, p, 
-                    Offset::Offset(o), 
-                    Duration::from_millis(0)
-                ).expect("Failed to seek consumer.");
+                (t, p, std::cmp::max(o, lwm))
+            })
+            .map(|(t, p, o)| {
+                consumer
+                    .seek(&t, p, Offset::Offset(o), Duration::from_millis(0))
+                    .expect("Failed to seek consumer.");
                 (t, p)
-        }));
+            }),
+    );
 
     let count = for_downstream.iter().count();
 
@@ -97,18 +108,25 @@ fn forward_partitions(
         for (topic, partition) in for_downstream.into_iter() {
             let queue_sender = downstreams.get(&topic);
 
-            info!("Attempting to send partition queue to downstream: {}, for partition: {}", topic, partition);
-    
+            info!(
+                "Attempting to send partition queue to downstream: {}, for partition: {}",
+                topic, partition
+            );
+
             match queue_sender {
                 None => error!("No downstream found for topic: {}", topic),
                 Some(queue_sender) => {
                     let partition_queue = StreamPeridotPartitionQueue::new(
-                        consumer.split_partition_queue(&topic, partition)
-                        .expect("Failed to get partition queue")
+                        consumer
+                            .split_partition_queue(&topic, partition)
+                            .expect("Failed to get partition queue"),
                     );
-    
-                    info!("Sending partition queue to downstream: {}, for partition: {}", topic, partition);
-    
+
+                    info!(
+                        "Sending partition queue to downstream: {}, for partition: {}",
+                        topic, partition
+                    );
+
                     queue_sender
                         .send((partition, partition_queue))
                         .expect("Failed to send partition queue");
@@ -118,7 +136,6 @@ fn forward_partitions(
 
         engine_state.store(EngineState::NotReady);
     }
-
 }
 
 impl Future for QueueDistributor {
@@ -132,7 +149,7 @@ impl Future for QueueDistributor {
                 Some(sleep) => {
                     ready!(sleep.as_mut().poll(cx));
                     let _ = this.sleep.take();
-                },
+                }
                 _ => (),
             }
 
@@ -141,11 +158,19 @@ impl Future for QueueDistributor {
             if let Some(message) = this.consumer.poll(Duration::from_millis(0)) {
                 let message = message.expect("Recieved bad message in distributor");
 
-                error!("Unexpected consumer message: topic: {}, partition: {}, offset: {}", 
-                    message.topic(), message.partition(), message.offset());
+                error!(
+                    "Unexpected consumer message: topic: {}, partition: {}, offset: {}",
+                    message.topic(),
+                    message.partition(),
+                    message.offset()
+                );
 
-                panic!("Unexpected consumer message: topic: {}, partition: {}, offset: {}", 
-                    message.topic(), message.partition(), message.offset());
+                panic!(
+                    "Unexpected consumer message: topic: {}, partition: {}, offset: {}",
+                    message.topic(),
+                    message.partition(),
+                    message.offset()
+                );
             }
 
             debug!("Checking for rebalance");
@@ -155,12 +180,12 @@ impl Future for QueueDistributor {
             debug!("Recieved rebalance");
 
             tokio::pin!(maybe_rebalance);
-            
+
             match maybe_rebalance.poll(cx) {
                 Poll::Ready(Err(e)) => {
                     error!("Failed to recieve rebalance: {}", e);
                     Err(PeridotEngineRuntimeError::BrokenRebalanceReceiver)?
-                },
+                }
                 Poll::Ready(Ok(OwnedRebalance::Error(e))) => Err(e)?,
                 Poll::Ready(Ok(OwnedRebalance::Assign(partitions))) => forward_partitions(
                     partitions,
@@ -175,7 +200,7 @@ impl Future for QueueDistributor {
             debug!("Sleeping until next poll...");
 
             let sleep = tokio::time::sleep(Duration::from_millis(1000));
-            
+
             this.sleep.replace(Box::pin(sleep));
         }
     }
