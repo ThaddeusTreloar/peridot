@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
+use serde::Serialize;
 
-use crate::{engine::EngineState, pipeline::stream::PipelineStream};
+use crate::{
+    engine::{util::ExactlyOnce, EngineState},
+    pipeline::{sink::PipelineForward, stream::PipelineStream},
+};
 
 use self::queue_handler::QueueReceiverHandler;
 
@@ -12,7 +16,7 @@ pub mod partition_handler;
 pub mod queue_handler;
 
 pub struct PeridotTable<B> {
-    name: String,
+    _name: String,
     backend: Arc<B>,
     state: Arc<AtomicCell<EngineState>>,
 }
@@ -27,8 +31,8 @@ where
             KeyType = <B as ReadableStateBackend>::KeyType,
             ValueType = <B as ReadableStateBackend>::ValueType,
         >,
-    <B as ReadableStateBackend>::KeyType: Clone + Send,
-    <B as ReadableStateBackend>::ValueType: Clone + Send,
+    <B as ReadableStateBackend>::KeyType: Serialize + Clone + Send,
+    <B as ReadableStateBackend>::ValueType: Serialize + Clone + Send,
 {
     pub fn new<P>(name: String, backend: B, stream_queue: P) -> Self
     where
@@ -41,12 +45,15 @@ where
     {
         let backend_ref = Arc::new(backend);
 
-        let queue_handler = QueueReceiverHandler::new(backend_ref.clone(), stream_queue);
+        let queue_handler = QueueReceiverHandler::new(format!("{}-changelog", name));
 
-        tokio::spawn(queue_handler);
+        let pipeline_forwarder =
+            PipelineForward::<_, _, ExactlyOnce>::new(stream_queue, queue_handler);
+
+        tokio::spawn(pipeline_forwarder);
 
         Self {
-            name,
+            _name: name,
             backend: backend_ref,
             state: Default::default(),
         }

@@ -1,87 +1,57 @@
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::pin::Pin;
 
-use futures::{ready, Future};
 use pin_project_lite::pin_project;
 use serde::Serialize;
 
 use crate::{
-    message::stream::PipelineStage,
-    pipeline::{sink::PipelineSink, stream::PipelineStream},
-    serde_ext::PSerialize,
-    state::backend::{ReadableStateBackend, WriteableStateBackend},
+    message::stream::{MessageStream, PipelineStage},
+    pipeline::sink::{Forward, PipelineSink},
 };
 
 use super::partition_handler::TablePartitionHandler;
 
 pin_project! {
     #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub (super) struct QueueReceiverHandler<B, P>
+    pub (super) struct QueueReceiverHandler
     {
-        backend: Arc<B>,
-        #[pin]
-        queue_receiver: P,
+        changelog_topic: String,
     }
 }
 
-impl<B, P> QueueReceiverHandler<B, P> {
-    pub(super) fn new(backend: Arc<B>, queue_receiver: P) -> Self {
-        Self {
-            backend,
-            queue_receiver,
-        }
-    }
-}
-
-impl<B, P> Future for QueueReceiverHandler<B, P>
-where
-    B: ReadableStateBackend
-        + WriteableStateBackend<B::KeyType, B::ValueType>
-        + Send
-        + Sync
-        + 'static,
-    B::KeyType: Clone + Send,
-    B::ValueType: Clone + Send,
-    P: PipelineStream<KeyType = B::KeyType, ValueType = B::ValueType> + Send,
-    P::MStream: 'static,
-{
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-
-        while let Some(PipelineStage(metadata, queue)) =
-            ready!(this.queue_receiver.as_mut().poll_next(cx))
-        {
-            //let partition_handler = TablePartitionHandler::new(this.backend.clone(), queue, metadata, String::from("some_topic"));
-
-            //tokio::spawn(partition_handler);
-        }
-
-        Poll::Ready(())
+impl QueueReceiverHandler {
+    pub(super) fn new(changelog_topic: String) -> Self {
+        Self { changelog_topic }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueueReceiverHandlerError {}
 
-impl<B, P> PipelineSink<P::MStream> for QueueReceiverHandler<B, P>
+impl<M> PipelineSink<M> for QueueReceiverHandler
 where
-    P: PipelineStream,
-    P::KeyType: Serialize,
-    P::ValueType: Serialize,
+    M: MessageStream + Send + 'static,
+    M::KeyType: Serialize + Send + 'static,
+    M::ValueType: Serialize + Send + 'static,
 {
-    type SinkType = TablePartitionHandler<P::MStream>;
     type Error = QueueReceiverHandlerError;
+    type SinkType = TablePartitionHandler<M::KeyType, M::ValueType>;
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: PipelineStage<P::MStream>,
+        pipeline_stage: PipelineStage<M>,
     ) -> Result<(), Self::Error> {
-        let PipelineStage(metadata, queue) = message;
+        let PipelineStage(metadata, message_stream) = pipeline_stage;
+
+        // TODO: Handle this forwarder
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let partition_handler =
+            TablePartitionHandler::new(metadata, String::from("some_topic"), sender);
+
+        let forwarder = Forward::new(message_stream, partition_handler);
+
+        tokio::spawn(forwarder);
+
         Ok(())
     }
 }

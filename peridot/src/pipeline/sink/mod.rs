@@ -225,7 +225,7 @@ where
 
         let mut poll_count = 0;
 
-        loop {
+        for _ in 0..BATCH_SIZE {
             match message_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => {
                     info!("No Messages left for stream, finishing...");
@@ -251,5 +251,10 @@ where
                 }
             };
         }
+
+        info!("No messages available, waiting...");
+        ready!(message_sink.as_mut().poll_commit(cx));
+
+        return Poll::Pending;
     }
 }

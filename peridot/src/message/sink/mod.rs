@@ -24,10 +24,7 @@ pub trait MessageSink {
     where
         Self: Sized;
 
-    fn poll_ready(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(), Self::Error>>>;
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
     fn start_send(
         self: Pin<&mut Self>,
         message: Message<
@@ -35,14 +32,8 @@ pub trait MessageSink {
             <Self::ValueSerType as PSerialize>::Input,
         >,
     ) -> Result<(), Self::Error>;
-    fn poll_commit(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(), Self::Error>>>;
-    fn poll_close(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(), Self::Error>>>;
+    fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 }
 
 pub trait MessageSinkExt<K, V>: MessageSink {
@@ -106,11 +97,8 @@ where
         Self::new(queue_metadata)
     }
 
-    fn poll_ready(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(), Self::Error>>> {
-        Poll::Ready(Some(Ok(())))
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn start_send(
@@ -151,17 +139,11 @@ where
         Ok(())
     }
 
-    fn poll_commit(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(), Self::Error>>> {
-        Poll::Ready(Some(Ok(())))
+    fn poll_commit(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn poll_close(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(), Self::Error>>> {
-        Poll::Ready(Some(Ok(())))
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 }
