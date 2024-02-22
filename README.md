@@ -18,7 +18,7 @@ To be considered an MVP this library should provide the following features:
 - [ ] Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
 - [ ] Windowed operations
 - [ ] Result 'style' dead letter support (impl FromResidual)
-- [ ] Schema Registry Integration 
+- [ ] Schema Registry Integration
 
 Peridot Adjacent Features:
 - [ ] Schema registry build dependency for codegen
@@ -57,8 +57,9 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = PeridotApp::from_client_config(&source)?;
 
-    app.task::<String, Json<Client>, _, _>("clientTopic", partial_task)
-        .into_topic::<PrintSink<String, String>>("genericTopic");
+    app.task::<String, Json<Client>>("clientTopic")
+        .and_then(partial_task)
+        .into_topic::<String, String>("genericTopic");
 
     app.run().await?;
 
@@ -89,7 +90,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .map(
             |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
         )
-        .into_topic::<PrintSink<String, String>>("genericTopic");
+        .into_topic::<String, String>("genericTopic");
 
     app.run().await?;
 
