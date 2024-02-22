@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use peridot::app::ptable::{PTable, PeridotTable};
-use peridot::init::init_tracing;
 use peridot::app::PeridotApp;
+use peridot::init::init_tracing;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use rdkafka::ClientConfig;
 
@@ -11,7 +11,6 @@ use peridot::state::ReadableStateStore;
 use rdkafka::config::RDKafkaLogLevel;
 use tracing::info;
 use tracing::level_filters::LevelFilter;
-
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Topic {
@@ -52,11 +51,9 @@ async fn main() -> Result<(), anyhow::Error> {
 
     info!("Creating table");
 
-    let consent_table: PTable<'_, String, ConsentGrant> = app
-        .table("consent.Client").await?;
+    let consent_table: PTable<'_, String, ConsentGrant> = app.table("consent.Client").await?;
 
-    let topic_table: PTable<'_, String, Topic> = app
-        .table("topicStore.Global").await?;
+    let topic_table: PTable<'_, String, Topic> = app.table("topicStore.Global").await?;
 
     info!("Creating stream");
 

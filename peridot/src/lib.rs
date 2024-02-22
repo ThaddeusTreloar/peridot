@@ -5,6 +5,7 @@ pub mod message;
 pub mod pipeline;
 pub mod serde_ext;
 pub mod state;
+pub mod task;
 
 use tracing::info;
 

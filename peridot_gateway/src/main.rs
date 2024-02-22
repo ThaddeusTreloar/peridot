@@ -1,15 +1,20 @@
 use std::{collections::HashMap, time::Duration};
 
-use futures::StreamExt;
 use eap::{config::Config, environment::Environment};
+use futures::StreamExt;
 use peridot::{
+    app::{error::PeridotAppRuntimeError, App, PeridotApp},
     init::init_tracing,
     state::{
-        backend::{in_memory::InMemoryStateBackend, persistent::PersistentStateBackend, self},
+        backend::{self, in_memory::InMemoryStateBackend, persistent::PersistentStateBackend},
         ReadableStateStore, StateStore,
-    }, app::{PeridotApp, App, error::PeridotAppRuntimeError},
+    },
 };
-use rdkafka::{config::RDKafkaLogLevel, ClientConfig, consumer::{StreamConsumer, Consumer}};
+use rdkafka::{
+    config::RDKafkaLogLevel,
+    consumer::{Consumer, StreamConsumer},
+    ClientConfig,
+};
 use tracing::{info, level_filters::LevelFilter};
 
 #[derive(Debug, eap::Config)]
@@ -31,7 +36,7 @@ struct ConsentGrant {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), PeridotAppRuntimeError>{
+async fn main() -> Result<(), PeridotAppRuntimeError> {
     init_tracing(LevelFilter::INFO);
 
     let mut source = ClientConfig::new();
@@ -50,21 +55,20 @@ async fn main() -> Result<(), PeridotAppRuntimeError>{
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let backend: PersistentStateBackend<ConsentGrant> = PersistentStateBackend::try_from_file(std::path::Path::new("/tmp/peridot.gw.state_store.db"))
-        .await
-        .unwrap();
+    let backend: PersistentStateBackend<ConsentGrant> = PersistentStateBackend::try_from_file(
+        std::path::Path::new("/tmp/peridot.gw.state_store.db"),
+    )
+    .await
+    .unwrap();
 
     let state_store: StateStore<PersistentStateBackend<_>, ConsentGrant> =
-        StateStore::from_consumer_config_and_backend("consent.Client", &source, backend)
-            .unwrap();
+        StateStore::from_consumer_config_and_backend("consent.Client", &source, backend).unwrap();
 
     let primary_stream: StreamConsumer = source.create().unwrap();
 
     primary_stream.subscribe(&["changeOfAddress"]).unwrap();
 
-    primary_stream.stream().for_each(|message| async {
-        
-    });
+    primary_stream.stream().for_each(|message| async {});
 
     let app = PeridotApp::from_client_config(&source).unwrap();
 

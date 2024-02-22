@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use peridot::app::ptable::{PTable, PeridotTable};
+use peridot::app::PeridotApp;
 use peridot::engine::util::ExactlyOnce;
 use peridot::init::init_tracing;
-use peridot::app::PeridotApp;
 use peridot::pipeline::message::sink::PrintSink;
 use peridot::pipeline::pipeline::sink::PipelineSinkExt;
 use peridot::pipeline::pipeline::stream::PipelineStreamSinkExt;
@@ -19,7 +19,6 @@ use rdkafka::config::RDKafkaLogLevel;
 use tokio::select;
 use tracing::info;
 use tracing::level_filters::LevelFilter;
-
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Topic {
@@ -38,19 +37,23 @@ struct ConsentGrant {
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChangeOfAddress {
-    #[serde(alias="Address")]
+    #[serde(alias = "Address")]
     address: String,
-    #[serde(alias="City")]
+    #[serde(alias = "City")]
     city: String,
-    #[serde(alias="State")]
+    #[serde(alias = "State")]
     state: String,
-    #[serde(alias="Postcode")]
+    #[serde(alias = "Postcode")]
     postcode: String,
 }
 
 impl Display for ChangeOfAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ChangeOfAddress {{ address: {}, city: {}, state: {}, postcode: {} }}", self.address, self.city, self.state, self.postcode)
+        write!(
+            f,
+            "ChangeOfAddress {{ address: {}, city: {}, state: {}, postcode: {} }}",
+            self.address, self.city, self.state, self.postcode
+        )
     }
 }
 
@@ -77,22 +80,23 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
 
     app.run().await?;
-    
+
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-        match table.get_store()
+        match table
+            .get_store()
             .unwrap()
-            .get(&String::from("Oliver")).await 
+            .get(&String::from("Oliver"))
+            .await
         {
             Some(consent_grant) => {
                 info!("Got consent grant: {:?}", consent_grant);
-            },
+            }
             None => {
                 info!("No consent grant found");
             }
         };
-
     }
 
     Ok(())
