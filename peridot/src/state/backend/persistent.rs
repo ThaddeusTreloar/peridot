@@ -1,13 +1,19 @@
-
 use std::{path::Path, sync::Arc};
 
 use serde::de::DeserializeOwned;
-use surrealdb::{Surreal, engine::local::{File, Db}, sql::Id};
+use surrealdb::{
+    engine::local::{Db, File},
+    sql::Id,
+    Surreal,
+};
 use tracing::info;
 
-use crate::pipeline::message::types::Message;
+use crate::message::types::Message;
 
-use super::{ReadableStateBackend, WriteableStateBackend, error::BackendCreationError, StateBackend, CommitLog};
+use super::{
+    error::BackendCreationError, CommitLog, ReadableStateBackend, StateBackend,
+    WriteableStateBackend,
+};
 
 pub struct PersistentStateBackend<K, V> {
     store: Surreal<Db>,
@@ -17,10 +23,10 @@ pub struct PersistentStateBackend<K, V> {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct OffsetStruct{
+struct OffsetStruct {
     pub topic: String,
     pub partition: i32,
-    pub offset: i64
+    pub offset: i64,
 }
 
 impl OffsetStruct {
@@ -28,7 +34,7 @@ impl OffsetStruct {
         OffsetStruct {
             topic,
             partition,
-            offset
+            offset,
         }
     }
 }
@@ -38,27 +44,31 @@ impl From<Vec<OffsetStruct>> for CommitLog {
         let commit_log = CommitLog::default();
 
         for offset_struct in val {
-            commit_log.commit_offset(offset_struct.topic.as_str(), offset_struct.partition, offset_struct.offset);
+            commit_log.commit_offset(
+                offset_struct.topic.as_str(),
+                offset_struct.partition,
+                offset_struct.offset,
+            );
         }
 
         commit_log
     }
 }
 
-impl <K, V> PersistentStateBackend<K, V> 
-where 
+impl<K, V> PersistentStateBackend<K, V>
+where
     K: Send + Sync,
     V: Send + Sync,
 {
     pub async fn try_from_file(path: &Path) -> Result<Self, BackendCreationError> {
         let store = Surreal::new::<File>(path).await?;
-        
+
         // TODO: Derive some db name from some app_id
         store.use_ns("stream_app_state_backend").await?;
         store.use_db("stream_app_state_backend").await?;
 
-        let stored_offsets = store.select::
-            <Vec<OffsetStruct>>("offsets")
+        let stored_offsets = store
+            .select::<Vec<OffsetStruct>>("offsets")
             .await
             .expect("Failed to get value from db");
 
@@ -76,20 +86,27 @@ where
         Ok(backend)
     }
 
-    pub async fn try_from_file_and_commit_log(path: &Path, commit_log: Arc<CommitLog>) -> Result<Self, BackendCreationError> {
+    pub async fn try_from_file_and_commit_log(
+        path: &Path,
+        commit_log: Arc<CommitLog>,
+    ) -> Result<Self, BackendCreationError> {
         let store = Surreal::new::<File>(path).await?;
-        
+
         // TODO: Derive some db name from some app_id
         store.use_ns("stream_app_state_backend").await?;
         store.use_db("stream_app_state_backend").await?;
 
-        let stored_offsets = store.select::
-            <Vec<OffsetStruct>>("offsets")
+        let stored_offsets = store
+            .select::<Vec<OffsetStruct>>("offsets")
             .await
             .expect("Failed to get value from db");
 
         for stored_offset in stored_offsets {
-            commit_log.commit_offset(stored_offset.topic.as_str(), stored_offset.partition, stored_offset.offset);
+            commit_log.commit_offset(
+                stored_offset.topic.as_str(),
+                stored_offset.partition,
+                stored_offset.offset,
+            );
         }
 
         info!("Commit log: {:?}", commit_log);
@@ -105,8 +122,8 @@ where
     }
 }
 
-impl <K, V> StateBackend for PersistentStateBackend<K, V> 
-where 
+impl<K, V> StateBackend for PersistentStateBackend<K, V>
+where
     K: Send + Sync,
     V: Send + Sync,
 {
@@ -114,16 +131,23 @@ where
         let state_db_filename = format!("peridot.{}.db", topic_name);
 
         let state_dir = Path::new("/tmp").join(state_db_filename);
-        
-        Self::try_from_file(state_dir.as_path()).await.expect("Failed to create state backend")
+
+        Self::try_from_file(state_dir.as_path())
+            .await
+            .expect("Failed to create state backend")
     }
 
-    async fn with_topic_name_and_commit_log(topic_name: &str, commit_log: std::sync::Arc<CommitLog>) -> Self {
+    async fn with_topic_name_and_commit_log(
+        topic_name: &str,
+        commit_log: std::sync::Arc<CommitLog>,
+    ) -> Self {
         let state_db_filename = format!("peridot.{}.db", topic_name);
 
         let state_dir = Path::new("/tmp").join(state_db_filename);
-        
-        Self::try_from_file_and_commit_log(state_dir.as_path(), commit_log).await.expect("Failed to create state backend")
+
+        Self::try_from_file_and_commit_log(state_dir.as_path(), commit_log)
+            .await
+            .expect("Failed to create state backend")
     }
 
     fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
@@ -136,12 +160,14 @@ where
         let content = OffsetStruct {
             topic: topic.to_string(),
             partition,
-            offset
+            offset,
         };
 
-        if self.store
-            .select::<Option<OffsetStruct>>(("offsets", key.as_str())).await
-            .expect("Failed to get value from db") 
+        if self
+            .store
+            .select::<Option<OffsetStruct>>(("offsets", key.as_str()))
+            .await
+            .expect("Failed to get value from db")
             .is_some()
         {
             self.store
@@ -164,14 +190,15 @@ where
         let key = format!("{}-{}", topic, partition);
 
         self.store
-            .select::<Option<OffsetStruct>>(("offsets", key.as_str())).await
+            .select::<Option<OffsetStruct>>(("offsets", key.as_str()))
+            .await
             .expect("Failed to get value from db")
             .map(|offset_struct| offset_struct.offset)
     }
 }
 
-impl <K, V> ReadableStateBackend for PersistentStateBackend<K, V> 
-where 
+impl<K, V> ReadableStateBackend for PersistentStateBackend<K, V>
+where
     K: Send + Sync + Into<Id> + Clone,
     V: Send + Sync + Clone + DeserializeOwned,
 {
@@ -180,13 +207,14 @@ where
 
     async fn get(&self, key: &Self::KeyType) -> Option<Self::ValueType> {
         self.store
-            .select(("state", key.clone())).await
+            .select(("state", key.clone()))
+            .await
             .expect("Failed to get value from db")
     }
 }
 
-impl <K, V> WriteableStateBackend<K, V> for PersistentStateBackend<K, V> 
-where 
+impl<K, V> WriteableStateBackend<K, V> for PersistentStateBackend<K, V>
+where
     K: Send + Sync + Into<Id> + Clone,
     V: Send + Sync + Clone + serde::Serialize + DeserializeOwned,
 {
@@ -212,7 +240,7 @@ where
             None
         }
     }
-    
+
     async fn delete(&self, _key: &K) -> Option<V> {
         unimplemented!("Delete not implemented")
     }*/
@@ -221,7 +249,7 @@ where
         None
     }
 
-    async fn delete(&self, key: &K)-> Option<Message<K, V>> {
+    async fn delete(&self, key: &K) -> Option<Message<K, V>> {
         None
     }
 }

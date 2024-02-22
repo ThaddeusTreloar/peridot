@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::pipeline::{
+use crate::{
     message::{
         sink::MessageSink,
         stream::{MessageStream, PipelineStage},

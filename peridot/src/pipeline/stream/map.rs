@@ -7,7 +7,7 @@ use std::{
 
 use pin_project_lite::pin_project;
 
-use crate::pipeline::message::{
+use crate::message::{
     map::MapMessage,
     stream::{MessageStream, PipelineStage},
     types::{FromMessage, PatchMessage},

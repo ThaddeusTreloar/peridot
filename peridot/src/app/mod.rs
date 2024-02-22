@@ -10,17 +10,13 @@ use crate::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         AppEngine,
     },
-    pipeline::{
-        message::types::{FromMessage, PatchMessage},
-        pipeline::{
-            sink::{GenericPipelineSink, PrintSinkFactory},
-            stream::{
-                map::MapPipeline, stream::Pipeline, PipelineStream, PipelineStreamExt,
-                PipelineStreamSinkExt,
-            },
-        },
-        serde_ext::{PDeserialize, PSerialize},
+    message::types::{FromMessage, PatchMessage},
+    pipeline::sink::{GenericPipelineSink, PrintSinkFactory},
+    pipeline::stream::{
+        map::MapPipeline, stream::Pipeline, PipelineStream, PipelineStreamExt,
+        PipelineStreamSinkExt,
     },
+    serde_ext::{PDeserialize, PSerialize},
     state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
 };
 

@@ -17,7 +17,8 @@ use tracing::{error, info, warn};
 use crate::engine::distributor::QueueDistributor;
 use crate::{
     app::psink::PSinkBuilder,
-    pipeline::{pipeline::stream::stream::Pipeline, serde_ext::PDeserialize},
+    pipeline::stream::stream::Pipeline,
+    serde_ext::PDeserialize,
     state::{
         backend::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend},
         StateStore,

@@ -8,7 +8,7 @@ use tracing::info;
 use crate::{
     app::PeridotConsumer,
     engine::{partition_queue::StreamPeridotPartitionQueue, EngineState, RawQueueReceiver},
-    pipeline::serde_ext::PDeserialize,
+    serde_ext::PDeserialize,
 };
 
 use self::{

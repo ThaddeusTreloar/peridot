@@ -5,7 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::pipeline::message::types::{FromMessage, Message, PatchMessage};
+use crate::message::types::{FromMessage, Message, PatchMessage};
 
 use pin_project_lite::pin_project;
 

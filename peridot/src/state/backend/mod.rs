@@ -3,18 +3,18 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::Future;
 
-use crate::pipeline::message::types::Message;
+use crate::message::types::Message;
 
+pub mod error;
 pub mod in_memory;
 pub mod persistent;
-pub mod error;
 
 // Commit logs are a temporary solution to the problem of tracking offsets
 // This will be deprecated in favour of a upstreaming persitent storage
 // to the AppEngine
 #[derive(Debug, Default)]
 pub struct CommitLogs {
-    logs: DashMap<String, CommitLog>
+    logs: DashMap<String, CommitLog>,
 }
 
 impl CommitLogs {
@@ -28,7 +28,7 @@ impl CommitLogs {
 
 #[derive(Debug, Default)]
 pub struct CommitLog {
-    store: DashMap<String, i64>
+    store: DashMap<String, i64>,
 }
 
 impl CommitLog {
@@ -43,12 +43,19 @@ impl CommitLog {
     }
 }
 
-pub trait StateBackend
-{
+pub trait StateBackend {
     fn with_topic_name(topic_name: &str) -> impl Future<Output = Self>;
-    fn with_topic_name_and_commit_log(topic_name: &str, commit_log: Arc<CommitLog>) -> impl Future<Output = Self>;
+    fn with_topic_name_and_commit_log(
+        topic_name: &str,
+        commit_log: Arc<CommitLog>,
+    ) -> impl Future<Output = Self>;
     fn get_commit_log(&self) -> Arc<CommitLog>;
-    fn commit_offset(&self, topic: &str, partition: i32, offset: i64) -> impl Future<Output = ()> + Send;
+    fn commit_offset(
+        &self,
+        topic: &str,
+        partition: i32,
+        offset: i64,
+    ) -> impl Future<Output = ()> + Send;
     fn get_offset(&self, topic: &str, partition: i32) -> impl Future<Output = Option<i64>> + Send;
 }
 
@@ -59,10 +66,12 @@ pub trait ReadableStateBackend {
     fn get(&self, key: &Self::KeyType) -> impl Future<Output = Option<Self::ValueType>> + Send;
 }
 
-pub trait WriteableStateBackend<K, V> 
-{
-    fn commit_update(&self, message: &Message<K, V>) -> impl Future<Output = Option<Message<K, V>>> + Send;
-    fn delete(&self, key: &K)-> impl Future<Output = Option<Message<K, V>>> + Send;
+pub trait WriteableStateBackend<K, V> {
+    fn commit_update(
+        &self,
+        message: &Message<K, V>,
+    ) -> impl Future<Output = Option<Message<K, V>>> + Send;
+    fn delete(&self, key: &K) -> impl Future<Output = Option<Message<K, V>>> + Send;
 }
 
 // User facing API interface for interacting with a state store

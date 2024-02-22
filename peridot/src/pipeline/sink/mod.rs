@@ -1,7 +1,8 @@
 use std::{
+    fmt::{Debug, Display},
     marker::PhantomData,
     pin::Pin,
-    task::{Context, Poll, ready}, fmt::{Display, Debug},
+    task::{ready, Context, Poll},
 };
 
 use futures::Future;
@@ -9,8 +10,13 @@ use pin_project_lite::pin_project;
 use tracing::info;
 
 use crate::{
+    app::error::PeridotAppRuntimeError,
     engine::{util::ExactlyOnce, QueueMetadata},
-    pipeline::{message::{stream::{MessageStream, PipelineStage}, sink::{MessageSink, PrintSink}}, serde_ext::PSerialize}, app::error::PeridotAppRuntimeError,
+    message::{
+        sink::{MessageSink, PrintSink},
+        stream::{MessageStream, PipelineStage},
+    },
+    serde_ext::PSerialize,
 };
 
 use super::stream::PipelineStream;
@@ -25,43 +31,34 @@ pub trait MessageSinkFactory {
 
 pub trait PipelineSink<M>
 where
-    M: MessageStream
+    M: MessageStream,
 {
     type Error: Display + Debug;
     type SinkType: MessageSink;
 
-    fn start_send(
-        self: Pin<&mut Self>,
-        message: PipelineStage<M>,
-    ) -> Result<(), Self::Error>;
+    fn start_send(self: Pin<&mut Self>, message: PipelineStage<M>) -> Result<(), Self::Error>;
 }
 
-pub struct GenericPipelineSink<SF>
-{
-    sink_factory: SF
+pub struct GenericPipelineSink<SF> {
+    sink_factory: SF,
 }
 
-impl <SF> GenericPipelineSink<SF>
-{
+impl<SF> GenericPipelineSink<SF> {
     pub fn new(sink_factory: SF) -> Self {
-        Self {
-            sink_factory
-        }
+        Self { sink_factory }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum GenericPipelineSinkError {
-
-}
+pub enum GenericPipelineSinkError {}
 
 pub struct PrintSinkFactory<KS, VS> {
     _key_ser_type: PhantomData<KS>,
     _value_ser_type: PhantomData<VS>,
 }
 
-impl <KS, VS> PrintSinkFactory<KS, VS> {
-    pub fn new() ->  Self {
+impl<KS, VS> PrintSinkFactory<KS, VS> {
+    pub fn new() -> Self {
         Self {
             _key_ser_type: PhantomData,
             _value_ser_type: PhantomData,
@@ -69,7 +66,7 @@ impl <KS, VS> PrintSinkFactory<KS, VS> {
     }
 }
 
-impl <KS, VS> MessageSinkFactory for PrintSinkFactory<KS, VS>
+impl<KS, VS> MessageSinkFactory for PrintSinkFactory<KS, VS>
 where
     KS: PSerialize,
     KS::Input: Display,
@@ -83,24 +80,18 @@ where
     }
 }
 
-impl <SF, M> PipelineSink<M> for GenericPipelineSink<SF>
+impl<SF, M> PipelineSink<M> for GenericPipelineSink<SF>
 where
     M: MessageStream + Send + 'static,
     SF: MessageSinkFactory,
     SF::SinkType: Send + 'static,
     <SF::SinkType as MessageSink>::KeySerType: PSerialize<Input = M::KeyType>,
     <SF::SinkType as MessageSink>::ValueSerType: PSerialize<Input = M::ValueType>,
-
 {
     type Error = GenericPipelineSinkError;
     type SinkType = SF::SinkType;
 
-    fn start_send(
-            self: Pin<&mut Self>,
-            queue_item: PipelineStage<M>,
-        ) -> Result<(), Self::Error>
-    {
-
+    fn start_send(self: Pin<&mut Self>, queue_item: PipelineStage<M>) -> Result<(), Self::Error> {
         let PipelineStage(metadata, message_stream) = queue_item;
 
         let message_sink = self.sink_factory.new_sink(metadata);
@@ -131,7 +122,7 @@ pin_project! {
 impl<S, Si, G> PipelineForward<S, Si, G>
 where
     S: PipelineStream,
-    Si: PipelineSink<S::MStream>
+    Si: PipelineSink<S::MStream>,
 {
     pub fn new(queue_stream: S, sink: Si) -> Self {
         Self {
@@ -148,20 +139,25 @@ pub enum SinkError {
     QueueReceiverError(String),
 }
 
-impl<S, Si, G> Future for PipelineForward<S, Si, G> 
+impl<S, Si, G> Future for PipelineForward<S, Si, G>
 where
     S: PipelineStream + Send + 'static,
     S::MStream: Send + 'static,
     Si: PipelineSink<S::MStream> + Send + 'static,
-    <Si::SinkType as MessageSink>::KeySerType: PSerialize<Input = <S::MStream as MessageStream>::KeyType> + Send + 'static,
-    <Si::SinkType as MessageSink>::ValueSerType: PSerialize<Input = <S::MStream as MessageStream>::ValueType> + Send + 'static,
-    {
+    <Si::SinkType as MessageSink>::KeySerType:
+        PSerialize<Input = <S::MStream as MessageStream>::KeyType> + Send + 'static,
+    <Si::SinkType as MessageSink>::ValueSerType:
+        PSerialize<Input = <S::MStream as MessageStream>::ValueType> + Send + 'static,
+{
     type Output = Result<(), PeridotAppRuntimeError>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> 
-    {
-        let SinkProjection { mut queue_stream, mut sink, ..} = self.project();
-        
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let SinkProjection {
+            mut queue_stream,
+            mut sink,
+            ..
+        } = self.project();
+
         loop {
             let pipeline_stage = match queue_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => return Poll::Ready(Ok(())),
@@ -169,7 +165,9 @@ where
                 Poll::Ready(Some(q)) => q,
             };
 
-            sink.as_mut().start_send(pipeline_stage).expect("Failed to send pipeline stage");
+            sink.as_mut()
+                .start_send(pipeline_stage)
+                .expect("Failed to send pipeline stage");
         }
     }
 }
@@ -207,7 +205,7 @@ where
 
 const BATCH_SIZE: usize = 1024;
 
-impl <M, Si> Future for Forward<M, Si>
+impl<M, Si> Future for Forward<M, Si>
 where
     M: MessageStream,
     Si: MessageSink,
@@ -217,7 +215,11 @@ where
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let ForwardProjection { mut message_stream, mut message_sink, .. } = self.project();
+        let ForwardProjection {
+            mut message_stream,
+            mut message_sink,
+            ..
+        } = self.project();
 
         info!("Forwarding messages from stream to sink...");
 
@@ -228,22 +230,25 @@ where
                 Poll::Ready(None) => {
                     info!("No Messages left for stream, finishing...");
                     ready!(message_sink.as_mut().poll_close(cx));
-                    return Poll::Ready(())
-                },
+                    return Poll::Ready(());
+                }
                 Poll::Pending => {
                     info!("No messages available, waiting...");
                     ready!(message_sink.as_mut().poll_commit(cx));
                     return Poll::Pending;
-                },
+                }
                 Poll::Ready(Some(message)) => {
-                    message_sink.as_mut().start_send(message).expect("Failed to send message to sink.");
+                    message_sink
+                        .as_mut()
+                        .start_send(message)
+                        .expect("Failed to send message to sink.");
                     poll_count += 1;
 
                     if poll_count >= BATCH_SIZE {
                         cx.waker().wake_by_ref();
                         return Poll::Pending;
                     }
-                },
+                }
             };
         }
     }

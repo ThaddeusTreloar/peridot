@@ -1,7 +1,9 @@
 pub mod app;
 pub mod engine;
 pub mod init;
+pub mod message;
 pub mod pipeline;
+pub mod serde_ext;
 pub mod state;
 
 use tracing::info;
@@ -18,9 +20,6 @@ pub fn help(help_topic: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use tracing::level_filters::LevelFilter;
-
-    use crate::init::init_tracing;
 
     use super::*;
 

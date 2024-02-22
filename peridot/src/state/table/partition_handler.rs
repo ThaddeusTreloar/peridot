@@ -16,14 +16,12 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     engine::QueueMetadata,
-    pipeline::{
-        message::{
-            sink::MessageSink,
-            stream::MessageStream,
-            types::{Message, PeridotTimestamp},
-        },
-        serde_ext::{Json, PSerialize},
+    message::{
+        sink::MessageSink,
+        stream::MessageStream,
+        types::{Message, PeridotTimestamp},
     },
+    serde_ext::{Json, PSerialize},
 };
 
 const BUFFER_LIMIT: i32 = 100;

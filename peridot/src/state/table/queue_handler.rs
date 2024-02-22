@@ -6,12 +6,12 @@ use std::{
 
 use futures::{ready, Future};
 use pin_project_lite::pin_project;
+use serde::Serialize;
 
 use crate::{
-    pipeline::{
-        message::stream::{MessageStream, PipelineStage},
-        pipeline::{sink::PipelineSink, stream::PipelineStream},
-    },
+    message::stream::PipelineStage,
+    pipeline::{sink::PipelineSink, stream::PipelineStream},
+    serde_ext::PSerialize,
     state::backend::{ReadableStateBackend, WriteableStateBackend},
 };
 
@@ -71,6 +71,8 @@ pub enum QueueReceiverHandlerError {}
 impl<B, P> PipelineSink<P::MStream> for QueueReceiverHandler<B, P>
 where
     P: PipelineStream,
+    P::KeyType: Serialize,
+    P::ValueType: Serialize,
 {
     type SinkType = TablePartitionHandler<P::MStream>;
     type Error = QueueReceiverHandlerError;
@@ -79,6 +81,7 @@ where
         self: Pin<&mut Self>,
         message: PipelineStage<P::MStream>,
     ) -> Result<(), Self::Error> {
-        let (metadata, queue) = message;
+        let PipelineStage(metadata, queue) = message;
+        Ok(())
     }
 }

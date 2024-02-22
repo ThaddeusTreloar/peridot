@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    pipeline::serde_ext::PDeserialize,
+    serde_ext::PDeserialize,
     state::{
         backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
         StateStore,

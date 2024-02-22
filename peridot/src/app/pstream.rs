@@ -5,7 +5,8 @@ use tracing::info;
 
 use crate::{
     engine::{QueueForwarder, QueueMetadataProtoype, RawQueueReceiver},
-    pipeline::{pipeline::stream::stream::Pipeline, serde_ext::PDeserialize},
+    pipeline::stream::stream::Pipeline,
+    serde_ext::PDeserialize,
 };
 
 use super::extensions::Commit;

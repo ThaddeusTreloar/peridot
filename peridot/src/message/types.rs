@@ -5,7 +5,7 @@ use rdkafka::message::{
     OwnedHeaders, OwnedMessage,
 };
 
-use crate::pipeline::serde_ext::PDeserialize;
+use crate::serde_ext::PDeserialize;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MessageHeaders {

@@ -9,10 +9,8 @@ use tracing::info;
 
 use crate::{
     engine::{util::ExactlyOnce, QueueReceiver},
-    pipeline::{
-        message::stream::{connector::QueueConnector, PipelineStage},
-        serde_ext::PDeserialize,
-    },
+    message::stream::{connector::QueueConnector, PipelineStage},
+    serde_ext::PDeserialize,
 };
 
 use super::PipelineStream;

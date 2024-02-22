@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
 
-use crate::{engine::EngineState, pipeline::pipeline::stream::PipelineStream};
+use crate::{engine::EngineState, pipeline::stream::PipelineStream};
 
 use self::queue_handler::QueueReceiverHandler;
 

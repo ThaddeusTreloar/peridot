@@ -11,7 +11,7 @@ use pin_project_lite::pin_project;
 use rdkafka::{consumer::Consumer, TopicPartitionList};
 use tracing::info;
 
-use crate::{engine::QueueMetadata, pipeline::serde_ext::PSerialize};
+use crate::{engine::QueueMetadata, serde_ext::PSerialize};
 
 use super::types::Message;
 

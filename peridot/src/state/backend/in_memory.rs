@@ -1,9 +1,9 @@
-use std::{sync::Arc, hash::Hash};
+use std::{hash::Hash, sync::Arc};
 
 use dashmap::DashMap;
 use tracing::info;
 
-use crate::pipeline::message::types::Message;
+use crate::message::types::Message;
 
 use super::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend};
 
@@ -15,7 +15,7 @@ where
     offsets: Arc<CommitLog>,
 }
 
-impl<K, V> Default for InMemoryStateBackend<K, V> 
+impl<K, V> Default for InMemoryStateBackend<K, V>
 where
     K: Hash + Eq,
 {
@@ -28,7 +28,7 @@ where
 }
 
 impl<K, V> StateBackend for InMemoryStateBackend<K, V>
-where 
+where
     K: Send + Sync + Hash + Eq,
     V: Send + Sync,
 {
@@ -62,7 +62,7 @@ where
 impl<K, V> ReadableStateBackend for InMemoryStateBackend<K, V>
 where
     K: Send + Sync + Hash + Eq,
-    V: Send + Sync + Clone
+    V: Send + Sync + Clone,
 {
     type KeyType = K;
     type ValueType = V;
@@ -75,14 +75,15 @@ where
 impl<K, V> WriteableStateBackend<K, V> for InMemoryStateBackend<K, V>
 where
     K: Send + Sync + Hash + Eq + Clone,
-    V: Send + Sync + Clone
+    V: Send + Sync + Clone,
 {
     async fn commit_update(&self, message: &Message<K, V>) -> Option<Message<K, V>> {
-        self.store.insert(message.key().clone(), message.value().clone());
+        self.store
+            .insert(message.key().clone(), message.value().clone());
         None
     }
 
-    async fn delete(&self, key: &K)-> Option<Message<K, V>> {
+    async fn delete(&self, key: &K) -> Option<Message<K, V>> {
         self.store.remove(key);
         None
     }
