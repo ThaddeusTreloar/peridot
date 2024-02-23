@@ -15,12 +15,6 @@ use self::map::MapPipeline;
 
 use super::sink::{PipelineForward, PipelineSink};
 
-pub mod count;
-pub mod filter;
-pub mod fold;
-pub mod join;
-pub mod map;
-pub mod reduce;
 pub mod stream;
 
 pub trait PipelineStream {

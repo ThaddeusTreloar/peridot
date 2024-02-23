@@ -1,2 +1,10 @@
+pub mod borrowed_fork;
+pub mod count;
+pub mod filter;
+pub mod fold;
+pub mod forward;
+pub mod join;
+pub mod map;
+pub mod reduce;
 pub mod sink;
 pub mod stream;

@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::{
     engine::{util::ExactlyOnce, EngineState},
-    pipeline::{sink::PipelineForward, stream::PipelineStream},
+    pipeline::{sink::PipelineForward, stream::{PipelineStream, PipelineStreamSinkExt}},
 };
 
 use self::queue_handler::QueueReceiverHandler;
@@ -46,6 +46,8 @@ where
         let backend_ref = Arc::new(backend);
 
         let queue_handler = QueueReceiverHandler::new(format!("{}-changelog", name));
+
+        stream_queue.sink(queue_handler);
 
         let pipeline_forwarder =
             PipelineForward::<_, _, ExactlyOnce>::new(stream_queue, queue_handler);

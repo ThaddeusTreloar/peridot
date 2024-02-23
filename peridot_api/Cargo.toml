@@ -13,7 +13,7 @@ authors = {workspace = true}
 crossbeam = "0.8.4"
 axum = { version = "0.7.4", features = ["tracing", "ws"]}
 anyhow = "1.0.79"
-eap = { path = "/Users/ttreloar/Documents/personal/eap", features = ["derive"]}
+# eap = { path = "/Users/ttreloar/Documents/personal/eap", features = ["derive"]}
 peridot = { path = "../peridot" }
 tokio = { version = "1.36.0", features = ["full"] }
 rdkafka = "*"

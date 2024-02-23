@@ -37,7 +37,7 @@ path = "src/app-message-task.rs"
 crossbeam = "0.8.4"
 futures = "0.3.30"
 anyhow = "1.0.79"
-eap = { path = "/Users/ttreloar/Documents/personal/eap", features = ["derive"]}
+# eap = { path = "/Users/ttreloar/Documents/personal/eap", features = ["derive"]}
 peridot = { path = "../peridot" }
 tokio = { version = "1.36.0", features = ["full"] }
 rdkafka = "*"
