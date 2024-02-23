@@ -4,19 +4,13 @@ use crossbeam::atomic::AtomicCell;
 use serde::Serialize;
 
 use crate::{
-    engine::{util::ExactlyOnce, EngineState},
-    pipeline::{
-        forward::PipelineForward,
-        stream::{transparent::TransparentPipeline, PipelineStream},
-    },
+    engine::EngineState,
+    pipeline::stream::PipelineStream,
 };
-
-use self::queue_handler::QueueReceiverHandler;
 
 use super::backend::{BackendView, ReadableStateBackend, WriteableStateBackend};
 
-pub mod partition_handler;
-pub mod queue_handler;
+pub mod backend_sink;
 
 pub struct PeridotTable<B> {
     _name: String,

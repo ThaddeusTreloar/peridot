@@ -5,12 +5,11 @@ use std::{
 };
 
 use pin_project_lite::pin_project;
-use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::info;
 
 use crate::{
-    engine::{util::ExactlyOnce, QueueMetadata},
-    message::stream::{ChannelStream, MessageStream, PipelineStage},
+    engine::util::ExactlyOnce,
+    message::stream::{ChannelStream, PipelineStage},
 };
 
 use super::{ChannelStreamPipeline, PipelineStream};

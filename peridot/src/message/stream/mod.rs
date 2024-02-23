@@ -55,3 +55,15 @@ where
         PipelineStage::new(queue_metadata, wrapped)
     }
 }
+
+impl <K, V> MessageStream for ChannelStream<K, V> {
+    type KeyType = K;
+    type ValueType = V;
+
+    fn poll_next(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
+        unimplemented!("")
+    }
+}

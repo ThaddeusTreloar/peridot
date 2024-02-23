@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    sink::{MessageSinkFactory, PipelineSink},
+    sink::MessageSinkFactory,
     stream::PipelineStream,
 };
 
@@ -69,12 +69,12 @@ where
     <SF::SinkType as MessageSink>::ValueSerType:
         PSerialize<Input = <S::MStream as MessageStream>::ValueType>,
 {
-    type Output = Result<(), PipelineForwardError>;
+    type Output = Result<(), PeridotAppRuntimeError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let SinkProjection {
             mut queue_stream,
-            mut sink_factory,
+            sink_factory,
             ..
         } = self.project();
 
@@ -86,7 +86,7 @@ where
                 Poll::Ready(Some(q)) => q,
             };
 
-            let message_sink = self.sink_factory.new_sink(metadata.clone());
+            let message_sink = sink_factory.new_sink(metadata.clone());
 
             let forward = Forward::new(message_stream, message_sink);
 

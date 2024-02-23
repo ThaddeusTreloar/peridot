@@ -8,6 +8,7 @@ use futures::Future;
 use pin_project_lite::pin_project;
 
 use crate::{
+    app::error::PeridotAppRuntimeError,
     engine::util::ExactlyOnce,
     message::{
         forked_forward::ForkedForward,
@@ -69,16 +70,18 @@ where
     SF::SinkType: Send + 'static,
     <SF::SinkType as MessageSink>::KeySerType:
         PSerialize<Input = <S::MStream as MessageStream>::KeyType>,
+    <<SF::SinkType as MessageSink>::KeySerType as PSerialize>::Input: Send,
     <SF::SinkType as MessageSink>::ValueSerType:
         PSerialize<Input = <S::MStream as MessageStream>::ValueType>,
+    <<SF::SinkType as MessageSink>::ValueSerType as PSerialize>::Input: Send,
 {
-    type Output = Result<(), PipelineForkedForwardError>;
+    type Output = Result<(), PeridotAppRuntimeError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let SinkProjection {
             mut queue_stream,
-            mut sink_factory,
-            mut fork_sink,
+            sink_factory,
+            fork_sink,
             ..
         } = self.project();
 
@@ -92,12 +95,12 @@ where
 
             let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
-            let message_sink = self.sink_factory.new_sink(metadata.clone());
+            let message_sink = sink_factory.new_sink(metadata.clone());
 
             let forward = ForkedForward::new(message_stream, message_sink, sender);
 
             fork_sink
-                .send((metadata, sender))
+                .send((metadata, receiver))
                 .expect("Failed to send pipeline downstream");
 
             tokio::spawn(forward);

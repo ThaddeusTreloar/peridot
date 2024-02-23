@@ -5,9 +5,7 @@ use crate::{
     engine::util::DeliveryGuaranteeType,
     message::types::{FromMessage, PatchMessage},
     pipeline::{
-        map::MapPipeline,
-        sink::PrintSinkFactory,
-        stream::{PipelineStream, PipelineStreamExt},
+        map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
     },
     serde_ext::PSerialize,
     state::backend::ReadableStateBackend,

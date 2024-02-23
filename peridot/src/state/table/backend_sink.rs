@@ -147,11 +147,9 @@ where
             }
         }
     }
+}
 
-    fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self
-    where
-        Self: Sized,
-    {
-        unimplemented!("")
-    }
+
+pub struct BackendSink {
+    
 }

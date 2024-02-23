@@ -20,10 +20,6 @@ pub trait MessageSink {
     type ValueSerType: PSerialize;
     type Error: Error;
 
-    fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self
-    where
-        Self: Sized;
-
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
     fn start_send(
         self: Pin<&mut Self>,
@@ -77,6 +73,10 @@ where
             _value_serialiser_type: PhantomData,
         }
     }
+
+    pub fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self {
+        Self::new(queue_metadata)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -92,10 +92,6 @@ where
     type KeySerType = KS;
     type ValueSerType = VS;
     type Error = PrintSinkError;
-
-    fn from_queue_metadata(queue_metadata: QueueMetadata) -> Self {
-        Self::new(queue_metadata)
-    }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
