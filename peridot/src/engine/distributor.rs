@@ -153,6 +153,8 @@ impl Future for QueueDistributor {
                 _ => (),
             }
 
+            // TODO: Check for failed queues and reassign them before the next poll.
+
             debug!("Polling distributor...");
 
             if let Some(message) = this.consumer.poll(Duration::from_millis(0)) {
@@ -173,7 +175,9 @@ impl Future for QueueDistributor {
                 );
             }
 
-            debug!("Checking for rebalance");
+            debug!("Checking for rebalances");
+
+            // TODO: Check rebalances.
 
             let maybe_rebalance = this.rebalance_waker.recv();
 
