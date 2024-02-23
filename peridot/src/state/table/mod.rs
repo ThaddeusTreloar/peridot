@@ -7,7 +7,7 @@ use crate::{
     engine::{util::ExactlyOnce, EngineState},
     pipeline::{
         forward::PipelineForward,
-        stream::{transparent::TransparentPipeline, PipelineStream, PipelineStreamSinkExt},
+        stream::{transparent::TransparentPipeline, PipelineStream},
     },
 };
 
@@ -46,6 +46,7 @@ where
             > + Send
             + 'static,
     {
+        /*
         let backend_ref = Arc::new(backend);
         //
         // changelog_sink_factory: format!("{}-changelog", name)
@@ -64,7 +65,9 @@ where
             _name: name,
             backend: backend_ref,
             state: Default::default(),
-        }
+        } */
+
+        unimplemented!("")
     }
 
     pub fn get_table_state(&self) -> Arc<AtomicCell<EngineState>> {

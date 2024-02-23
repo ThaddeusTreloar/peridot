@@ -65,7 +65,10 @@ pub trait PipelineStreamExt: PipelineStream {
     ) -> (
         PipelineForkedForward<Self, SF, G>,
         TransparentPipeline<Self::KeyType, Self::ValueType>,
-    ) {
+    ) 
+    where 
+        Self: Sized
+    {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let downstream = TransparentPipeline::new(receiver);

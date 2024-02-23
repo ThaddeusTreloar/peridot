@@ -28,8 +28,8 @@ pin_project! {
     }
 }
 
-impl<M> QueueReceiverHandler<M> {
-    pub(super) fn new(changelog_topic: String, downstream: TransparentPipeline<M>) -> Self {
+impl<K, V> QueueReceiverHandler<K, V> {
+    pub(super) fn new(changelog_topic: String, downstream: TransparentPipeline<K, V>) -> Self {
         Self {
             changelog_topic,
             downstream,
@@ -40,9 +40,9 @@ impl<M> QueueReceiverHandler<M> {
 #[derive(Debug, thiserror::Error)]
 pub enum QueueReceiverHandlerError {}
 
-impl<M> PipelineSink<M> for QueueReceiverHandler<M>
+impl<K, V, M> PipelineSink<M> for QueueReceiverHandler<K, V>
 where
-    M: MessageStream + Send + 'static,
+    M: MessageStream<KeyType = K, ValueType = V> + Send + 'static,
     M::KeyType: Serialize + Send + 'static,
     M::ValueType: Serialize + Send + 'static,
 {
@@ -56,13 +56,14 @@ where
         let PipelineStage(metadata, message_stream) = pipeline_stage;
 
         // TODO: Handle this forwarder
+        /*
         let partition_handler = TablePartitionHandler::new(metadata, String::from("some_topic"));
 
         let passthrough_channel = tokio::sync::mpsc::unbounded_channel();
 
         let forwarder = PipelineForkedForward::new(message_stream, partition_handler);
 
-        tokio::spawn(forwarder);
+        tokio::spawn(forwarder); */
 
         Ok(())
     }
