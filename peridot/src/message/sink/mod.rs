@@ -27,7 +27,7 @@ pub trait MessageSink {
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<
+        message: &Message<
             <Self::KeySerType as PSerialize>::Input,
             <Self::ValueSerType as PSerialize>::Input,
         >,
@@ -103,7 +103,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<
+        message: &Message<
             <Self::KeySerType as PSerialize>::Input,
             <Self::ValueSerType as PSerialize>::Input,
         >,

@@ -8,10 +8,9 @@ use futures::Future;
 use pin_project_lite::pin_project;
 
 use crate::{
-    app::error::PeridotAppRuntimeError,
     engine::util::ExactlyOnce,
     message::{
-        forward::Forward,
+        forked_forward::ForkedForward,
         sink::MessageSink,
         stream::{MessageStream, PipelineStage},
     },
@@ -19,46 +18,50 @@ use crate::{
 };
 
 use super::{
-    sink::{MessageSinkFactory, PipelineSink},
-    stream::PipelineStream,
+    sink::MessageSinkFactory,
+    stream::{ChannelSinkPipeline, PipelineStream},
 };
 
 pin_project! {
     #[project = SinkProjection]
-    pub struct PipelineForward<S, SF, G = ExactlyOnce>
+    pub struct PipelineForkedForward<S, SF, G = ExactlyOnce>
     where
         S: PipelineStream,
     {
         #[pin]
         queue_stream: S,
+        #[pin]
+        fork_sink: ChannelSinkPipeline<<S::MStream as MessageStream>::KeyType, <S::MStream as MessageStream>::ValueType>,
         sink_factory: SF,
         _delivery_guarantee: PhantomData<G>
     }
 }
 
-impl<S, SF, G> PipelineForward<S, SF, G>
+impl<S, SF, G> PipelineForkedForward<S, SF, G>
 where
     S: PipelineStream,
 {
-    pub fn new(queue_stream: S, sink_factory: SF) -> Self {
+    pub fn new(
+        queue_stream: S,
+        sink_factory: SF,
+        fork_sink: ChannelSinkPipeline<
+            <S::MStream as MessageStream>::KeyType,
+            <S::MStream as MessageStream>::ValueType,
+        >,
+    ) -> Self {
         Self {
             queue_stream,
             sink_factory,
+            fork_sink,
             _delivery_guarantee: PhantomData,
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum SinkError {
-    #[error("Queue receiver error: {0}")]
-    QueueReceiverError(String),
-}
+pub enum PipelineForkedForwardError {}
 
-#[derive(Debug, thiserror::Error)]
-pub enum PipelineForwardError {}
-
-impl<S, SF, G> Future for PipelineForward<S, SF, G>
+impl<S, SF, G> Future for PipelineForkedForward<S, SF, G>
 where
     S: PipelineStream + Send + 'static,
     S::MStream: MessageStream + Send + 'static,
@@ -69,12 +72,13 @@ where
     <SF::SinkType as MessageSink>::ValueSerType:
         PSerialize<Input = <S::MStream as MessageStream>::ValueType>,
 {
-    type Output = Result<(), PipelineForwardError>;
+    type Output = Result<(), PipelineForkedForwardError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let SinkProjection {
             mut queue_stream,
             mut sink_factory,
+            mut fork_sink,
             ..
         } = self.project();
 
@@ -86,9 +90,15 @@ where
                 Poll::Ready(Some(q)) => q,
             };
 
+            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+
             let message_sink = self.sink_factory.new_sink(metadata.clone());
 
-            let forward = Forward::new(message_stream, message_sink);
+            let forward = ForkedForward::new(message_stream, message_sink, sender);
+
+            fork_sink
+                .send((metadata, sender))
+                .expect("Failed to send pipeline downstream");
 
             tokio::spawn(forward);
         }

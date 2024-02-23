@@ -1,17 +1,8 @@
-use std::fmt::Display;
-
 use crate::{
-    app::PeridotApp,
-    engine::util::DeliveryGuaranteeType,
-    message::types::{FromMessage, PatchMessage},
-    pipeline::{
-        sink::{GenericPipelineSink, PrintSinkFactory},
-        stream::{map::MapPipeline, PipelineStream, PipelineStreamExt, PipelineStreamSinkExt},
-    },
-    serde_ext::PSerialize,
+    app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream,
 };
 
-use super::{transform::TransformTask, Task};
+use super::Task;
 
 #[must_use = "pipelines do nothing unless patched to a topic"]
 pub struct TransparentTask<'a, R, G>

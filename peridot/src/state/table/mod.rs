@@ -5,7 +5,10 @@ use serde::Serialize;
 
 use crate::{
     engine::{util::ExactlyOnce, EngineState},
-    pipeline::{sink::PipelineForward, stream::{PipelineStream, PipelineStreamSinkExt}},
+    pipeline::{
+        forward::PipelineForward,
+        stream::{transparent::TransparentPipeline, PipelineStream, PipelineStreamSinkExt},
+    },
 };
 
 use self::queue_handler::QueueReceiverHandler;
@@ -44,15 +47,18 @@ where
             + 'static,
     {
         let backend_ref = Arc::new(backend);
+        //
+        // changelog_sink_factory: format!("{}-changelog", name)
+        //
+        let (changelog_forwarder, backend_downstream) =
+            stream_queue.forked_sink(changelog_sink_factory);
+        //
+        // backend_sink_factory: backend,
+        //
+        let (backend_forwarder, downstream) = backend_downstream.forked_sink(backend_sink_factory);
 
-        let queue_handler = QueueReceiverHandler::new(format!("{}-changelog", name));
-
-        stream_queue.sink(queue_handler);
-
-        let pipeline_forwarder =
-            PipelineForward::<_, _, ExactlyOnce>::new(stream_queue, queue_handler);
-
-        tokio::spawn(pipeline_forwarder);
+        app.job(backend_forwarder);
+        app.job(changelog_forwarder);
 
         Self {
             _name: name,

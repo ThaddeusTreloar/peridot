@@ -25,6 +25,8 @@ use crate::{
 
 const BUFFER_LIMIT: i32 = 100;
 
+// Sink Factory
+
 pin_project! {
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub (super) struct TablePartitionHandler<K, V>
@@ -33,18 +35,13 @@ pin_project! {
         target_topic: String,
         producer: BaseProducer,
         next_offset: i64,
-        storage_sink: UnboundedSender<Message<K, V>>,
         _key_type: PhantomData<K>,
         _value_type: PhantomData<V>,
     }
 }
 
 impl<K, V> TablePartitionHandler<K, V> {
-    pub(super) fn new(
-        queue_metadata: QueueMetadata,
-        target_topic: String,
-        storage_sink: UnboundedSender<Message<K, V>>,
-    ) -> Self {
+    pub(super) fn new(queue_metadata: QueueMetadata, target_topic: String) -> Self {
         let producer = BaseProducer::from_config(queue_metadata.client_config())
             .expect("Failed to create consumer for partition queue");
 
@@ -57,7 +54,6 @@ impl<K, V> TablePartitionHandler<K, V> {
             target_topic,
             next_offset: Default::default(),
             producer,
-            storage_sink,
             _key_type: PhantomData,
             _value_type: PhantomData,
         }
@@ -86,7 +82,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<
+        message: &Message<
             <Self::KeySerType as PSerialize>::Input,
             <Self::ValueSerType as PSerialize>::Input,
         >,
@@ -111,8 +107,6 @@ where
         this.producer.send(record).expect("Failed to send message");
 
         *this.next_offset = message.offset() + 1;
-
-        this.storage_sink.send(message).expect("Downstream closed");
 
         Ok(())
     }

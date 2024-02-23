@@ -3,19 +3,28 @@ use std::{
     task::{Context, Poll},
 };
 
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
 use crate::{
+    engine::QueueMetadata,
     message::{
         sink::MessageSink,
-        stream::{MessageStream, PipelineStage},
+        stream::{ChannelStream, MessageStream, PipelineStage},
     },
     serde_ext::PSerialize,
 };
 
-use self::map::MapPipeline;
+use self::transparent::TransparentPipeline;
 
-use super::sink::{PipelineForward, PipelineSink};
+use super::{forked_forward::PipelineForkedForward, map::MapPipeline, sink::MessageSinkFactory};
 
-pub mod stream;
+use super::forward::PipelineForward;
+
+pub mod serialiser;
+pub mod transparent;
+
+pub type ChannelStreamPipeline<K, V> = UnboundedReceiver<(QueueMetadata, ChannelStream<K, V>)>;
+pub type ChannelSinkPipeline<K, V> = UnboundedSender<(QueueMetadata, ChannelStream<K, V>)>;
 
 pub trait PipelineStream {
     type KeyType;
@@ -36,6 +45,37 @@ pub trait PipelineStreamExt: PipelineStream {
         MapPipeline::new(self, f)
     }
 
+    fn forward<SF>(self, sink: SF) -> PipelineForward<Self, SF>
+    where
+        SF: MessageSinkFactory + Send + 'static,
+        <SF::SinkType as MessageSink>::KeySerType: PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::KeyType>
+            + Send
+            + 'static,
+        <SF::SinkType as MessageSink>::ValueSerType: PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::ValueType>
+            + Send
+            + 'static,
+        Self: Sized,
+    {
+        PipelineForward::new(self, sink)
+    }
+
+    fn forked_forward<SF, G>(
+        self,
+        sink_factory: SF,
+    ) -> (
+        PipelineForkedForward<Self, SF, G>,
+        TransparentPipeline<Self::KeyType, Self::ValueType>,
+    ) {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let downstream = TransparentPipeline::new(receiver);
+
+        (
+            PipelineForkedForward::new(self, sink_factory, sender),
+            downstream,
+        )
+    }
+
     fn count() {}
     fn filter() {}
     fn fold() {}
@@ -43,20 +83,4 @@ pub trait PipelineStreamExt: PipelineStream {
     fn reduce() {}
 }
 
-pub trait PipelineStreamSinkExt: PipelineStream {
-    fn sink<Si>(self, sink: Si) -> PipelineForward<Self, Si>
-    where
-        Si: PipelineSink<Self::MStream> + Send + 'static,
-        <Si::SinkType as MessageSink>::KeySerType:
-            PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::KeyType>,
-        <Si::SinkType as MessageSink>::ValueSerType:
-            PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::ValueType>,
-        Self: Sized,
-    {
-        PipelineForward::new(self, sink)
-    }
-}
-
 impl<P> PipelineStreamExt for P where P: PipelineStream {}
-
-impl<P> PipelineStreamSinkExt for P where P: PipelineStream {}

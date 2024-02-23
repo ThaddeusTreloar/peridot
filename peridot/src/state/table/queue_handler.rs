@@ -2,32 +2,45 @@ use std::pin::Pin;
 
 use pin_project_lite::pin_project;
 use serde::Serialize;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
-    message::stream::{MessageStream, PipelineStage},
-    pipeline::sink::{Forward, PipelineSink},
+    engine::QueueMetadata,
+    message::{
+        forward::Forward,
+        stream::{transparent::TransparentQueue, MessageStream, PipelineStage},
+    },
+    pipeline::{
+        forked_forward::PipelineForkedForward,
+        sink::PipelineSink,
+        stream::{transparent::TransparentPipeline, ChannelSinkPipeline},
+    },
 };
 
 use super::partition_handler::TablePartitionHandler;
 
 pin_project! {
     #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub (super) struct QueueReceiverHandler
+    pub (super) struct QueueReceiverHandler<K, V>
     {
         changelog_topic: String,
+        downstream: ChannelSinkPipeline<K, V>,
     }
 }
 
-impl QueueReceiverHandler {
-    pub(super) fn new(changelog_topic: String) -> Self {
-        Self { changelog_topic }
+impl<M> QueueReceiverHandler<M> {
+    pub(super) fn new(changelog_topic: String, downstream: TransparentPipeline<M>) -> Self {
+        Self {
+            changelog_topic,
+            downstream,
+        }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueueReceiverHandlerError {}
 
-impl<M> PipelineSink<M> for QueueReceiverHandler
+impl<M> PipelineSink<M> for QueueReceiverHandler<M>
 where
     M: MessageStream + Send + 'static,
     M::KeyType: Serialize + Send + 'static,
@@ -43,12 +56,11 @@ where
         let PipelineStage(metadata, message_stream) = pipeline_stage;
 
         // TODO: Handle this forwarder
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let partition_handler = TablePartitionHandler::new(metadata, String::from("some_topic"));
 
-        let partition_handler =
-            TablePartitionHandler::new(metadata, String::from("some_topic"), sender);
+        let passthrough_channel = tokio::sync::mpsc::unbounded_channel();
 
-        let forwarder = Forward::new(message_stream, partition_handler);
+        let forwarder = PipelineForkedForward::new(message_stream, partition_handler);
 
         tokio::spawn(forwarder);
 

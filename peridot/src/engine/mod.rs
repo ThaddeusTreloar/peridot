@@ -17,7 +17,7 @@ use tracing::{error, info, warn};
 use crate::engine::distributor::QueueDistributor;
 use crate::{
     app::psink::PSinkBuilder,
-    pipeline::stream::stream::Pipeline,
+    pipeline::stream::serialiser::SerialiserPipeline,
     serde_ext::PDeserialize,
     state::{
         backend::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend},
@@ -494,7 +494,7 @@ where
 
         app_engine.downstreams.insert(topic.clone(), queue_sender);
 
-        let commit_waker = app_engine.waker_context.commit_waker();
+        let _commit_waker = app_engine.waker_context.commit_waker();
 
         let backend = B::with_topic_name_and_commit_log(
             topic.as_str(),
@@ -516,7 +516,7 @@ where
     pub fn stream<KS, VS>(
         self: Arc<AppEngine<G>>,
         topic: String,
-    ) -> Result<Pipeline<KS, VS, G>, PeridotEngineRuntimeError>
+    ) -> Result<SerialiserPipeline<KS, VS, G>, PeridotEngineRuntimeError>
     where
         KS: PDeserialize,
         VS: PDeserialize,

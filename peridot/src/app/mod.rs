@@ -10,7 +10,7 @@ use crate::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         AppEngine,
     },
-    pipeline::stream::stream::Pipeline,
+    pipeline::stream::serialiser::SerialiserPipeline,
     serde_ext::PDeserialize,
     state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
     task::transparent::TransparentTask,
@@ -80,7 +80,10 @@ where
         Ok(AppEngine::<G>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
     }
 
-    pub fn stream<KS, VS>(&self, topic: &str) -> Result<Pipeline<KS, VS, G>, PeridotAppRuntimeError>
+    pub fn stream<KS, VS>(
+        &self,
+        topic: &str,
+    ) -> Result<SerialiserPipeline<KS, VS, G>, PeridotAppRuntimeError>
     where
         KS: PDeserialize,
         VS: PDeserialize,
@@ -118,12 +121,12 @@ where
     pub fn task<'a, KS, VS>(
         &'a mut self,
         topic: &'a str,
-    ) -> TransparentTask<'a, Pipeline<KS, VS, G>, G>
+    ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, G>, G>
     where
         KS: PDeserialize + Send + 'static,
         VS: PDeserialize + Send + 'static,
     {
-        let input: Pipeline<KS, VS, G> = self
+        let input: SerialiserPipeline<KS, VS, G> = self
             .app_builder
             .stream(topic)
             .expect("Failed to create topic");

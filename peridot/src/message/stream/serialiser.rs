@@ -17,7 +17,7 @@ use crate::{
 use super::MessageStream;
 
 pin_project! {
-    pub struct QueueConnector<KS, VS> {
+    pub struct QueueSerialiser<KS, VS> {
         #[pin]
         input: StreamPeridotPartitionQueue,
         _key_serialiser: PhantomData<KS>,
@@ -25,9 +25,9 @@ pin_project! {
     }
 }
 
-impl<KS, VS> QueueConnector<KS, VS> {
+impl<KS, VS> QueueSerialiser<KS, VS> {
     pub fn new(input: StreamPeridotPartitionQueue) -> Self {
-        QueueConnector {
+        QueueSerialiser {
             input,
             _key_serialiser: PhantomData,
             _value_serialiser: PhantomData,
@@ -35,13 +35,13 @@ impl<KS, VS> QueueConnector<KS, VS> {
     }
 }
 
-impl<KS, VS> From<StreamPeridotPartitionQueue> for QueueConnector<KS, VS> {
+impl<KS, VS> From<StreamPeridotPartitionQueue> for QueueSerialiser<KS, VS> {
     fn from(input: StreamPeridotPartitionQueue) -> Self {
-        QueueConnector::new(input)
+        QueueSerialiser::new(input)
     }
 }
 
-impl<KS, VS> MessageStream for QueueConnector<KS, VS>
+impl<KS, VS> MessageStream for QueueSerialiser<KS, VS>
 where
     KS: PDeserialize,
     VS: PDeserialize,

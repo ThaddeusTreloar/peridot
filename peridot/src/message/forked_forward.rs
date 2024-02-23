@@ -9,42 +9,52 @@ use tracing::info;
 
 use crate::serde_ext::PSerialize;
 
-use super::{sink::MessageSink, stream::MessageStream};
+use super::{
+    sink::MessageSink,
+    stream::{ChannelSink, MessageStream},
+};
 
 pin_project! {
-    #[project = ForwardProjection]
-    pub struct Forward<M, Si>
+    #[project = ForkedSinkProjection]
+    pub struct ForkedForward<M, Si>
     where
         M: MessageStream,
         Si: MessageSink,
-        Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
-        Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
+        Si::KeySerType: PSerialize<Input = M::KeyType>,
+        Si::ValueSerType: PSerialize<Input = M::ValueType>,
     {
         #[pin]
         message_stream: M,
         #[pin]
         message_sink: Si,
+        #[pin]
+        downstream: ChannelSink<M::KeyType, M::ValueType>
     }
 }
 
-impl<M, Si> Forward<M, Si>
+impl<M, Si> ForkedForward<M, Si>
 where
     M: MessageStream,
     Si: MessageSink,
     Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
     Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
 {
-    pub fn new(message_stream: M, message_sink: Si) -> Self {
+    pub fn new(
+        message_stream: M,
+        message_sink: Si,
+        downstream: ChannelSink<M::KeyType, M::ValueType>,
+    ) -> Self {
         Self {
             message_stream,
             message_sink,
+            downstream,
         }
     }
 }
 
 const BATCH_SIZE: usize = 1024;
 
-impl<M, Si> Future for Forward<M, Si>
+impl<M, Si> Future for ForkedForward<M, Si>
 where
     M: MessageStream,
     Si: MessageSink,
@@ -54,13 +64,14 @@ where
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let ForwardProjection {
+        let ForkedSinkProjection {
             mut message_stream,
             mut message_sink,
+            mut downstream,
             ..
         } = self.project();
 
-        info!("Forwarding messages from stream to sink...");
+        info!("ForkedSinking messages from stream to sink...");
 
         for _ in 0..BATCH_SIZE {
             match message_stream.as_mut().poll_next(cx) {
@@ -79,6 +90,11 @@ where
                         .as_mut()
                         .start_send(&message)
                         .expect("Failed to send message to sink.");
+
+                    if let Err(e) = downstream.send(message) {
+                        panic!("Failed to send message to downstream: {:?}", e);
+                        // Handle the error
+                    }
                 }
             }
         }

@@ -4,6 +4,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
 use crate::engine::QueueMetadata;
 
 use super::{
@@ -11,7 +13,11 @@ use super::{
     types::{FromMessage, Message, PatchMessage},
 };
 
-pub mod connector;
+pub mod serialiser;
+pub mod transparent;
+
+pub type ChannelStream<K, V> = UnboundedReceiver<Message<K, V>>;
+pub type ChannelSink<K, V> = UnboundedSender<Message<K, V>>;
 
 pub trait MessageStream {
     type KeyType;
@@ -23,7 +29,7 @@ pub trait MessageStream {
     ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>>;
 }
 
-pub trait MessageStreamExt<K, V>: MessageStream {}
+pub trait MessageStreamExt: MessageStream {}
 
 pub struct PipelineStage<M>(pub QueueMetadata, pub M);
 

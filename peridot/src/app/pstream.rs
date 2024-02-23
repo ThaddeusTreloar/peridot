@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::{
     engine::{QueueForwarder, QueueMetadataProtoype, RawQueueReceiver},
-    pipeline::stream::stream::Pipeline,
+    pipeline::stream::serialiser::SerialiserPipeline,
     serde_ext::PDeserialize,
 };
 
@@ -43,7 +43,7 @@ impl PStream {
     pub fn new<KS, VS, G>(
         queue_metadata_prototype: QueueMetadataProtoype,
         raw_queue_receiver: RawQueueReceiver,
-    ) -> Pipeline<KS, VS, G>
+    ) -> SerialiserPipeline<KS, VS, G>
     where
         KS: PDeserialize,
         VS: PDeserialize,
@@ -53,6 +53,6 @@ impl PStream {
 
         tokio::spawn(forwarding_thread(qmp_ref, raw_queue_receiver, queue_sender));
 
-        Pipeline::new(queue_receiver)
+        SerialiserPipeline::new(queue_receiver)
     }
 }

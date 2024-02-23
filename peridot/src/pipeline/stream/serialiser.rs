@@ -9,14 +9,14 @@ use tracing::info;
 
 use crate::{
     engine::{util::ExactlyOnce, QueueReceiver},
-    message::stream::{connector::QueueConnector, PipelineStage},
+    message::stream::{serialiser::QueueSerialiser, PipelineStage},
     serde_ext::PDeserialize,
 };
 
 use super::PipelineStream;
 
 pin_project! {
-    pub struct Pipeline<KS, VS, G = ExactlyOnce>
+    pub struct SerialiserPipeline<KS, VS, G = ExactlyOnce>
     where KS: PDeserialize,
         VS: PDeserialize
     {
@@ -28,7 +28,7 @@ pin_project! {
     }
 }
 
-impl<KS, VS, G> Pipeline<KS, VS, G>
+impl<KS, VS, G> SerialiserPipeline<KS, VS, G>
 where
     KS: PDeserialize,
     VS: PDeserialize,
@@ -43,14 +43,14 @@ where
     }
 }
 
-impl<'a, KS, VS, G> PipelineStream for Pipeline<KS, VS, G>
+impl<'a, KS, VS, G> PipelineStream for SerialiserPipeline<KS, VS, G>
 where
     KS: PDeserialize + Send,
     VS: PDeserialize + Send,
 {
     type KeyType = KS::Output;
     type ValueType = VS::Output;
-    type MStream = QueueConnector<KS, VS>;
+    type MStream = QueueSerialiser<KS, VS>;
 
     fn poll_next(
         mut self: Pin<&mut Self>,
@@ -70,7 +70,7 @@ where
 
         Poll::Ready(Option::Some(PipelineStage::new(
             metadata,
-            QueueConnector::<KS, VS>::new(queue),
+            QueueSerialiser::<KS, VS>::new(queue),
         )))
     }
 }

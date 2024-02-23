@@ -13,7 +13,7 @@ use crate::message::{
     types::{FromMessage, PatchMessage},
 };
 
-use super::PipelineStream;
+use super::stream::PipelineStream;
 
 pin_project! {
     pub struct MapPipeline<S, F, E, R>

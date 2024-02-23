@@ -57,14 +57,14 @@ async fn start_partition_update_thread<KS, VS>(
 {
     parition_queue
         .for_each(|msg| {
-            let store_ref = store.clone();
+            let _store_ref = store.clone();
             let consumer_ref = consumer_ref.clone();
             let topic_ref = topic.as_str();
 
             async move {
                 let raw_key = msg.key().unwrap();
 
-                let key = KS::deserialize(raw_key).expect("Failed to deserialise key");
+                let _key = KS::deserialize(raw_key).expect("Failed to deserialise key");
 
                 let raw_value = msg.payload().unwrap();
 

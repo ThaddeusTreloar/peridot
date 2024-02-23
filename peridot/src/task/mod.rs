@@ -5,8 +5,9 @@ use crate::{
     engine::util::DeliveryGuaranteeType,
     message::types::{FromMessage, PatchMessage},
     pipeline::{
-        sink::{GenericPipelineSink, PrintSinkFactory},
-        stream::{map::MapPipeline, PipelineStream, PipelineStreamExt, PipelineStreamSinkExt},
+        map::MapPipeline,
+        sink::PrintSinkFactory,
+        stream::{PipelineStream, PipelineStreamExt},
     },
     serde_ext::PSerialize,
     state::backend::ReadableStateBackend,
@@ -109,15 +110,13 @@ where
         VS: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
         <Self::R as PipelineStream>::ValueType: Display,
         Self: Sized,
-        Self::R: PipelineStreamExt + PipelineStreamSinkExt,
+        Self::R: PipelineStreamExt,
     {
         let sink_factory = PrintSinkFactory::<KS, VS>::new();
 
-        let sink = GenericPipelineSink::new(sink_factory);
-
         let (app, output) = self.into_parts();
 
-        let job = output.sink(sink);
+        let job = output.forward(sink_factory);
 
         app.job(Box::pin(job));
     }

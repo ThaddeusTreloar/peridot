@@ -245,11 +245,11 @@ where
         unimplemented!("Delete not implemented")
     }*/
 
-    async fn commit_update(&self, message: &Message<K, V>) -> Option<Message<K, V>> {
+    async fn commit_update(&self, _message: &Message<K, V>) -> Option<Message<K, V>> {
         None
     }
 
-    async fn delete(&self, key: &K) -> Option<Message<K, V>> {
+    async fn delete(&self, _key: &K) -> Option<Message<K, V>> {
         None
     }
 }
