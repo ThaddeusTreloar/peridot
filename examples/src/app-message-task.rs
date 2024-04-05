@@ -7,6 +7,7 @@ use peridot::init::init_tracing;
 use peridot::message::types::{KeyValue, Value};
 use peridot::pipeline::stream::{PipelineStream, PipelineStreamExt};
 use peridot::serde_ext::Json;
+use peridot::state::backend::in_memory::InMemoryStateBackend;
 use peridot::task::Task;
 use rdkafka::ClientConfig;
 
@@ -71,13 +72,6 @@ fn filtering_task(
     input.map(|kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value)))
 }
 
-fn join_task(
-    input1: impl PipelineStream<KeyType = String, ValueType = String> + Send,
-    _input2: impl PipelineStream<KeyType = String, ValueType = String> + Send,
-) -> impl PipelineStream<KeyType = String, ValueType = String> + Send {
-    input1.map(|kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value)))
-}
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
@@ -99,6 +93,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
 
     //let table_a = app.table::<String, Topic, _>("topicTable");
+
+    let consent_table = app.task::<String, Json<ConsentGrant>>("consent.Client")
+        .into_table::<InMemoryStateBackend<_, _>>("consent");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .and_then(partial_task)

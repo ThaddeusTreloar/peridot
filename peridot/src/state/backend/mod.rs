@@ -68,8 +68,8 @@ pub trait ReadableStateBackend {
 
 pub trait WriteableStateBackend<K, V> {
     fn commit_update(
-        &self,
-        message: &Message<K, V>,
+        self: Arc<Self>,
+        message: Message<K, V>,
     ) -> impl Future<Output = Option<Message<K, V>>> + Send;
     fn delete(&self, key: &K) -> impl Future<Output = Option<Message<K, V>>> + Send;
 }

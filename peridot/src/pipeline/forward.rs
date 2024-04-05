@@ -88,7 +88,7 @@ where
 
             let message_sink = sink_factory.new_sink(metadata.clone());
 
-            let forward = Forward::new(message_stream, message_sink);
+            let forward = Forward::new(message_stream, message_sink, metadata.clone());
 
             tokio::spawn(forward);
         }

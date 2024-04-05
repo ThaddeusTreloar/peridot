@@ -33,21 +33,13 @@ pub trait MessageSink {
 }
 
 pub trait MessageSinkExt<K, V>: MessageSink {
-    fn sink(self) -> ()
+    fn sink(self)
     where
         Self: Sized,
     {
-        ()
+        
     }
 }
-
-//impl<P, KS, VS> MessageSinkExt<KS, VS> for P
-//where
-//    P: MessageSink<KS, VS>,
-//    KS: PSerialize,
-//    VS: PSerialize,
-//{
-//}
 
 pin_project! {
     pub struct PrintSink<KS, VS>
@@ -55,7 +47,7 @@ pin_project! {
         KS: PSerialize,
         VS: PSerialize,
     {
-        queue_metadata: Arc<QueueMetadata>,
+        queue_metadata: QueueMetadata,
         _key_serialiser_type: PhantomData<KS>,
         _value_serialiser_type: PhantomData<VS>,
     }
@@ -68,7 +60,7 @@ where
 {
     pub fn new(queue_metadata: QueueMetadata) -> Self {
         Self {
-            queue_metadata: Arc::new(queue_metadata),
+            queue_metadata,
             _key_serialiser_type: PhantomData,
             _value_serialiser_type: PhantomData,
         }

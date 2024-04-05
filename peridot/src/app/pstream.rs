@@ -25,7 +25,7 @@ async fn forwarding_thread(
     forwarder: QueueForwarder,
 ) {
     while let Some((partition, queue)) = reciever.recv().await {
-        let queue_metadata = prototype_metadata.map(partition);
+        let queue_metadata = prototype_metadata.create_queue_metadata(partition);
 
         info!(
             "Recieved new queue item for topic: {}, partition: {}",

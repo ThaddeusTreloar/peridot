@@ -245,7 +245,7 @@ where
         unimplemented!("Delete not implemented")
     }*/
 
-    async fn commit_update(&self, _message: &Message<K, V>) -> Option<Message<K, V>> {
+    async fn commit_update(self: Arc<Self>, _message: Message<K, V>) -> Option<Message<K, V>> {
         None
     }
 

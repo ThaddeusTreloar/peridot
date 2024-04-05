@@ -5,6 +5,7 @@ use crate::{
 
 pub mod changelog_sink;
 pub mod print_sink;
+pub mod state_sink;
 
 pub trait MessageSinkFactory {
     type SinkType: MessageSink;

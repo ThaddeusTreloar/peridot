@@ -1,6 +1,8 @@
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
+use rdkafka::config::{FromClientConfig, FromClientConfigAndContext};
 use rdkafka::consumer::ConsumerContext;
+use rdkafka::producer::{FutureProducer, Producer};
 use rdkafka::util::Timeout;
 use rdkafka::{
     consumer::Consumer, producer::PARTITION_UA, topic_partition_list::TopicPartitionListElem,
@@ -584,10 +586,17 @@ impl QueueMetadataProtoype {
         }
     }
 
-    pub fn map(&self, partition: i32) -> QueueMetadata {
+    pub fn create_queue_metadata(&self, partition: i32) -> QueueMetadata {
+        let producer = FutureProducer::from_config(&self.clients_config)
+            .expect("Failed to build producer");
+
+        producer.init_transactions(Duration::from_millis(2500))
+            .expect("Failed to init transactions");
+
         QueueMetadata {
             clients_config: self.clients_config.clone(),
             consumer_ref: self.consumer_ref.clone(),
+            producer_ref: Arc::new(producer),
             partition,
             source_topic: self.source_topic.clone(),
         }
@@ -598,25 +607,12 @@ impl QueueMetadataProtoype {
 pub struct QueueMetadata {
     clients_config: ClientConfig,
     consumer_ref: Arc<PeridotConsumer>,
+    producer_ref: Arc<FutureProducer>,
     partition: i32,
     source_topic: String,
 }
 
 impl QueueMetadata {
-    pub fn new(
-        clients_config: ClientConfig,
-        consumer_ref: Arc<PeridotConsumer>,
-        partition: i32,
-        source_topic: String,
-    ) -> Self {
-        Self {
-            clients_config,
-            consumer_ref,
-            partition,
-            source_topic,
-        }
-    }
-
     pub fn partition(&self) -> i32 {
         self.partition
     }
@@ -631,5 +627,9 @@ impl QueueMetadata {
 
     pub fn consumer(&self) -> Arc<PeridotConsumer> {
         self.consumer_ref.clone()
+    }
+
+    pub fn producer(&self) -> Arc<FutureProducer> {
+        self.producer_ref.clone()
     }
 }

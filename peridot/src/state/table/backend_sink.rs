@@ -12,7 +12,6 @@ use rdkafka::{
     producer::{BaseProducer, BaseRecord, Producer},
     TopicPartitionList,
 };
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     engine::QueueMetadata,
@@ -23,7 +22,7 @@ use crate::{
     serde_ext::{Json, PSerialize},
 };
 
-const BUFFER_LIMIT: i32 = 100;
+//const BUFFER_LIMIT: i32 = 100;
 
 // Sink Factory
 
@@ -115,7 +114,7 @@ where
         let mut tpl = TopicPartitionList::default();
 
         tpl.add_partition_offset(
-            &self.queue_metadata.source_topic(),
+            self.queue_metadata.source_topic(),
             self.queue_metadata.partition(),
             rdkafka::Offset::Offset(self.next_offset),
         )

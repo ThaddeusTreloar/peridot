@@ -16,7 +16,7 @@ use crate::{
 
 use self::transparent::TransparentPipeline;
 
-use super::{forked_forward::PipelineForkedForward, map::MapPipeline, sink::MessageSinkFactory};
+use super::{fork::PipelineFork, map::MapPipeline, sink::MessageSinkFactory};
 
 use super::forward::PipelineForward;
 
@@ -59,24 +59,14 @@ pub trait PipelineStreamExt: PipelineStream {
         PipelineForward::new(self, sink)
     }
 
-    fn forked_forward<SF, G>(
+    fn fork<SF, G>(
         self,
         sink_factory: SF,
-    ) -> (
-        PipelineForkedForward<Self, SF, G>,
-        TransparentPipeline<Self::KeyType, Self::ValueType>,
-    ) 
+    ) -> PipelineFork<Self, SF, G>
     where 
         Self: Sized
     {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-
-        let downstream = TransparentPipeline::new(receiver);
-
-        (
-            PipelineForkedForward::new(self, sink_factory, sender),
-            downstream,
-        )
+        PipelineFork::new(self, sink_factory)
     }
 
     fn count() {}

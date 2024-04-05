@@ -19,6 +19,11 @@ pub mod transparent;
 pub type ChannelStream<K, V> = UnboundedReceiver<Message<K, V>>;
 pub type ChannelSink<K, V> = UnboundedSender<Message<K, V>>;
 
+pub enum StreamCommit {
+    Success,
+    Fail,
+}
+
 pub trait MessageStream {
     type KeyType;
     type ValueType;
@@ -27,6 +32,14 @@ pub trait MessageStream {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>>;
+
+    fn commit(
+        self: Pin<&mut Self>,
+        commit: StreamCommit,
+        cx: &mut Context<'_>,
+    ) -> Poll<()> {
+        Poll::Ready(())
+    }
 }
 
 pub trait MessageStreamExt: MessageStream {}

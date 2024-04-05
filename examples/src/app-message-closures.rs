@@ -56,28 +56,6 @@ struct Client {
     owner: String,
 }
 
-fn partial_task(
-    input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
-) -> impl PipelineStream<KeyType = String, ValueType = String> + Send {
-    input
-        .map(|kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address)))
-        .map(|(key, value)| (key, value))
-        .map(|value: String| Value::from(value))
-}
-
-fn filtering_task(
-    input: impl PipelineStream<KeyType = String, ValueType = String> + Send,
-) -> impl PipelineStream<KeyType = String, ValueType = String> + Send {
-    input.map(|kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value)))
-}
-
-fn join_task(
-    input1: impl PipelineStream<KeyType = String, ValueType = String> + Send,
-    _input2: impl PipelineStream<KeyType = String, ValueType = String> + Send,
-) -> impl PipelineStream<KeyType = String, ValueType = String> + Send {
-    input1.map(|kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value)))
-}
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);

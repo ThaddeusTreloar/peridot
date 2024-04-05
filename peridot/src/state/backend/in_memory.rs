@@ -77,7 +77,7 @@ where
     K: Send + Sync + Hash + Eq + Clone,
     V: Send + Sync + Clone,
 {
-    async fn commit_update(&self, message: &Message<K, V>) -> Option<Message<K, V>> {
+    async fn commit_update(self: Arc<Self>, message: Message<K, V>) -> Option<Message<K, V>> {
         self.store
             .insert(message.key().clone(), message.value().clone());
         None

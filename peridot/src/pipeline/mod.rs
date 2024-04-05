@@ -1,7 +1,7 @@
 pub mod count;
 pub mod filter;
 pub mod fold;
-pub mod forked_forward;
+pub mod fork;
 pub mod forward;
 pub mod join;
 pub mod map;

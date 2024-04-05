@@ -86,7 +86,7 @@ where
         TransformTask::<'a>::new(app, move |input| input.map(next.clone()), output)
     }
 
-    fn into_table<S>(self, table_name: &str) -> ()
+    fn into_table<S>(self, table_name: &str)
     where
         S: ReadableStateBackend<
             KeyType = <Self::R as PipelineStream>::KeyType,

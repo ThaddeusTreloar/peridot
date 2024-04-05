@@ -90,6 +90,26 @@ impl From<rdkafka::message::Timestamp> for PeridotTimestamp {
     }
 }
 
+impl Into<Option<i64>> for PeridotTimestamp {
+    fn into(self) -> Option<i64> {
+        match self {
+            PeridotTimestamp::NotAvailable => None,
+            PeridotTimestamp::CreateTime(ts) => Some(ts),
+            PeridotTimestamp::LogAppendTime(ts) => Some(ts),
+        }
+    }
+}
+
+impl Into<Option<i64>> for &PeridotTimestamp {
+    fn into(self) -> Option<i64> {
+        match *self {
+            PeridotTimestamp::NotAvailable => None,
+            PeridotTimestamp::CreateTime(ts) => Some(ts),
+            PeridotTimestamp::LogAppendTime(ts) => Some(ts),
+        }
+    }
+}
+
 #[derive(Debug, serde::Serialize, Clone)]
 pub struct Message<K, V> {
     topic: String,
