@@ -10,22 +10,23 @@ Currently, the Rust ecosystem is lacking solid, easy to use Kafka Libraries.
 
 To be considered an MVP this library should provide the following features:
 
-- [x] Streams
-- [x] Tables
-- [x] Exactly once semantics (Streams)
-- [ ] Exactly once semantics (Tables)
-- [ ] Changelogs
-- [ ] Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
-- [ ] Windowed operations
-- [ ] Result 'style' dead letter support (impl FromResidual)
-- [ ] Schema Registry Integration
+- ✅ Streams DSL architecture
+- 🚧 State store architecture
+- ❌ Tables
+- ❌ Exactly once semantics (Streams)
+- ❌ Exactly once semantics (Tables)
+- ❌ Changelogs
+- ❌ Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
+- ❌ Windowed operations
+- ❌ Result 'style' dead letter support (impl FromResidual)
+- ❌ Schema Registry Integration
 
 Peridot Adjacent Features:
-- [ ] Schema registry build dependency for codegen
+- ❌ Schema registry build dependency for codegen
 
 Stretch Goals:
-- [ ] Lazy pipeline initialisation
-- [ ] Lazy message deserialisation
+- ❌ Lazy pipeline initialisation
+- ❌ Lazy message deserialisation
 
 ## Example
 
