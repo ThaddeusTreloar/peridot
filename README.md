@@ -12,10 +12,10 @@ To be considered an MVP this library should provide the following features:
 
 - ✅ Streams DSL architecture
 - 🚧 State store architecture
-- ❌ Tables
-- ❌ Exactly once semantics (Streams)
+- 🚧 Tables
+- 🚧 Exactly once semantics (Streams)
 - ❌ Exactly once semantics (Tables)
-- ❌ Changelogs
+- 🚧 Changelogs
 - ❌ Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
 - ❌ Windowed operations
 - ❌ Result 'style' dead letter support (impl FromResidual)
