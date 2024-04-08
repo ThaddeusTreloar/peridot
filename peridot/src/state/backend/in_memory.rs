@@ -15,6 +15,9 @@ where
     offsets: Arc<CommitLog>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum InMemoryStateBackendError {}
+
 impl<K, V> Default for InMemoryStateBackend<K, V>
 where
     K: Hash + Eq,
@@ -64,27 +67,38 @@ where
     K: Send + Sync + Hash + Eq,
     V: Send + Sync + Clone,
 {
+    type Error = InMemoryStateBackendError;
     type KeyType = K;
     type ValueType = V;
 
-    async fn get(&self, key: &Self::KeyType) -> Option<Self::ValueType> {
-        Some(self.store.get(key)?.value().clone())
+    async fn get(&self, key: &Self::KeyType) -> Result<Option<Self::ValueType>, Self::Error> {
+        match self.store.get(key) {
+            None => return Ok(None),
+            Some(value) => {
+                return Ok(Some(value.value().clone()));
+            }
+        }
     }
 }
 
 impl<K, V> WriteableStateBackend<K, V> for InMemoryStateBackend<K, V>
 where
-    K: Send + Sync + Hash + Eq + Clone,
-    V: Send + Sync + Clone,
+    K: Send + Sync + Hash + Eq + Clone + 'static,
+    V: Send + Sync + Clone + 'static,
 {
-    async fn commit_update(self: Arc<Self>, message: Message<K, V>) -> Option<Message<K, V>> {
+    type Error = InMemoryStateBackendError;
+
+    async fn commit_update(
+        self: Arc<Self>,
+        message: Message<K, V>,
+    ) -> Result<Option<Message<K, V>>, Self::Error> {
         self.store
             .insert(message.key().clone(), message.value().clone());
-        None
+        Ok(None)
     }
 
-    async fn delete(&self, key: &K) -> Option<Message<K, V>> {
+    async fn delete(self: Arc<Self>, key: &K) -> Result<Option<Message<K, V>>, Self::Error> {
         self.store.remove(key);
-        None
+        Ok(None)
     }
 }

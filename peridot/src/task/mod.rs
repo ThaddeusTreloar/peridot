@@ -5,7 +5,9 @@ use crate::{
     engine::util::DeliveryGuaranteeType,
     message::types::{FromMessage, PatchMessage},
     pipeline::{
-        map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
+        map::MapPipeline,
+        sink::print_sink::PrintSinkFactory,
+        stream::{PipelineStream, PipelineStreamExt},
     },
     serde_ext::PSerialize,
     state::backend::ReadableStateBackend,
@@ -17,7 +19,7 @@ pub mod transform;
 pub mod transparent;
 
 pub trait IntoTask {
-    type R: PipelineStream;
+    type R: PipelineStream + Send;
 
     fn into_task<'a, G>(self, app: &'a mut PeridotApp<G>) -> impl Task<'a, G, R = Self::R>
     where
@@ -94,14 +96,16 @@ where
         >,
         Self: Sized,
     {
-        unimplemented!()
+        let (app, output) = self.into_parts();
+
+        let backend_ref = app.engine_ref().get_state_store(_table_name);
     }
 
     fn into_pipeline(self) -> Self::R;
 
     fn into_parts(self) -> (&'a mut PeridotApp<G>, Self::R);
 
-    fn into_topic<KS, VS>(self, topic: &str)
+    fn into_topic<KS, VS>(self, _topic: &str)
     where
         KS: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
         <Self::R as PipelineStream>::KeyType: Display,

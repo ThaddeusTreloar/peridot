@@ -42,7 +42,7 @@ where
 {
     _config: PeridotConfig,
     jobs: Vec<JobList>,
-    engine: Arc<AppEngine<G>>,
+    engine: Arc<AppEngine<(), G>>,
     app_builder: StreamBuilder<G>,
 }
 
@@ -50,14 +50,14 @@ pub struct StreamBuilder<G>
 where
     G: DeliveryGuaranteeType,
 {
-    engine: Arc<AppEngine<G>>,
+    engine: Arc<AppEngine<(), G>>,
 }
 
 impl<G> StreamBuilder<G>
 where
     G: DeliveryGuaranteeType,
 {
-    pub fn from_engine(engine: Arc<AppEngine<G>>) -> Self {
+    pub fn from_engine(engine: Arc<AppEngine<(), G>>) -> Self {
         Self { engine }
     }
 
@@ -77,7 +77,8 @@ where
         KS::Output: Send + Sync + 'static,
         VS::Output: Send + Sync + 'static,
     {
-        Ok(AppEngine::<G>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
+        unimplemented!()
+        //Ok(AppEngine::<B, G>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
     }
 
     pub fn stream<KS, VS>(
@@ -94,7 +95,7 @@ where
 
     pub async fn sink<K, V>(&self, topic: &str) -> Result<PSinkBuilder<G>, PeridotAppRuntimeError> {
         info!("Creating sink for topic: {}", topic);
-        Ok(AppEngine::<G>::sink(self.engine.clone(), topic.to_string()).await?)
+        Ok(AppEngine::<(), G>::sink(self.engine.clone(), topic.to_string()).await?)
     }
 }
 
@@ -158,7 +159,7 @@ where
         &self.app_builder
     }
 
-    pub fn engine_ref(&self) -> Arc<AppEngine<G>> {
+    pub fn engine_ref(&self) -> Arc<AppEngine<(), G>> {
         self.engine.clone()
     }
 

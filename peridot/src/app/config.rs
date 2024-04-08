@@ -13,7 +13,7 @@ pub struct PeridotConfig {
 }
 
 fn gen_config_fields() -> HashSet<&'static str> {
-    let mut fields = HashSet::new();
+    let fields = HashSet::new();
 
     fields
 }

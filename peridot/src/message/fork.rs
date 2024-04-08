@@ -3,16 +3,13 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{ready, Future};
+use futures::ready;
 use pin_project_lite::pin_project;
 use tracing::info;
 
 use crate::serde_ext::PSerialize;
 
-use super::{
-    sink::MessageSink,
-    stream::{ChannelSink, MessageStream},
-};
+use super::{sink::MessageSink, stream::MessageStream};
 
 pin_project! {
     #[project = ForkProjection]
@@ -37,10 +34,7 @@ where
     Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
     Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
 {
-    pub fn new(
-        message_stream: M,
-        message_sink: Si,
-    ) -> Self {
+    pub fn new(message_stream: M, message_sink: Si) -> Self {
         Self {
             message_stream,
             message_sink,
@@ -79,7 +73,6 @@ where
             Poll::Pending => {
                 info!("No messages available, waiting...");
                 ready!(message_sink.as_mut().poll_commit(cx));
-
 
                 Poll::Pending
             }

@@ -42,28 +42,28 @@ where
     }
 }
 
-pub struct NativeToBytes<T> {
+pub struct NativeBytes<T> {
     _type: PhantomData<T>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum NativeSerdeError {}
 
-impl<T> PSerialize for NativeToBytes<T> {
+impl<T> PSerialize for NativeBytes<T> {
     type Error = NativeSerdeError;
     type Input = T;
 
-    fn serialize(input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
-        unimplemented!("")
+    fn serialize(_input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
+        unimplemented!("NativeBytes::serialize not implemented")
     }
 }
 
-impl<T> PDeserialize for NativeToBytes<T> {
+impl<T> PDeserialize for NativeBytes<T> {
     type Error = NativeSerdeError;
     type Output = T;
 
-    fn deserialize(bytes: &[u8]) -> Result<Self::Output, Self::Error> {
-        unimplemented!("")
+    fn deserialize(_bytes: &[u8]) -> Result<Self::Output, Self::Error> {
+        unimplemented!("NativeBytes::deserialize not implemented")
     }
 }
 
@@ -78,8 +78,8 @@ impl<T> PSerialize for Avro<T> {
     type Error = AvroSerdeError;
     type Input = T;
 
-    fn serialize(input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
-        unimplemented!("")
+    fn serialize(_input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
+        unimplemented!("Avro::serialize not implemented")
     }
 }
 
@@ -87,8 +87,8 @@ impl<T> PDeserialize for Avro<T> {
     type Error = AvroSerdeError;
     type Output = T;
 
-    fn deserialize(bytes: &[u8]) -> Result<Self::Output, Self::Error> {
-        unimplemented!("")
+    fn deserialize(_bytes: &[u8]) -> Result<Self::Output, Self::Error> {
+        unimplemented!("Avro::deserialize not implemented")
     }
 }
 
@@ -103,8 +103,8 @@ impl<T> PSerialize for ProtoBuf<T> {
     type Error = ProtoBufSerdeError;
     type Input = T;
 
-    fn serialize(input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
-        unimplemented!("")
+    fn serialize(_input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
+        unimplemented!("ProtoBuf::serialize not implemented")
     }
 }
 
@@ -112,8 +112,8 @@ impl<T> PDeserialize for ProtoBuf<T> {
     type Error = ProtoBufSerdeError;
     type Output = T;
 
-    fn deserialize(bytes: &[u8]) -> Result<Self::Output, Self::Error> {
-        unimplemented!("")
+    fn deserialize(_bytes: &[u8]) -> Result<Self::Output, Self::Error> {
+        unimplemented!("ProtoBuf::deserialize not implemented")
     }
 }
 
@@ -132,5 +132,25 @@ impl PDeserialize for String {
 
     fn deserialize(bytes: &[u8]) -> Result<Self::Output, Self::Error> {
         String::from_utf8(bytes.to_vec())
+    }
+}
+
+/// Delegate is a temporary workaround to meet trait bounds on
+/// crate::message::sink::MessageSink. Specifically for the
+/// crate::pipeline::sink::StateSink implementation as serialization
+/// for the sink is chosen by the backend. May be removed after a future refactor.
+pub struct Delegate<T> {
+    _type: PhantomData<T>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DelegateError {}
+
+impl<T> PSerialize for Delegate<T> {
+    type Error = NativeSerdeError;
+    type Input = T;
+
+    fn serialize(_input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
+        Ok(Vec::new())
     }
 }

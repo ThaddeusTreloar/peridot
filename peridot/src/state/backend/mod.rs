@@ -60,18 +60,28 @@ pub trait StateBackend {
 }
 
 pub trait ReadableStateBackend {
+    type Error: std::error::Error;
     type KeyType;
     type ValueType;
 
-    fn get(&self, key: &Self::KeyType) -> impl Future<Output = Option<Self::ValueType>> + Send;
+    fn get(
+        &self,
+        key: &Self::KeyType,
+    ) -> impl Future<Output = Result<Option<Self::ValueType>, Self::Error>> + Send;
 }
 
 pub trait WriteableStateBackend<K, V> {
+    type Error: std::error::Error;
+
     fn commit_update(
         self: Arc<Self>,
         message: Message<K, V>,
-    ) -> impl Future<Output = Option<Message<K, V>>> + Send;
-    fn delete(&self, key: &K) -> impl Future<Output = Option<Message<K, V>>> + Send;
+    ) -> impl Future<Output = Result<Option<Message<K, V>>, Self::Error>> + Send + 'static;
+
+    fn delete(
+        self: Arc<Self>,
+        key: &K,
+    ) -> impl Future<Output = Result<Option<Message<K, V>>, Self::Error>> + Send;
 }
 
 // User facing API interface for interacting with a state store

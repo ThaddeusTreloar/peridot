@@ -25,8 +25,6 @@ impl MessageHeaders {
     }
 
     pub fn into_owned_headers(&self) -> OwnedHeaders {
-        let mut out: OwnedHeaders = Default::default();
-
         let out = self
             .headers
             .iter()
@@ -355,8 +353,7 @@ impl<K, V, KR, VR> PatchMessage<K, V> for (KR, VR) {
             partition,
             offset,
             headers,
-            key,
-            value,
+            ..
         }: Message<K, V>,
     ) -> Message<Self::RK, Self::RV> {
         Message {

@@ -1,72 +1,94 @@
-use std::{collections::VecDeque, default, future::IntoFuture, pin::Pin, sync::Arc, task::{ready, Context, Poll}, time::Duration};
+use std::{
+    collections::VecDeque,
+    pin::Pin,
+    sync::Arc,
+    task::{ready, Context, Poll},
+};
 
 use futures::{Future, FutureExt};
 use pin_project_lite::pin_project;
-use rdkafka::{config::FromClientConfig, error::KafkaError, producer::{future_producer::OwnedDeliveryResult, BaseProducer, DeliveryFuture, FutureProducer, FutureRecord, Producer}, util::Timeout};
+use rdkafka::error::KafkaError;
 
-use crate::{engine::QueueMetadata, message::{sink::MessageSink, types::Message}, serde_ext::PSerialize, state::backend::{self, ReadableStateBackend, WriteableStateBackend}};
+use crate::{
+    engine::{AppEngine, QueueMetadata},
+    message::{sink::MessageSink, types::Message},
+    serde_ext::{Delegate, PSerialize},
+    state::backend::{ReadableStateBackend, WriteableStateBackend},
+};
 
 use super::MessageSinkFactory;
 
-pub struct StateSinkFactory<KS, KV, B> {
+pub struct StateSinkFactory<B, K, V> {
     backend: Arc<B>,
-    _key_ser_type: std::marker::PhantomData<KS>,
-    _value_ser_type: std::marker::PhantomData<KV>,
+    _key_type: std::marker::PhantomData<K>,
+    _value_type: std::marker::PhantomData<V>,
 }
 
-impl <KS, VS, B> StateSinkFactory<KS, VS, B> {
+impl<B, K, V> StateSinkFactory<B, K, V> {
     pub fn from_backend_ref(backend: Arc<B>) -> Self {
-        Self { 
+        Self {
             backend,
-            _key_ser_type: std::marker::PhantomData,
-            _value_ser_type: std::marker::PhantomData, 
+            _key_type: Default::default(),
+            _value_type: Default::default(),
         }
     }
 }
 
-impl<KS, VS, B> MessageSinkFactory for StateSinkFactory<KS, VS, B> 
+impl<B, K, V> MessageSinkFactory for StateSinkFactory<B, K, V>
 where
-    KS: PSerialize + 'static,
-    VS: PSerialize + 'static,
-    KS::Input: Clone,
-    VS::Input: Clone,
-    B: ReadableStateBackend + WriteableStateBackend<KS::Input, VS::Input> + Send + 'static
-
+    K: Clone,
+    V: Clone,
+    B: ReadableStateBackend + WriteableStateBackend<K, V> + Send + 'static,
 {
-    type SinkType = StateSink<KS, VS, B>;
+    type SinkType = StateSink<B, K, V>;
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
-        StateSink::<KS, VS, B>::from_queue_metadata_and_backend_ref(queue_metadata, self.backend.clone())
+        StateSink::<B, K, V>::from_queue_metadata_and_backend_ref(
+            queue_metadata,
+            self.backend.clone(),
+        )
     }
 }
 
 pin_project! {
-    pub struct StateSink<KS, VS, B> 
+    pub struct StateSink<B, K, V>
     where
-        KS: PSerialize,
-        VS: PSerialize,
+        B: WriteableStateBackend<K, V>,
+        K: Clone,
+        V: Clone,
     {
         queue_metadata: QueueMetadata,
         backend_ref: Arc<B>,
-        pending_commit: Option<Pin<Box<dyn Future<Output=Option<Message<KS::Input, VS::Input>>>>>>,
-        _key_ser_type: std::marker::PhantomData<KS>,
-        _value_ser_type: std::marker::PhantomData<VS>,
+        buffer: VecDeque<Message<K, V>>,
+        _key_type: std::marker::PhantomData<K>,
+        _value_type: std::marker::PhantomData<V>,
+        pending_commit: Option<
+            Pin<Box<
+                dyn Future<
+                    Output=Result<
+                        Option<Message<K, V>>,
+                        B::Error
+        >>>>>,
     }
 }
 
-
-impl<KS, VS, B> StateSink<KS, VS, B> 
+impl<B, K, V> StateSink<B, K, V>
 where
-    KS: PSerialize,
-    VS: PSerialize,
+    K: Clone,
+    V: Clone,
+    B: WriteableStateBackend<K, V>,
 {
-    pub fn from_queue_metadata_and_backend_ref(queue_metadata: QueueMetadata, backend_ref: Arc<B>) -> Self {
+    pub fn from_queue_metadata_and_backend_ref(
+        queue_metadata: QueueMetadata,
+        backend_ref: Arc<B>,
+    ) -> Self {
         Self {
             queue_metadata,
             backend_ref,
+            buffer: Default::default(),
+            _key_type: Default::default(),
+            _value_type: Default::default(),
             pending_commit: None,
-            _key_ser_type: Default::default(),
-            _value_ser_type: Default::default(),
         }
     }
 }
@@ -74,47 +96,55 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum StateSinkError {
     #[error("Failed to run: {0}")]
-    EnqueueFailed(#[from] KafkaError)
+    EnqueueFailed(#[from] KafkaError),
 }
 
-impl<KS, VS, B> MessageSink for StateSink<KS, VS, B> 
+impl<B, K, V> MessageSink for StateSink<B, K, V>
 where
-    KS: PSerialize + 'static,
-    VS: PSerialize + 'static,
-    KS::Input: Clone,
-    VS::Input: Clone,
-    B: WriteableStateBackend<KS::Input, VS::Input> + 'static + Send
+    K: Clone,
+    V: Clone,
+    B: WriteableStateBackend<K, V> + Send,
 {
     type Error = StateSinkError;
-    type KeySerType = KS;
-    type ValueSerType = VS;
+    type KeySerType = Delegate<K>;
+    type ValueSerType = Delegate<V>;
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
 
+        loop {
+            // Check if a pending task is present
+            if let Some(task) = this.pending_commit {
+                // If the task is not ready, return
+                // Otherwise, check if the task is successful
+                ready!(task.poll_unpin(cx)).expect("Failed to commit message");
+            };
+            // We know that after this point there is either no task or the task is finished
+            // So we can pop the next message from the buffer
+            match this.buffer.pop_front() {
+                // If there is no message, we can clear any completed task and break out of the loop
+                None => {
+                    this.pending_commit.take();
+                    break;
+                }
+                // If there is a message, we can commit it
+                Some(message) => {
+                    let commit = Box::pin(this.backend_ref.clone().commit_update(message));
+
+                    let _ = this.pending_commit.replace(commit);
+                }
+            }
+        }
+
         Poll::Ready(Ok(()))
     }
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let this = self.project();
-
-        match this.pending_commit {
-            Some(task) => {
-                match task.poll_unpin(cx) {
-                    Poll::Pending => Poll::Pending,
-                    Poll::Ready(_) => {
-                        let _ = this.pending_commit.take();
-
-                        Poll::Ready(Ok(()))
-                    }
-                }
-            },
-            None => Poll::Ready(Ok(()))
-        }
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn start_send(
@@ -123,20 +153,10 @@ where
             <Self::KeySerType as PSerialize>::Input,
             <Self::ValueSerType as PSerialize>::Input,
         >,
-    ) -> Result<(), Self::Error> 
-    {
+    ) -> Result<(), Self::Error> {
         let this = self.project();
 
-        let backend_ref_clone = this.backend_ref.clone();
-
-        let commit = Box::pin(
-            backend_ref_clone.commit_update(
-                message.clone()
-            )
-        );
-
-        // TODO: check there isn't a val waiting
-        this.pending_commit.replace(commit);
+        this.buffer.push_back(message.clone());
 
         Ok(())
     }

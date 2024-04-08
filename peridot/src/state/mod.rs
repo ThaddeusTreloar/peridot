@@ -68,7 +68,7 @@ async fn start_partition_update_thread<KS, VS>(
 
                 let raw_value = msg.payload().unwrap();
 
-                let value = VS::deserialize(raw_value).expect("Failed to deserialise value");
+                let _ = VS::deserialize(raw_value).expect("Failed to deserialise value");
 
                 //store_ref.commit_update(&key, value).await;
 
@@ -165,7 +165,7 @@ where
     T: ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output>
         + WriteableStateBackend<KS::Output, VS::Output>,
 {
-    async fn get(&self, key: &KS::Output) -> Option<VS::Output> {
+    async fn get(&self, _: &KS::Output) -> Option<VS::Output> {
         while let EngineState::Lagging
         | EngineState::Stopped
         | EngineState::Rebalancing
@@ -175,6 +175,6 @@ where
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
 
-        self.backend.get(key).await
+        None
     }
 }

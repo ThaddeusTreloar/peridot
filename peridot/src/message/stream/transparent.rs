@@ -1,18 +1,12 @@
 use std::{
-    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use futures::Stream;
 use pin_project_lite::pin_project;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::error;
 
-use crate::{
-    message::types::{Message, TryFromOwnedMessage},
-    serde_ext::PDeserialize,
-};
+use crate::message::types::Message;
 
 use super::MessageStream;
 

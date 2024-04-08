@@ -1,10 +1,13 @@
-use std::{fmt::Display, marker::PhantomData, time::Duration};
+use std::{fmt::Display, time::Duration};
 
-use dashmap::DashMap;
 use rdkafka::{
-    client::Client, consumer::{ConsumerContext, ConsumerGroupMetadata}, error::{KafkaError, KafkaResult}, message::DeliveryResult, producer::{BaseProducer, Producer, ProducerContext, PurgeConfig}, topic_partition_list::{self, TopicPartitionListElem}, util::Timeout, ClientContext, IntoOpaque, Message, TopicPartitionList
+    consumer::ConsumerContext,
+    error::KafkaError,
+    topic_partition_list::{self, TopicPartitionListElem},
+    util::Timeout,
+    ClientContext,
 };
-use tokio::sync::{broadcast::{channel, Receiver, Sender}, mpsc::UnboundedSender};
+use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tracing::error;
 
 use super::config::PeridotConfig;

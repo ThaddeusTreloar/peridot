@@ -33,11 +33,7 @@ pub trait MessageStream {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>>;
 
-    fn commit(
-        self: Pin<&mut Self>,
-        commit: StreamCommit,
-        cx: &mut Context<'_>,
-    ) -> Poll<()> {
+    fn commit(self: Pin<&mut Self>, _commit: StreamCommit, _cx: &mut Context<'_>) -> Poll<()> {
         Poll::Ready(())
     }
 }
@@ -69,14 +65,14 @@ where
     }
 }
 
-impl <K, V> MessageStream for ChannelStream<K, V> {
+impl<K, V> MessageStream for ChannelStream<K, V> {
     type KeyType = K;
     type ValueType = V;
 
     fn poll_next(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
         unimplemented!("")
     }
 }

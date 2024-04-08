@@ -1,6 +1,6 @@
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
-use rdkafka::config::{FromClientConfig, FromClientConfigAndContext};
+use rdkafka::config::FromClientConfig;
 use rdkafka::consumer::ConsumerContext;
 use rdkafka::producer::{FutureProducer, Producer};
 use rdkafka::util::Timeout;
@@ -82,10 +82,7 @@ pub type RawQueue = (i32, StreamPeridotPartitionQueue);
 pub type RawQueueForwarder = UnboundedSender<RawQueue>;
 pub type RawQueueReceiver = UnboundedReceiver<RawQueue>;
 
-pub struct AppEngine<G = ExactlyOnce>
-where
-    G: DeliveryGuaranteeType,
-{
+pub struct AppEngine<B, G> {
     config: PeridotConfig,
     consumer: Arc<PeridotConsumer>,
     waker_context: Arc<PeridotConsumerContext>,
@@ -93,13 +90,25 @@ where
     downstream_commit_logs: Arc<CommitLog>,
     state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
+    state_stores: Arc<DashMap<u32, Arc<B>>>,
     _delivery_guarantee: PhantomData<G>,
 }
 
-impl<G> AppEngine<G>
+impl<BT, G> AppEngine<BT, G>
 where
     G: DeliveryGuaranteeType,
 {
+    pub fn get_state_store(&self, partition: u32) -> Option<Arc<BT>> {
+        match self.state_stores.get(&partition) {
+            Some(store) => Some(store.clone()),
+            None => Some(self.create_state_store(partition)),
+        }
+    }
+
+    fn create_state_store(&self, partition: u32) -> Arc<BT> {
+        unimplemented!("Create state store")
+    }
+
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
         let pre_rebalance_waker = self.waker_context.pre_rebalance_waker();
         let commit_waker = self.waker_context.commit_waker();
@@ -141,6 +150,7 @@ where
             downstream_commit_logs: Default::default(),
             state_streams: Default::default(),
             engine_state: Default::default(),
+            state_stores: Default::default(),
             _delivery_guarantee: PhantomData,
         })
     }
@@ -157,7 +167,7 @@ where
                 info!("Starting consumer threads...");
                 let topic_partitions = consumer.assignment().expect("No subscription");
 
-                let gm = consumer.group_metadata();
+                let _gm = consumer.group_metadata();
 
                 // If there is a problem during testing, this may be it.
                 // consumer.resume(&topic_partitions).expect("msg");
@@ -268,7 +278,7 @@ where
                 select! {
                     () = async {
 
-                        let max_poll_interval = match consumer
+                        let _max_poll_interval = match consumer
                             .context()
                             .main_queue_min_poll_interval()
                         {
@@ -282,7 +292,7 @@ where
                             // a 0 second timeout for two reasons:
                             //  - using any timeout will block a runtime thread
                             //  - the blocked thread will not be cancellable by the select block
-                            if let Some(message) = consumer.poll(Duration::from_millis(0)) {
+                            if let Some(_message) = consumer.poll(Duration::from_millis(0)) {
                             }
 
                             // Instead we can use sleep for the interval.
@@ -447,7 +457,7 @@ where
     }
 
     pub async fn table<KS, VS, B>(
-        app_engine: Arc<AppEngine<G>>,
+        app_engine: Arc<AppEngine<B, G>>,
         topic: String,
     ) -> Result<PTable<KS, VS, B>, PeridotEngineRuntimeError>
     where
@@ -516,7 +526,7 @@ where
     }
 
     pub fn stream<KS, VS>(
-        self: Arc<AppEngine<G>>,
+        self: Arc<AppEngine<BT, G>>,
         topic: String,
     ) -> Result<SerialiserPipeline<KS, VS, G>, PeridotEngineRuntimeError>
     where
@@ -555,7 +565,7 @@ where
     }
 
     pub async fn sink(
-        app_engine: Arc<AppEngine<G>>,
+        app_engine: Arc<AppEngine<BT, G>>,
         topic: String,
     ) -> Result<PSinkBuilder<G>, PeridotEngineRuntimeError> {
         if app_engine.consumer.is_subscribed_to(&topic) {
@@ -587,10 +597,11 @@ impl QueueMetadataProtoype {
     }
 
     pub fn create_queue_metadata(&self, partition: i32) -> QueueMetadata {
-        let producer = FutureProducer::from_config(&self.clients_config)
-            .expect("Failed to build producer");
+        let producer =
+            FutureProducer::from_config(&self.clients_config).expect("Failed to build producer");
 
-        producer.init_transactions(Duration::from_millis(2500))
+        producer
+            .init_transactions(Duration::from_millis(2500))
             .expect("Failed to init transactions");
 
         QueueMetadata {

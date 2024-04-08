@@ -22,6 +22,16 @@ pub struct PersistentStateBackend<K, V> {
     _value_type: std::marker::PhantomData<V>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum PersistentStateBackendError {
+    #[error("Error creating backend: {0}")]
+    BackendCreationError(#[from] BackendCreationError),
+    #[error("Error deserialising commit log: {0}")]
+    DeserialisationError(#[from] serde_json::Error),
+    #[error(transparent)]
+    GenericSurrealError(#[from] surrealdb::Error),
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OffsetStruct {
     pub topic: String,
@@ -202,21 +212,19 @@ where
     K: Send + Sync + Into<Id> + Clone,
     V: Send + Sync + Clone + DeserializeOwned,
 {
+    type Error = PersistentStateBackendError;
     type KeyType = K;
     type ValueType = V;
 
-    async fn get(&self, key: &Self::KeyType) -> Option<Self::ValueType> {
-        self.store
-            .select(("state", key.clone()))
-            .await
-            .expect("Failed to get value from db")
+    async fn get(&self, key: &Self::KeyType) -> Result<Option<Self::ValueType>, Self::Error> {
+        Ok(self.store.select(("state", key.clone())).await?)
     }
 }
 
 impl<K, V> WriteableStateBackend<K, V> for PersistentStateBackend<K, V>
 where
-    K: Send + Sync + Into<Id> + Clone,
-    V: Send + Sync + Clone + serde::Serialize + DeserializeOwned,
+    K: Send + Sync + Into<Id> + Clone + 'static,
+    V: Send + Sync + Clone + serde::Serialize + DeserializeOwned + 'static,
 {
     /*async fn set(&self, key: &K, value: V) -> Option<V> {
         if let Some(old_value) = self.store
@@ -244,12 +252,16 @@ where
     async fn delete(&self, _key: &K) -> Option<V> {
         unimplemented!("Delete not implemented")
     }*/
+    type Error = PersistentStateBackendError;
 
-    async fn commit_update(self: Arc<Self>, _message: Message<K, V>) -> Option<Message<K, V>> {
-        None
+    async fn commit_update(
+        self: Arc<Self>,
+        _message: Message<K, V>,
+    ) -> Result<Option<Message<K, V>>, Self::Error> {
+        Ok(None)
     }
 
-    async fn delete(&self, _key: &K) -> Option<Message<K, V>> {
-        None
+    async fn delete(self: Arc<Self>, _key: &K) -> Result<Option<Message<K, V>>, Self::Error> {
+        Ok(None)
     }
 }

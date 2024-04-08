@@ -3,7 +3,6 @@ use std::{
     fmt::Display,
     marker::PhantomData,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -37,7 +36,6 @@ pub trait MessageSinkExt<K, V>: MessageSink {
     where
         Self: Sized,
     {
-        
     }
 }
 

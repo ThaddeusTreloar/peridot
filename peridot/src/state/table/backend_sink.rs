@@ -71,12 +71,12 @@ where
     type ValueSerType = Json<V>;
     type Error = TablePartitionHandlerError;
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unimplemented!("")
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        unimplemented!("TablePartitionHandler::poll_close no implemented")
     }
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unimplemented!("")
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        unimplemented!("TablePartitionHandler::poll_ready no implemented")
     }
 
     fn start_send(
@@ -148,7 +148,4 @@ where
     }
 }
 
-
-pub struct BackendSink {
-    
-}
+pub struct BackendSink {}

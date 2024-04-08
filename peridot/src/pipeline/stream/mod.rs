@@ -11,14 +11,13 @@ use crate::{
         sink::MessageSink,
         stream::{ChannelStream, MessageStream, PipelineStage},
     },
+    pipeline::{
+        fork::PipelineFork, forward::PipelineForward, join::Join, join_by::JoinBy,
+        map::MapPipeline, sink::MessageSinkFactory,
+    },
     serde_ext::PSerialize,
+    state::table::IntoView,
 };
-
-use self::transparent::TransparentPipeline;
-
-use super::{fork::PipelineFork, map::MapPipeline, sink::MessageSinkFactory};
-
-use super::forward::PipelineForward;
 
 pub mod serialiser;
 pub mod transparent;
@@ -59,12 +58,9 @@ pub trait PipelineStreamExt: PipelineStream {
         PipelineForward::new(self, sink)
     }
 
-    fn fork<SF, G>(
-        self,
-        sink_factory: SF,
-    ) -> PipelineFork<Self, SF, G>
-    where 
-        Self: Sized
+    fn fork<SF, G>(self, sink_factory: SF) -> PipelineFork<Self, SF, G>
+    where
+        Self: Sized,
     {
         PipelineFork::new(self, sink_factory)
     }
@@ -72,7 +68,27 @@ pub trait PipelineStreamExt: PipelineStream {
     fn count() {}
     fn filter() {}
     fn fold() {}
-    fn join() {}
+
+    fn join<T, C, RV>(self, table: T, combiner: C) -> Join<Self, T, C>
+    where
+        T: IntoView + Send + 'static,
+        C: Fn(&Self::ValueType, &T::ValueType) -> RV,
+        Self::KeyType: PartialEq<T::KeyType>,
+        Self: Sized,
+    {
+        Join::new(self, table, combiner)
+    }
+
+    fn join_by<T, J, C, RV>(self, table: T, joiner: J, combiner: C) -> JoinBy<Self, T, J, C>
+    where
+        T: IntoView + Send + 'static,
+        J: Fn(&Self::KeyType, &T::KeyType) -> bool,
+        C: Fn(&Self::ValueType, &T::ValueType) -> RV,
+        Self: Sized,
+    {
+        JoinBy::new(self, table, joiner, combiner)
+    }
+
     fn reduce() {}
 }
 

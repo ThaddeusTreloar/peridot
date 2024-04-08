@@ -29,6 +29,14 @@ impl<G> PSinkBuilder<G> {
             _delivery_guarantee: PhantomData,
         }
     }
+
+    pub fn get_clients_config(&self) -> &PeridotConfig {
+        &self.clients_config
+    }
+
+    pub fn get_dest_topic(&self) -> &str {
+        &self.dest_topic
+    }
 }
 
 pub struct PSink<KS, VS, M, G = ExactlyOnce>
@@ -57,6 +65,10 @@ where
             _value_ser_type: PhantomData,
             _delivery_guarantee: PhantomData,
         }
+    }
+
+    pub fn get_pipeline(&self) -> &PipelineStage<M> {
+        &self.pipeline
     }
 }
 
