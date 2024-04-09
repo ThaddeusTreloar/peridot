@@ -1,11 +1,11 @@
 [package]
 name = "peridot"
 version = "0.0.5"
-edition = {workspace = true}
-homepage = {workspace = true}
-repository = {workspace = true}
-license = {workspace = true}
-authors = {workspace = true}
+edition = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
@@ -13,18 +13,23 @@ default = []
 
 [dependencies]
 anyhow = "*"
+bincode = "*"
 dashmap = { workspace = true }
 crossbeam = "0.8.4"
 futures = "0.3.30"
 parking_lot = "0.12.1"
 rdkafka = { version = "0.36.2", features = ["tracing"] }
+rdkafka-sys = { version = "4.7.0+2.3.0" }
 pin-project-lite = "*"
-serde = {workspace = true}
-serde_json = {workspace = true}
+serde = { workspace = true }
+serde_json = { workspace = true }
 slab = "0.4.9"
-surrealdb = {version = "1.1.1", default-features = false, features = ["protocol-ws", "kv-rocksdb"]}
+surrealdb = { version = "1.1.1", default-features = false, features = [
+    "protocol-ws",
+    "kv-rocksdb",
+] }
 thiserror = "*"
-tokio = { version = "*", features = ["sync"]}
+tokio = { version = "*", features = ["sync"] }
 tokio-stream = { version = "0.1.14", features = ["sync"] }
-tracing = {workspace = true}
-tracing-subscriber = {workspace = true}
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

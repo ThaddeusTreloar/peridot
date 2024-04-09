@@ -6,6 +6,7 @@ pub mod pipeline;
 pub mod serde_ext;
 pub mod state;
 pub mod task;
+pub(crate) mod util;
 
 use tracing::info;
 

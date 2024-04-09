@@ -37,3 +37,9 @@ pub enum TableCreationError {
     #[error("Failed to create table: {0}")]
     TableCreationError(String),
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum TableRegistrationError {
+    #[error("Table already registered.")]
+    TableAlreadyRegistered,
+}

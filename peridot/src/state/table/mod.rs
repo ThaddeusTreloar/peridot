@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 use serde::Serialize;
 
 use crate::{
-    engine::{util::ExactlyOnce, EngineState},
+    engine::{util::ExactlyOnce, AppEngine, EngineState},
     pipeline::{
         fork::PipelineFork,
         sink::{changelog_sink::ChangelogSinkFactory, state_sink::StateSinkFactory},
@@ -27,7 +27,7 @@ where
     P::ValueType: Clone + Send + 'static,
 {
     _name: String,
-    backend: Arc<B>,
+    app_engine_ref: Arc<AppEngine<B>>,
     backend_output: TableDownstream<P, B, P::KeyType, P::ValueType>,
     state: Arc<AtomicCell<EngineState>>,
 }
@@ -39,7 +39,7 @@ where
     P::KeyType: Clone + Send + 'static,
     P::ValueType: Clone + Send + 'static,
 {
-    fn into_table(self, backend: Arc<B>) -> PeridotTable<P, B>;
+    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> PeridotTable<P, B>;
 }
 
 impl<P, B> IntoTable<P, B> for P
@@ -61,8 +61,8 @@ where
     <B as ReadableStateBackend>::KeyType: Serialize + Clone + Send,
     <B as ReadableStateBackend>::ValueType: Serialize + Clone + Send,
 {
-    fn into_table(self, backend: Arc<B>) -> PeridotTable<P, B> {
-        PeridotTable::new("table".to_string(), backend, self)
+    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> PeridotTable<P, B> {
+        PeridotTable::new("table".to_string(), app_engine_ref, self)
     }
 }
 
@@ -85,7 +85,7 @@ where
     <B as ReadableStateBackend>::KeyType: Serialize + Clone + Send,
     <B as ReadableStateBackend>::ValueType: Serialize + Clone + Send,
 {
-    pub fn new(name: String, backend: Arc<B>, stream_queue: P) -> Self {
+    pub fn new(name: String, app_engine_ref: Arc<AppEngine<B>>, stream_queue: P) -> Self {
         let changelog_sink_factory = ChangelogSinkFactory::new(format!("{}-changelog", name));
 
         let changelog_output = stream_queue.fork::<_, ExactlyOnce>(changelog_sink_factory);
@@ -94,13 +94,13 @@ where
             B,
             <B as ReadableStateBackend>::KeyType,
             <B as ReadableStateBackend>::ValueType,
-        >::from_backend_ref(backend.clone());
+        >::from_backend_ref(app_engine_ref.clone());
 
         let backend_output = changelog_output.fork::<_, ExactlyOnce>(backend_sink_factory);
 
         Self {
             _name: name,
-            backend,
+            app_engine_ref,
             backend_output,
             state: Default::default(),
         }
@@ -117,7 +117,7 @@ pub trait IntoView {
 
     fn into_view(&self) -> Arc<impl BackendView>;
 }
-
+/*
 impl<P, B> IntoView for PeridotTable<P, B>
 where
     P: PipelineStream + Send + 'static,
@@ -130,6 +130,7 @@ where
     type ValueType = <B as ReadableStateBackend>::ValueType;
 
     fn into_view(&self) -> Arc<impl BackendView> {
-        self.backend.clone()
+        self.app_engine_ref.get_state_store(partition);
+        unimplemented!()
     }
-}
+    } */

@@ -2,12 +2,15 @@ use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use rdkafka::config::FromClientConfig;
 use rdkafka::consumer::ConsumerContext;
-use rdkafka::producer::{FutureProducer, Producer};
+use rdkafka::producer::{
+    FutureProducer, NoCustomPartitioner, Partitioner, Producer, ProducerContext,
+};
 use rdkafka::util::Timeout;
 use rdkafka::{
     consumer::Consumer, producer::PARTITION_UA, topic_partition_list::TopicPartitionListElem,
     ClientConfig, TopicPartitionList,
 };
+use serde::Serialize;
 use std::ops::Deref;
 use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
@@ -17,6 +20,7 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::engine::distributor::QueueDistributor;
+use crate::serde_ext::PSerialize;
 use crate::{
     app::psink::PSinkBuilder,
     pipeline::stream::serialiser::SerialiserPipeline,
@@ -27,7 +31,9 @@ use crate::{
     },
 };
 
+use self::error::TableRegistrationError;
 use self::partition_queue::StreamPeridotPartitionQueue;
+use self::streams::new_stream;
 use self::{
     error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
     util::{ConsumerUtils, DeliveryGuaranteeType, ExactlyOnce},
@@ -36,7 +42,6 @@ use self::{
 use crate::app::{
     config::PeridotConfig,
     extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
-    pstream::PStream,
     ptable::PTable,
     PeridotConsumer,
 };
@@ -46,6 +51,7 @@ pub mod distributor;
 pub mod error;
 pub mod partition_queue;
 pub mod sinks;
+pub mod streams;
 pub mod tasks;
 pub mod util;
 
@@ -82,7 +88,24 @@ pub type RawQueue = (i32, StreamPeridotPartitionQueue);
 pub type RawQueueForwarder = UnboundedSender<RawQueue>;
 pub type RawQueueReceiver = UnboundedReceiver<RawQueue>;
 
-pub struct AppEngine<B, G> {
+pub type StateStoreMap<B> = Arc<DashMap<(String, i32), Arc<B>>>;
+
+#[derive(Debug, Clone)]
+pub struct TopicMetadata {
+    partition_count: i32,
+}
+
+impl TopicMetadata {
+    pub fn new(partition_count: i32) -> Self {
+        Self { partition_count }
+    }
+
+    pub fn partition_count(&self) -> i32 {
+        self.partition_count
+    }
+}
+
+pub struct AppEngine<B, G = ExactlyOnce> {
     config: PeridotConfig,
     consumer: Arc<PeridotConsumer>,
     waker_context: Arc<PeridotConsumerContext>,
@@ -90,23 +113,101 @@ pub struct AppEngine<B, G> {
     downstream_commit_logs: Arc<CommitLog>,
     state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
-    state_stores: Arc<DashMap<u32, Arc<B>>>,
+    state_stores: StateStoreMap<B>,
+    table_metadata: Arc<DashMap<String, String>>,
+    source_topic_metadata: Arc<DashMap<String, TopicMetadata>>,
     _delivery_guarantee: PhantomData<G>,
 }
 
-impl<BT, G> AppEngine<BT, G>
+impl<BT> AppEngine<BT>
 where
-    G: DeliveryGuaranteeType,
+    BT: Send + Sync + 'static,
 {
-    pub fn get_state_store(&self, partition: u32) -> Option<Arc<BT>> {
-        match self.state_stores.get(&partition) {
-            Some(store) => Some(store.clone()),
-            None => Some(self.create_state_store(partition)),
+    fn register_source_topic(&self, topic: String, partition_count: i32) {
+        self.source_topic_metadata
+            .insert(topic.clone(), TopicMetadata::new(partition_count));
+    }
+
+    pub fn get_source_topic_for_table(&self, table_name: &str) -> Option<String> {
+        match self.table_metadata.get(table_name) {
+            Some(topic) => Some(topic.clone()),
+            None => None,
         }
     }
 
-    fn create_state_store(&self, partition: u32) -> Arc<BT> {
+    pub fn get_table_partition_count(&self, table_name: &str) -> Option<i32> {
+        let topic = self.get_source_topic_for_table(table_name)?;
+
+        self.source_topic_metadata
+            .get(topic.as_str())
+            .map(|metadata| metadata.partition_count())
+    }
+
+    pub fn register_table(
+        &self,
+        table_name: String,
+        source_topic: String,
+    ) -> Result<(), TableRegistrationError> {
+        if self.table_metadata.contains_key(&table_name) {
+            return Err(TableRegistrationError::TableAlreadyRegistered);
+        } else {
+            self.table_metadata
+                .insert(table_name.clone(), source_topic.clone());
+            self.state_streams.insert(source_topic.clone());
+            Ok(())
+        }
+    }
+
+    pub fn get_partitioner(&self) -> NoCustomPartitioner {
+        // TODO: This is quick workaround to get the partitioner
+        // from the producer. We need to find a better way to
+        // get the partitioner.
+
+        NoCustomPartitioner {}
+    }
+
+    pub fn get_backend_view(&self, table_name: &str) -> StateStoreMap<BT> {
+        self.state_stores.clone()
+    }
+
+    pub fn get_state_store_for_table(&self, table_name: String, partition: i32) -> Option<Arc<BT>> {
+        let source_topic = self
+            .table_metadata
+            .get(&table_name)
+            .expect("Table not registered")
+            .clone();
+
+        match self.state_stores.get(&(source_topic, partition)) {
+            Some(store) => Some(store.clone()),
+            None => None,
+        }
+    }
+
+    pub fn get_state_store(&self, source_topic: String, partition: i32) -> Arc<BT> {
+        match self.state_stores.get(&(source_topic.clone(), partition)) {
+            Some(store) => store.clone(),
+            None => self.create_state_store(source_topic, partition),
+        }
+    }
+
+    fn create_state_store(&self, source_topic: String, partition: i32) -> Arc<BT> {
         unimplemented!("Create state store")
+    }
+
+    pub fn create_producer(&self) -> FutureProducer {
+        let producer = FutureProducer::from_config(self.config.clients_config())
+            .expect("Failed to build producer");
+
+        producer
+            .init_transactions(Duration::from_millis(2500))
+            .expect("Failed to init transactions");
+
+        producer
+    }
+
+    fn update_consumer(&self) {
+        let consumer = self.consumer.clone();
+        unimplemented!("Create consumer")
     }
 
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
@@ -151,6 +252,8 @@ where
             state_streams: Default::default(),
             engine_state: Default::default(),
             state_stores: Default::default(),
+            table_metadata: Default::default(),
+            source_topic_metadata: Default::default(),
             _delivery_guarantee: PhantomData,
         })
     }
@@ -457,7 +560,7 @@ where
     }
 
     pub async fn table<KS, VS, B>(
-        app_engine: Arc<AppEngine<B, G>>,
+        app_engine: Arc<AppEngine<B>>,
         topic: String,
     ) -> Result<PTable<KS, VS, B>, PeridotEngineRuntimeError>
     where
@@ -526,9 +629,9 @@ where
     }
 
     pub fn stream<KS, VS>(
-        self: Arc<AppEngine<BT, G>>,
+        self: Arc<AppEngine<BT>>,
         topic: String,
-    ) -> Result<SerialiserPipeline<KS, VS, G>, PeridotEngineRuntimeError>
+    ) -> Result<SerialiserPipeline<KS, VS>, PeridotEngineRuntimeError>
     where
         KS: PDeserialize,
         VS: PDeserialize,
@@ -558,16 +661,17 @@ where
         let queue_metadata_prototype = QueueMetadataProtoype::new(
             self.config.clients_config().clone(),
             self.consumer.clone(),
+            self.clone(),
             topic,
         );
 
-        Ok(PStream::new(queue_metadata_prototype, queue_receiver))
+        Ok(new_stream(queue_metadata_prototype, queue_receiver))
     }
 
     pub async fn sink(
-        app_engine: Arc<AppEngine<BT, G>>,
+        app_engine: Arc<AppEngine<BT>>,
         topic: String,
-    ) -> Result<PSinkBuilder<G>, PeridotEngineRuntimeError> {
+    ) -> Result<PSinkBuilder<ExactlyOnce>, PeridotEngineRuntimeError> {
         if app_engine.consumer.is_subscribed_to(&topic) {
             return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
         }
@@ -577,32 +681,33 @@ where
 }
 
 #[derive(Clone)]
-pub struct QueueMetadataProtoype {
+pub struct QueueMetadataProtoype<B> {
     clients_config: ClientConfig,
     consumer_ref: Arc<PeridotConsumer>,
+    app_engine_ref: Arc<AppEngine<B>>,
     source_topic: String,
 }
 
-impl QueueMetadataProtoype {
+impl<B> QueueMetadataProtoype<B>
+where
+    B: Send + Sync + 'static,
+{
     pub fn new(
         clients_config: ClientConfig,
         consumer_ref: Arc<PeridotConsumer>,
+        app_engine_ref: Arc<AppEngine<B>>,
         source_topic: String,
     ) -> Self {
         Self {
             clients_config,
             consumer_ref,
+            app_engine_ref,
             source_topic,
         }
     }
 
     pub fn create_queue_metadata(&self, partition: i32) -> QueueMetadata {
-        let producer =
-            FutureProducer::from_config(&self.clients_config).expect("Failed to build producer");
-
-        producer
-            .init_transactions(Duration::from_millis(2500))
-            .expect("Failed to init transactions");
+        let producer = self.app_engine_ref.create_producer();
 
         QueueMetadata {
             clients_config: self.clients_config.clone(),

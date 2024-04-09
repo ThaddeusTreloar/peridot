@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     app::PeridotApp,
-    engine::util::{DeliveryGuaranteeType, ExactlyOnce},
+    engine::util::DeliveryGuaranteeType,
     message::types::{FromMessage, PatchMessage},
     pipeline::{
         map::MapPipeline,
@@ -21,7 +21,9 @@ pub mod transparent;
 pub trait IntoTask {
     type R: PipelineStream + Send;
 
-    fn into_task<'a>(self, app: &'a mut PeridotApp<ExactlyOnce>) -> impl Task<'a, R = Self::R>;
+    fn into_task<'a, G>(self, app: &'a mut PeridotApp<G>) -> impl Task<'a, G, R = Self::R>
+    where
+        G: DeliveryGuaranteeType + Send + 'static;
 }
 
 impl<P> IntoTask for P
@@ -30,15 +32,21 @@ where
 {
     type R = P;
 
-    fn into_task<'a>(self, app: &'a mut PeridotApp<ExactlyOnce>) -> impl Task<'a, R = Self::R> {
+    fn into_task<'a, G>(self, app: &'a mut PeridotApp<G>) -> impl Task<'a, G, R = Self::R>
+    where
+        G: DeliveryGuaranteeType + Send + 'static,
+    {
         TransparentTask::new(app, self)
     }
 }
 
-pub trait Task<'a> {
+pub trait Task<'a, G>
+where
+    G: DeliveryGuaranteeType + 'static,
+{
     type R: PipelineStream + Send + 'static;
 
-    fn and_then<F1, R1>(self, next: F1) -> TransformTask<'a, F1, Self::R, R1>
+    fn and_then<F1, R1>(self, next: F1) -> TransformTask<'a, F1, Self::R, R1, G>
     where
         F1: Fn(Self::R) -> R1,
         R1: PipelineStream + Send + 'static,
@@ -58,6 +66,7 @@ pub trait Task<'a> {
         impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
         Self::R,
         MapPipeline<Self::R, MF, ME, MR>,
+        G,
     >
     where
         MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
@@ -94,7 +103,7 @@ pub trait Task<'a> {
 
     fn into_pipeline(self) -> Self::R;
 
-    fn into_parts(self) -> (&'a mut PeridotApp<ExactlyOnce>, Self::R);
+    fn into_parts(self) -> (&'a mut PeridotApp<G>, Self::R);
 
     fn into_topic<KS, VS>(self, _topic: &str)
     where

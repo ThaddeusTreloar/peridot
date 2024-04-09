@@ -19,15 +19,15 @@ use crate::{
 use super::MessageSinkFactory;
 
 pub struct StateSinkFactory<B, K, V> {
-    backend: Arc<B>,
+    engine_ref: Arc<AppEngine<B>>,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
 }
 
 impl<B, K, V> StateSinkFactory<B, K, V> {
-    pub fn from_backend_ref(backend: Arc<B>) -> Self {
+    pub fn from_backend_ref(backend: Arc<AppEngine<B>>) -> Self {
         Self {
-            backend,
+            engine_ref: backend,
             _key_type: Default::default(),
             _value_type: Default::default(),
         }
@@ -38,14 +38,17 @@ impl<B, K, V> MessageSinkFactory for StateSinkFactory<B, K, V>
 where
     K: Clone,
     V: Clone,
-    B: ReadableStateBackend + WriteableStateBackend<K, V> + Send + 'static,
+    B: ReadableStateBackend + WriteableStateBackend<K, V> + Send + Sync + 'static,
 {
     type SinkType = StateSink<B, K, V>;
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
+        let partition = queue_metadata.partition();
+        let source_topic = queue_metadata.source_topic().to_owned();
+
         StateSink::<B, K, V>::from_queue_metadata_and_backend_ref(
             queue_metadata,
-            self.backend.clone(),
+            self.engine_ref.get_state_store(source_topic, partition),
         )
     }
 }

@@ -27,7 +27,6 @@ pub mod config;
 pub mod error;
 pub mod extensions;
 pub mod psink;
-pub mod pstream;
 pub mod ptable;
 
 pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
@@ -42,23 +41,28 @@ where
 {
     _config: PeridotConfig,
     jobs: Vec<JobList>,
-    engine: Arc<AppEngine<(), G>>,
-    app_builder: StreamBuilder<G>,
+    engine: Arc<AppEngine<()>>,
+    app_builder: StreamBuilder<ExactlyOnce>,
+    _phantom: std::marker::PhantomData<G>,
 }
 
 pub struct StreamBuilder<G>
 where
     G: DeliveryGuaranteeType,
 {
-    engine: Arc<AppEngine<(), G>>,
+    engine: Arc<AppEngine<(), ExactlyOnce>>,
+    _phantom: std::marker::PhantomData<G>,
 }
 
 impl<G> StreamBuilder<G>
 where
     G: DeliveryGuaranteeType,
 {
-    pub fn from_engine(engine: Arc<AppEngine<(), G>>) -> Self {
-        Self { engine }
+    pub fn from_engine(engine: Arc<AppEngine<(), ExactlyOnce>>) -> Self {
+        Self {
+            engine,
+            _phantom: std::marker::PhantomData,
+        }
     }
 
     pub async fn table<KS, VS, B>(
@@ -78,13 +82,13 @@ where
         VS::Output: Send + Sync + 'static,
     {
         unimplemented!()
-        //Ok(AppEngine::<B, G>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
+        //Ok(AppEngine::<B, ExactlyOnce>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
     }
 
     pub fn stream<KS, VS>(
         &self,
         topic: &str,
-    ) -> Result<SerialiserPipeline<KS, VS, G>, PeridotAppRuntimeError>
+    ) -> Result<SerialiserPipeline<KS, VS, ExactlyOnce>, PeridotAppRuntimeError>
     where
         KS: PDeserialize,
         VS: PDeserialize,
@@ -93,16 +97,16 @@ where
         Ok(self.engine.clone().stream(topic.to_string())?)
     }
 
-    pub async fn sink<K, V>(&self, topic: &str) -> Result<PSinkBuilder<G>, PeridotAppRuntimeError> {
+    pub async fn sink<K, V>(
+        &self,
+        topic: &str,
+    ) -> Result<PSinkBuilder<ExactlyOnce>, PeridotAppRuntimeError> {
         info!("Creating sink for topic: {}", topic);
-        Ok(AppEngine::<(), G>::sink(self.engine.clone(), topic.to_string()).await?)
+        Ok(AppEngine::<(), ExactlyOnce>::sink(self.engine.clone(), topic.to_string()).await?)
     }
 }
 
-impl<G> PeridotApp<G>
-where
-    G: DeliveryGuaranteeType + 'static,
-{
+impl PeridotApp<ExactlyOnce> {
     pub fn from_client_config(config: &ClientConfig) -> Result<Self, PeridotAppCreationError> {
         let config = PeridotConfig::from(config);
 
@@ -116,18 +120,19 @@ where
             jobs: Default::default(),
             engine,
             app_builder: StreamBuilder::from_engine(engine_ref),
+            _phantom: std::marker::PhantomData,
         })
     }
 
     pub fn task<'a, KS, VS>(
         &'a mut self,
         topic: &'a str,
-    ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, G>, G>
+    ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, ExactlyOnce>>
     where
         KS: PDeserialize + Send + 'static,
         VS: PDeserialize + Send + 'static,
     {
-        let input: SerialiserPipeline<KS, VS, G> = self
+        let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
             .app_builder
             .stream(topic)
             .expect("Failed to create topic");
@@ -146,8 +151,9 @@ where
         Ok(Self {
             _config: config.clone(),
             jobs: Default::default(),
-            engine: engine,
+            engine,
             app_builder: StreamBuilder::from_engine(engine_ref),
+            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -155,11 +161,11 @@ where
         self.jobs.push(Box::new(job));
     }
 
-    pub fn stream_builder(&self) -> &StreamBuilder<G> {
+    pub fn stream_builder(&self) -> &StreamBuilder<ExactlyOnce> {
         &self.app_builder
     }
 
-    pub fn engine_ref(&self) -> Arc<AppEngine<(), G>> {
+    pub fn engine_ref(&self) -> Arc<AppEngine<(), ExactlyOnce>> {
         self.engine.clone()
     }
 

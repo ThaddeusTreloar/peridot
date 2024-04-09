@@ -1,31 +1,31 @@
 use crate::{
-    app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream,
+    app::PeridotApp,
+    engine::util::{DeliveryGuaranteeType, ExactlyOnce},
+    pipeline::stream::PipelineStream,
 };
 
 use super::Task;
 
 #[must_use = "pipelines do nothing unless patched to a topic"]
-pub struct TransformTask<'a, F, I, R, G>
+pub struct TransformTask<'a, F, I, R>
 where
     F: Fn(I) -> R,
     I: PipelineStream,
     R: PipelineStream,
-    G: DeliveryGuaranteeType,
 {
-    app: &'a mut PeridotApp<G>,
+    app: &'a mut PeridotApp<ExactlyOnce>,
     handler: F,
     input: I,
 }
 
-impl<'a, F, I, R, G> TransformTask<'a, F, I, R, G>
+impl<'a, F, I, R> TransformTask<'a, F, I, R>
 where
     F: Fn(I) -> R,
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
     R::MStream: Send + 'static,
-    G: DeliveryGuaranteeType + 'static,
 {
-    pub fn new(app: &'a mut PeridotApp<G>, handler: F, input: I) -> Self {
+    pub fn new(app: &'a mut PeridotApp<ExactlyOnce>, handler: F, input: I) -> Self {
         Self {
             app,
             handler,
@@ -34,12 +34,11 @@ where
     }
 }
 
-impl<'a, F, I, R, G> Task<'a, G> for TransformTask<'a, F, I, R, G>
+impl<'a, F, I, R> Task<'a> for TransformTask<'a, F, I, R>
 where
     F: Fn(I) -> R,
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
-    G: DeliveryGuaranteeType + Send + 'static,
 {
     type R = R;
 
@@ -47,7 +46,7 @@ where
         (self.handler)(self.input)
     }
 
-    fn into_parts(self) -> (&'a mut PeridotApp<G>, Self::R) {
+    fn into_parts(self) -> (&'a mut PeridotApp<ExactlyOnce>, Self::R) {
         let Self {
             app,
             handler,

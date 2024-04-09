@@ -1,9 +1,16 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use futures::Future;
+use futures::{Future, FutureExt, TryFutureExt};
+use rdkafka::producer::{NoCustomPartitioner, Partitioner};
+use serde::Serialize;
 
-use crate::message::types::Message;
+use crate::{
+    engine::AppEngine,
+    message::types::Message,
+    serde_ext::{PDeserialize, PSerialize},
+    util::hash::get_partition_for_key,
+};
 
 pub mod error;
 pub mod in_memory;
@@ -89,9 +96,57 @@ pub trait BackendView {
     type KeyType;
     type ValueType;
 
-    fn get(&self, key: &Self::KeyType) -> impl Future<Output = Option<Self::ValueType>> + Send;
+    async fn get(&self, key: &Self::KeyType) -> Option<Self::ValueType>;
     // fn all
     // fn range
     // fn prefix
     // fn count
+}
+
+#[derive(Clone)]
+pub struct EngineBackendView<KS, VD, B> {
+    engine_ref: Arc<AppEngine<B>>,
+    table_name: String,
+    partitioner: (),
+    _key_type: std::marker::PhantomData<KS>,
+    _value_type: std::marker::PhantomData<VD>,
+}
+
+impl<KS, VD, B> EngineBackendView<KS, VD, B> {
+    pub fn new(table_name: String, engine_ref: Arc<AppEngine<B>>) -> Self {
+        Self {
+            engine_ref,
+            table_name,
+            partitioner: Default::default(),
+            _key_type: Default::default(),
+            _value_type: Default::default(),
+        }
+    }
+}
+
+impl<KS, VD, B> BackendView for EngineBackendView<KS, VD, B>
+where
+    KS: PSerialize,
+    VD: PDeserialize,
+    B: ReadableStateBackend<KeyType = KS::Input, ValueType = VD::Output> + Send + Sync + 'static,
+{
+    type KeyType = KS::Input;
+    type ValueType = VD::Output;
+
+    async fn get(&self, key: &Self::KeyType) -> Option<Self::ValueType> {
+        let key_bytes = KS::serialize(key).expect("Failed to serialize key");
+
+        let partition_count = self
+            .engine_ref
+            .get_table_partition_count(&self.table_name)
+            .expect("Table doesn't exist");
+
+        let partition = get_partition_for_key(&key_bytes, partition_count);
+
+        self.engine_ref
+            .get_state_store(self.table_name.clone(), partition)
+            .get(key)
+            .await
+            .expect("Backend Failure")
+    }
 }
