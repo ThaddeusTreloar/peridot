@@ -20,6 +20,7 @@ To be considered an MVP this library should provide the following features:
 - ❌ Windowed operations
 - ❌ Result 'style' dead letter support (impl FromResidual)
 - ❌ Schema Registry Integration
+- ❌ Preprocess service layers
 
 Peridot Adjacent Features:
 - ❌ Schema registry build dependency for codegen
