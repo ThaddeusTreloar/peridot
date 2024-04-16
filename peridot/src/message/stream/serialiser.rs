@@ -10,8 +10,8 @@ use tracing::error;
 
 use crate::{
     engine::partition_queue::StreamPeridotPartitionQueue,
+    engine::wrapper::serde::PDeserialize,
     message::types::{Message, TryFromOwnedMessage},
-    serde_ext::PDeserialize,
 };
 
 use super::MessageStream;

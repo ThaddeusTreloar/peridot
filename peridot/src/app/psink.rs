@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 
 use crate::{
     engine::util::{AtLeastOnce, ExactlyOnce},
+    engine::wrapper::serde::PSerialize,
     message::stream::{MessageStream, PipelineStage},
-    serde_ext::PSerialize,
 };
 
 use super::config::PeridotConfig;

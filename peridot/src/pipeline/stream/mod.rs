@@ -6,6 +6,7 @@ use std::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
+    engine::wrapper::serde::PSerialize,
     engine::QueueMetadata,
     message::{
         sink::MessageSink,
@@ -15,7 +16,6 @@ use crate::{
         fork::PipelineFork, forward::PipelineForward, join::Join, join_by::JoinBy,
         map::MapPipeline, sink::MessageSinkFactory,
     },
-    serde_ext::PSerialize,
     state::table::IntoView,
 };
 

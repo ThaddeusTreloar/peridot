@@ -13,10 +13,7 @@ use rdkafka::{consumer::Consumer, producer::PARTITION_UA, Message, Offset, Topic
 use tokio::sync::broadcast::Receiver;
 use tracing::{debug, error, info};
 
-use crate::{
-    app::{extensions::OwnedRebalance, PeridotConsumer},
-    state::backend::CommitLog,
-};
+use crate::app::{extensions::OwnedRebalance, PeridotConsumer};
 
 use super::{
     error::PeridotEngineRuntimeError, partition_queue::StreamPeridotPartitionQueue, EngineState,
@@ -28,7 +25,6 @@ pin_project! {
     pub struct QueueDistributor {
         consumer: Arc<PeridotConsumer>,
         downstreams: Arc<DashMap<String, RawQueueForwarder>>,
-        downstream_commit_logs: Arc<CommitLog>,
         state_streams: Arc<DashSet<String>>,
         engine_state: Arc<AtomicCell<EngineState>>,
         #[pin]
@@ -41,7 +37,6 @@ impl QueueDistributor {
     pub fn new(
         consumer: Arc<PeridotConsumer>,
         downstreams: Arc<DashMap<String, RawQueueForwarder>>,
-        downstream_commit_logs: Arc<CommitLog>,
         state_streams: Arc<DashSet<String>>,
         engine_state: Arc<AtomicCell<EngineState>>,
         rebalance_waker: Receiver<OwnedRebalance>,
@@ -49,7 +44,6 @@ impl QueueDistributor {
         Self {
             consumer,
             downstreams,
-            downstream_commit_logs,
             state_streams,
             engine_state,
             rebalance_waker,
@@ -61,7 +55,6 @@ impl QueueDistributor {
 fn forward_partitions(
     partitions: TopicPartitionList,
     state_streams: &Arc<DashSet<String>>,
-    downstream_commit_logs: &Arc<CommitLog>,
     consumer: &Arc<PeridotConsumer>,
     downstreams: &Arc<DashMap<String, RawQueueForwarder>>,
     engine_state: &Arc<AtomicCell<EngineState>>,
@@ -74,29 +67,32 @@ fn forward_partitions(
         .filter(|(_, p)| *p != PARTITION_UA)
         .partition(|(t, _)| state_streams.contains(t));
 
-    for_downstream.extend(
-        state
-            .into_iter()
-            .map(|(t, p)| {
-                let local_offset = downstream_commit_logs
-                    .get_offset(t.as_str(), p)
-                    .unwrap_or(0);
-                (t, p, local_offset)
-            })
-            .map(|(t, p, o)| {
-                let (lwm, _) = consumer
-                    .fetch_watermarks(&t, p, Duration::from_millis(0))
-                    .expect("Failed to fetch watermarks");
+    // We shouldn't have to worry about seeking inline consumers.
+    // State stores, when behind, should rebuild themselves from the changelog,
+    // stopping when the changelog lwm is reached.
+    /*for_downstream.extend(
+    state
+        .into_iter()
+        .map(|(t, p)| {
+            let local_offset = downstream_commit_logs
+                .get_offset(t.as_str(), p)
+                .unwrap_or(0);
+            (t, p, local_offset)
+        })
+        .map(|(t, p, o)| {
+            let (lwm, _) = consumer
+                .fetch_watermarks(&t, p, Duration::from_millis(0))
+                .expect("Failed to fetch watermarks");
 
-                (t, p, std::cmp::max(o, lwm))
-            })
-            .map(|(t, p, o)| {
-                consumer
-                    .seek(&t, p, Offset::Offset(o), Duration::from_millis(0))
-                    .expect("Failed to seek consumer.");
-                (t, p)
-            }),
-    );
+            (t, p, std::cmp::max(o, lwm))
+        })
+        .map(|(t, p, o)| {
+            consumer
+                .seek(&t, p, Offset::Offset(o), Duration::from_millis(0))
+                .expect("Failed to seek consumer.");
+            (t, p)
+        }),
+        );*/
 
     let count = for_downstream.iter().count();
 
@@ -194,7 +190,6 @@ impl Future for QueueDistributor {
                 Poll::Ready(Ok(OwnedRebalance::Assign(partitions))) => forward_partitions(
                     partitions,
                     this.state_streams,
-                    this.downstream_commit_logs,
                     this.consumer,
                     this.downstreams,
                     this.engine_state,

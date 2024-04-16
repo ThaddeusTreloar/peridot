@@ -3,7 +3,6 @@ pub mod engine;
 pub mod init;
 pub mod message;
 pub mod pipeline;
-pub mod serde_ext;
 pub mod state;
 pub mod task;
 pub(crate) mod util;

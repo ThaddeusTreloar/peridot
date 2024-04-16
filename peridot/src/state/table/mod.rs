@@ -17,8 +17,6 @@ type TableDownstream<P, B, K, V> =
 
 use super::backend::{BackendView, ReadableStateBackend, WriteableStateBackend};
 
-pub mod backend_sink;
-
 pub struct PeridotTable<P, B>
 where
     P: PipelineStream + Send + 'static,

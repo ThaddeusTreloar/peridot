@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use tokio::sync::broadcast::Receiver;
 use tracing::info;
 
 use crate::{
+    engine::wrapper::serde::PDeserialize,
     engine::{QueueForwarder, QueueMetadataProtoype, RawQueueReceiver},
     pipeline::stream::serialiser::SerialiserPipeline,
-    serde_ext::PDeserialize,
 };
 
 async fn forwarding_thread<B>(

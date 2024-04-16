@@ -14,12 +14,12 @@ use rdkafka::{
 };
 
 use crate::{
+    engine::wrapper::serde::{Json, PSerialize},
     engine::QueueMetadata,
     message::{
         sink::MessageSink,
         types::{Message, PeridotTimestamp},
     },
-    serde_ext::{Json, PSerialize},
 };
 
 //const BUFFER_LIMIT: i32 = 100;
@@ -88,11 +88,8 @@ where
     ) -> Result<(), Self::Error> {
         let this = self.project();
 
-        let timestamp = match message.timestamp() {
-            PeridotTimestamp::NotAvailable => 0,
-            PeridotTimestamp::CreateTime(ts) => *ts,
-            PeridotTimestamp::LogAppendTime(ts) => *ts,
-        };
+        let timestamp =
+            Into::<Option<i64>>::into(message.timestamp()).expect("Failed to get timestamp");
 
         let key = serde_json::to_vec(message.key()).expect("Failed to serialize key");
         let value = serde_json::to_vec(message.value()).expect("Failed to serialize value");

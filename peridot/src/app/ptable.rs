@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    serde_ext::PDeserialize,
-    state::{
-        backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
-        StateStore,
-    },
+    engine::wrapper::serde::PDeserialize,
+    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
 };
 
 use super::error::PeridotAppRuntimeError;

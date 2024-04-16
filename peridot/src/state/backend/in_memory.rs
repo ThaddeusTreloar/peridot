@@ -5,14 +5,14 @@ use tracing::info;
 
 use crate::message::types::Message;
 
-use super::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend};
+use super::{NonVersioned, ReadableStateBackend, StateBackend, WriteableStateBackend};
 
-pub struct InMemoryStateBackend<K, V>
+pub struct InMemoryStateBackend<K, V, VM = NonVersioned>
 where
     K: Hash + Eq,
 {
     store: DashMap<K, V>,
-    offsets: Arc<CommitLog>,
+    _versioning_method: std::marker::PhantomData<VM>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -25,7 +25,7 @@ where
     fn default() -> Self {
         InMemoryStateBackend {
             store: Default::default(),
-            offsets: Default::default(),
+            _versioning_method: Default::default(),
         }
     }
 }
@@ -35,34 +35,12 @@ where
     K: Send + Sync + Hash + Eq,
     V: Send + Sync,
 {
-    async fn with_topic_name(_topic_name: &str) -> Self {
+    async fn with_topic_name_and_partition(_topic_name: &str, _partition: i32) -> Self {
         Self::default()
-    }
-
-    async fn with_topic_name_and_commit_log(_topic_name: &str, commit_log: Arc<CommitLog>) -> Self {
-        InMemoryStateBackend {
-            store: Default::default(),
-            offsets: commit_log,
-        }
-    }
-
-    fn get_commit_log(&self) -> std::sync::Arc<CommitLog> {
-        self.offsets.clone()
-    }
-
-    async fn commit_offset(&self, topic: &str, partition: i32, offset: i64) {
-        self.offsets.commit_offset(topic, partition, offset);
-
-        info!("Committed offset: {}-{}:{}", topic, partition, offset);
-        info!("Current offsets: {:?}", self.offsets);
-    }
-
-    async fn get_offset(&self, topic: &str, partition: i32) -> Option<i64> {
-        self.offsets.get_offset(topic, partition)
     }
 }
 
-impl<K, V> ReadableStateBackend for InMemoryStateBackend<K, V>
+impl<K, V> ReadableStateBackend for InMemoryStateBackend<K, V, NonVersioned>
 where
     K: Send + Sync + Hash + Eq,
     V: Send + Sync + Clone,
@@ -70,6 +48,7 @@ where
     type Error = InMemoryStateBackendError;
     type KeyType = K;
     type ValueType = V;
+    type VersioningMethod = NonVersioned;
 
     async fn get(&self, key: &Self::KeyType) -> Result<Option<Self::ValueType>, Self::Error> {
         match self.store.get(key) {
@@ -81,12 +60,13 @@ where
     }
 }
 
-impl<K, V> WriteableStateBackend<K, V> for InMemoryStateBackend<K, V>
+impl<K, V> WriteableStateBackend<K, V> for InMemoryStateBackend<K, V, NonVersioned>
 where
     K: Send + Sync + Hash + Eq + Clone + 'static,
     V: Send + Sync + Clone + 'static,
 {
     type Error = InMemoryStateBackendError;
+    type VersioningMethod = NonVersioned;
 
     async fn commit_update(
         self: Arc<Self>,

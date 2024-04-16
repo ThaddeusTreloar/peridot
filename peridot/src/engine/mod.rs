@@ -20,18 +20,15 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::engine::distributor::QueueDistributor;
-use crate::serde_ext::PSerialize;
+use crate::engine::wrapper::serde::PSerialize;
 use crate::{
-    app::psink::PSinkBuilder,
+    engine::wrapper::serde::PDeserialize,
     pipeline::stream::serialiser::SerialiserPipeline,
-    serde_ext::PDeserialize,
-    state::{
-        backend::{CommitLog, ReadableStateBackend, StateBackend, WriteableStateBackend},
-        StateStore,
-    },
+    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
 };
 
-use self::error::TableRegistrationError;
+use self::context::EngineContext;
+use self::error::{EngineInitialisationError, TableRegistrationError};
 use self::partition_queue::StreamPeridotPartitionQueue;
 use self::streams::new_stream;
 use self::{
@@ -42,11 +39,11 @@ use self::{
 use crate::app::{
     config::PeridotConfig,
     extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
-    ptable::PTable,
     PeridotConsumer,
 };
 
 pub mod circuit_breaker;
+pub mod context;
 pub mod distributor;
 pub mod error;
 pub mod partition_queue;
@@ -54,6 +51,7 @@ pub mod sinks;
 pub mod streams;
 pub mod tasks;
 pub mod util;
+pub mod wrapper;
 
 #[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
 pub enum EngineState {
@@ -110,7 +108,6 @@ pub struct AppEngine<B, G = ExactlyOnce> {
     consumer: Arc<PeridotConsumer>,
     waker_context: Arc<PeridotConsumerContext>,
     downstreams: Arc<DashMap<String, RawQueueForwarder>>,
-    downstream_commit_logs: Arc<CommitLog>,
     state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
     state_stores: StateStoreMap<B>,
@@ -123,9 +120,25 @@ impl<BT> AppEngine<BT>
 where
     BT: Send + Sync + 'static,
 {
-    fn register_source_topic(&self, topic: String, partition_count: i32) {
-        self.source_topic_metadata
-            .insert(topic.clone(), TopicMetadata::new(partition_count));
+    fn register_source_topic(
+        &self,
+        topic: String,
+        partition_count: i32,
+    ) -> Result<(), EngineInitialisationError> {
+        if let Some(_) = self.source_topic_metadata.get(topic.as_str()) {
+            return Err(EngineInitialisationError::ConflictingTopicRegistration(
+                topic,
+            ));
+        } else {
+            self.source_topic_metadata
+                .insert(topic.clone(), TopicMetadata::new(partition_count));
+            Ok(())
+        }
+    }
+
+    pub fn get_engine_context(&self) {
+        //-> impl EngineContext {
+        unimplemented!("Not implemented yet")
     }
 
     pub fn get_source_topic_for_table(&self, table_name: &str) -> Option<String> {
@@ -210,15 +223,20 @@ where
         unimplemented!("Create consumer")
     }
 
+    pub async fn rebuild_state_stores(&self) -> Result<(), PeridotEngineRuntimeError> {
+        unimplemented!("Rebuild state stores")
+    }
+
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
         let pre_rebalance_waker = self.waker_context.pre_rebalance_waker();
         let commit_waker = self.waker_context.commit_waker();
         let rebalance_waker = self.waker_context.post_rebalance_waker();
 
+        self.rebuild_state_stores().await?;
+
         let queue_distributor = QueueDistributor::new(
             self.consumer.clone(),
             self.downstreams.clone(),
-            self.downstream_commit_logs.clone(),
             self.state_streams.clone(),
             self.engine_state.clone(),
             pre_rebalance_waker,
@@ -226,10 +244,8 @@ where
 
         tokio::spawn(queue_distributor);
 
-        //self.start_queue_distributor(pre_rebalance_waker);
         self.start_commit_listener(commit_waker);
         self.start_rebalance_listener(rebalance_waker);
-        //self.start_lag_listener();
 
         info!("Engine running...");
 
@@ -248,7 +264,6 @@ where
             consumer: Arc::new(consumer),
             waker_context: Arc::new(context),
             downstreams: Default::default(),
-            downstream_commit_logs: Default::default(),
             state_streams: Default::default(),
             engine_state: Default::default(),
             state_stores: Default::default(),
@@ -259,7 +274,6 @@ where
     }
 
     fn start_queue_distributor(&self, mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>) {
-        let commit_logs = self.downstream_commit_logs.clone();
         let consumer = self.consumer.clone();
         let downstreams = self.downstreams.clone();
         let state = self.engine_state.clone();
@@ -296,10 +310,6 @@ where
                             .expect("No partition queue");
 
                         if state_streams.contains(&topic) {
-                            let local_committed_offset = commit_logs
-                                .get_offset(topic.as_str(), partition)
-                                .unwrap_or(0);
-
                             let mut topic_partition_list = TopicPartitionList::new();
                             topic_partition_list.add_partition(topic.as_str(), partition);
 
@@ -312,40 +322,7 @@ where
                                 .to_raw()
                                 .unwrap_or(0);
 
-                            info!(
-                                "Local committed offset: {} Group offset: {}",
-                                local_committed_offset, group_offset
-                            );
-
-                            if local_committed_offset < group_offset {
-                                let (low_watermark, _) = consumer
-                                    .client()
-                                    .fetch_watermarks(
-                                        topic.as_str(),
-                                        partition,
-                                        Duration::from_secs(1),
-                                    )
-                                    .expect("Failed to fetch watermarks");
-
-                                info!(
-                                    "Locally Committed Offset: {}, Low watermark: {}",
-                                    local_committed_offset, low_watermark
-                                );
-
-                                let max_offset =
-                                    std::cmp::max(local_committed_offset, low_watermark);
-
-                                // TODO: Seek to max(local_committed_offset, low watermark)
-                                info!("Seeking to max(lco, lwm) offset: {}", max_offset);
-                                consumer
-                                    .seek(
-                                        topic.as_str(),
-                                        partition,
-                                        rdkafka::Offset::Offset(max_offset),
-                                        Duration::from_secs(1),
-                                    )
-                                    .expect("Failed to seek to group offset");
-                            }
+                            info!("Group offset: {}", group_offset);
                         }
 
                         let queue_sender = downstreams.get(topic.as_str());
@@ -378,32 +355,29 @@ where
                     state.store(EngineState::NotReady);
                 }
 
+                let poll_loop = async {
+                    let _max_poll_interval = match consumer.context().main_queue_min_poll_interval()
+                    {
+                        Timeout::Never => Duration::from_secs(1),
+                        Timeout::After(duration) => duration / 2,
+                    };
+
+                    loop {
+                        // To keep the consumer alive we must poll at least
+                        // every 'max.poll.interval.ms'. We are polling with
+                        // a 0 second timeout for two reasons:
+                        //  - using any timeout will block a runtime thread
+                        //  - the blocked thread will not be cancellable by the select block
+                        if let Some(_message) = consumer.poll(Duration::from_millis(0)) {}
+
+                        // Instead we can use sleep for the interval.
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        //tokio::time::sleep(max_poll_interval).await;
+                    }
+                };
+
                 select! {
-                    () = async {
-
-                        let _max_poll_interval = match consumer
-                            .context()
-                            .main_queue_min_poll_interval()
-                        {
-                            Timeout::Never => Duration::from_secs(1),
-                            Timeout::After(duration) => duration / 2
-                        };
-
-                        loop {
-                            // To keep the consumer alive we must poll at least
-                            // every 'max.poll.interval.ms'. We are polling with
-                            // a 0 second timeout for two reasons:
-                            //  - using any timeout will block a runtime thread
-                            //  - the blocked thread will not be cancellable by the select block
-                            if let Some(_message) = consumer.poll(Duration::from_millis(0)) {
-                            }
-
-                            // Instead we can use sleep for the interval.
-                            tokio::time::sleep(Duration::from_millis(100)).await;
-                            //tokio::time::sleep(max_poll_interval).await;
-
-                        }
-                    } => {
+                    () = poll_loop => {
                         error!("Broke consumer poll loop");
                     },
                     _rebalance = waker.recv() => {
@@ -558,7 +532,7 @@ where
             }
         });
     }
-
+    /*
     pub async fn table<KS, VS, B>(
         app_engine: Arc<AppEngine<B>>,
         topic: String,
@@ -626,7 +600,7 @@ where
         )?;
 
         Ok(PTable::<KS, VS, B>::new(Arc::new(state_store)))
-    }
+        } */
 
     pub fn stream<KS, VS>(
         self: Arc<AppEngine<BT>>,
@@ -666,17 +640,6 @@ where
         );
 
         Ok(new_stream(queue_metadata_prototype, queue_receiver))
-    }
-
-    pub async fn sink(
-        app_engine: Arc<AppEngine<BT>>,
-        topic: String,
-    ) -> Result<PSinkBuilder<ExactlyOnce>, PeridotEngineRuntimeError> {
-        if app_engine.consumer.is_subscribed_to(&topic) {
-            return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
-        }
-
-        Ok(PSinkBuilder::new(topic, app_engine.config.clone()))
     }
 }
 

@@ -8,9 +8,9 @@ use pin_project_lite::pin_project;
 use tracing::info;
 
 use crate::{
+    engine::wrapper::serde::PDeserialize,
     engine::{util::ExactlyOnce, QueueReceiver},
     message::stream::{serialiser::QueueSerialiser, PipelineStage},
-    serde_ext::PDeserialize,
 };
 
 use super::PipelineStream;

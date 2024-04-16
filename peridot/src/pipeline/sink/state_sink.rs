@@ -10,9 +10,14 @@ use pin_project_lite::pin_project;
 use rdkafka::error::KafkaError;
 
 use crate::{
-    engine::{AppEngine, QueueMetadata},
-    message::{sink::MessageSink, types::Message},
-    serde_ext::{Delegate, PSerialize},
+    engine::{
+        wrapper::serde::{Delegate, PSerialize},
+        AppEngine, QueueMetadata,
+    },
+    message::{
+        sink::{MessageSink, NonCommittingSink},
+        types::Message,
+    },
     state::backend::{ReadableStateBackend, WriteableStateBackend},
 };
 
@@ -100,6 +105,14 @@ where
 pub enum StateSinkError {
     #[error("Failed to run: {0}")]
     EnqueueFailed(#[from] KafkaError),
+}
+
+impl<B, K, V> NonCommittingSink for StateSink<B, K, V>
+where
+    K: Clone,
+    V: Clone,
+    B: WriteableStateBackend<K, V>,
+{
 }
 
 impl<B, K, V> MessageSink for StateSink<B, K, V>

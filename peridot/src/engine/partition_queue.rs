@@ -8,7 +8,7 @@ use futures::Stream;
 use parking_lot::Mutex;
 use rdkafka::{consumer::base_consumer::PartitionQueue, message::OwnedMessage};
 
-use crate::app::extensions::PeridotConsumerContext;
+use crate::{app::extensions::PeridotConsumerContext, message::types::PeridotTimestamp};
 
 type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
 
@@ -45,6 +45,10 @@ impl Stream for StreamPeridotPartitionQueue {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
+        // TODO: handle stream consumption time option.
+        // let stream_time: i64 = 0;
+        // let _timestamp = PeridotTimestamp::ConsumptionTime(stream_time);
+
         match self.partition_queue.poll(Duration::from_millis(0)) {
             Some(Ok(message)) => Poll::Ready(Option::Some(message.detach())),
             Some(Err(e)) => panic!("Failed to get message from upstream: {}", e),

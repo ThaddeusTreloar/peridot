@@ -10,18 +10,15 @@ use pin_project_lite::pin_project;
 use crate::{
     app::error::PeridotAppRuntimeError,
     engine::util::ExactlyOnce,
+    engine::wrapper::serde::PSerialize,
     message::{
         forward::Forward,
         sink::MessageSink,
         stream::{MessageStream, PipelineStage},
     },
-    serde_ext::PSerialize,
 };
 
-use super::{
-    sink::MessageSinkFactory,
-    stream::PipelineStream,
-};
+use super::{sink::MessageSinkFactory, stream::PipelineStream};
 
 pin_project! {
     #[project = SinkProjection]

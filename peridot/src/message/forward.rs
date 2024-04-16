@@ -1,5 +1,6 @@
 use std::{
     pin::Pin,
+    sync::atomic::AtomicBool,
     task::{Context, Poll},
     time::Duration,
 };
@@ -9,7 +10,7 @@ use pin_project_lite::pin_project;
 use rdkafka::{consumer::Consumer, producer::Producer, Offset, TopicPartitionList};
 use tracing::info;
 
-use crate::{engine::QueueMetadata, serde_ext::PSerialize};
+use crate::{engine::wrapper::serde::PSerialize, engine::QueueMetadata};
 
 use super::{sink::MessageSink, stream::MessageStream};
 
@@ -27,6 +28,7 @@ pin_project! {
         #[pin]
         message_sink: Si,
         queue_metadata: QueueMetadata,
+        is_committing: bool,
     }
 }
 
@@ -42,6 +44,7 @@ where
             message_stream,
             message_sink,
             queue_metadata,
+            is_committing: false,
         }
     }
 }
@@ -62,13 +65,22 @@ where
             mut message_stream,
             mut message_sink,
             queue_metadata,
+            is_committing,
         } = self.project();
 
         info!("Forwarding messages from stream to sink...");
 
+        // If we have entered a commit state, we need to commit the transaction before continuing.
+        if *is_committing {
+            // If the sink has not completed it's commit, we need to wait.
+            ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit transaction.");
+
+            // Otherwise, we can transition our commit state.
+            *is_committing = false;
+        }
+
         for _ in 0..BATCH_SIZE {
-            ready!(message_sink.as_mut().poll_ready(cx))
-                .expect("Failed to get sink ready.");
+            ready!(message_sink.as_mut().poll_ready(cx)).expect("Failed to get sink ready.");
 
             match message_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => {
@@ -81,13 +93,10 @@ where
                 Poll::Pending => {
                     info!("No messages available, waiting...");
 
-                    queue_metadata
-                        .producer()
-                        .commit_transaction(Duration::from_millis(1000))
-                        .expect("Failed to commit transaction.");
+                    // No messages available, we can transition to a commit state.
+                    *is_committing = true;
 
-                    ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit.");
-
+                    // Propogate the pending state to the caller.
                     return Poll::Pending;
                 }
                 Poll::Ready(Some(message)) => {

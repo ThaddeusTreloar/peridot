@@ -6,9 +6,11 @@ use std::{
 use rdkafka::producer::FutureRecord;
 
 use crate::{
-    engine::QueueMetadata,
-    message::sink::MessageSink,
-    serde_ext::{NativeBytes, PSerialize},
+    engine::{
+        wrapper::serde::{NativeBytes, PSerialize},
+        QueueMetadata,
+    },
+    message::sink::{MessageSink, NonCommittingSink},
 };
 
 use super::MessageSinkFactory;
@@ -62,6 +64,8 @@ impl<K, V> ChangelogSink<K, V> {
 #[derive(Debug, thiserror::Error)]
 pub enum ChangelogSinkError {}
 
+impl<K, V> NonCommittingSink for ChangelogSink<K, V> {}
+
 impl<K, V> MessageSink for ChangelogSink<K, V>
 where
     K: Clone,
@@ -86,8 +90,8 @@ where
     fn start_send(
         self: Pin<&mut Self>,
         message: &crate::message::types::Message<
-            <Self::KeySerType as crate::serde_ext::PSerialize>::Input,
-            <Self::ValueSerType as crate::serde_ext::PSerialize>::Input,
+            <Self::KeySerType as crate::engine::wrapper::serde::PSerialize>::Input,
+            <Self::ValueSerType as crate::engine::wrapper::serde::PSerialize>::Input,
         >,
     ) -> Result<(), Self::Error> {
         let key =

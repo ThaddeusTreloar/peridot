@@ -3,7 +3,6 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use crate::serde_ext::PSerialize;
 use rdkafka::bindings::rd_kafka_msg_partitioner_murmur2;
 
 pub(crate) fn get_partition_for_key(key_bytes: &[u8], partition_count: i32) -> i32 {
@@ -29,13 +28,4 @@ pub(crate) fn get_partition_for_key(key_bytes: &[u8], partition_count: i32) -> i
             null_mut() as *mut c_void,
         )
     }
-}
-
-pub(crate) fn partition_message_key<KS>(key: KS::Input, partition_count: i32) -> i32
-where
-    KS: PSerialize,
-{
-    let key_bytes = KS::serialize(&key).expect("Failed to serialise key while paritioning.");
-
-    get_partition_for_key(&key_bytes, partition_count)
 }

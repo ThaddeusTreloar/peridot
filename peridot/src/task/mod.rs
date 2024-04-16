@@ -3,13 +3,13 @@ use std::fmt::Display;
 use crate::{
     app::PeridotApp,
     engine::util::{DeliveryGuaranteeType, ExactlyOnce},
+    engine::wrapper::serde::PSerialize,
     message::types::{FromMessage, PatchMessage},
     pipeline::{
         map::MapPipeline,
         sink::print_sink::PrintSinkFactory,
         stream::{PipelineStream, PipelineStreamExt},
     },
-    serde_ext::PSerialize,
     state::backend::ReadableStateBackend,
 };
 

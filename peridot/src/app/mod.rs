@@ -8,26 +8,22 @@ use crate::{
     app::extensions::PeridotConsumerContext,
     engine::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
+        wrapper::serde::PDeserialize,
         AppEngine,
     },
     pipeline::stream::serialiser::SerialiserPipeline,
-    serde_ext::PDeserialize,
-    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
     task::transparent::TransparentTask,
 };
 
 use self::{
     config::PeridotConfig,
     error::{PeridotAppCreationError, PeridotAppRuntimeError},
-    psink::PSinkBuilder,
-    ptable::PTable,
 };
 
+pub mod builder;
 pub mod config;
 pub mod error;
 pub mod extensions;
-pub mod psink;
-pub mod ptable;
 
 pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
 
@@ -65,26 +61,6 @@ where
         }
     }
 
-    pub async fn table<KS, VS, B>(
-        &self,
-        topic: &str,
-    ) -> Result<PTable<KS, VS, B>, PeridotAppRuntimeError>
-    where
-        B: StateBackend
-            + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output>
-            + WriteableStateBackend<KS::Output, VS::Output>
-            + Send
-            + Sync
-            + 'static,
-        KS: PDeserialize + Send + Sync + 'static,
-        VS: PDeserialize + Send + Sync + 'static,
-        KS::Output: Send + Sync + 'static,
-        VS::Output: Send + Sync + 'static,
-    {
-        unimplemented!()
-        //Ok(AppEngine::<B, ExactlyOnce>::table::<KS, VS, B>(self.engine.clone(), topic.to_string()).await?)
-    }
-
     pub fn stream<KS, VS>(
         &self,
         topic: &str,
@@ -95,14 +71,6 @@ where
     {
         info!("Creating stream for topic: {}", topic);
         Ok(self.engine.clone().stream(topic.to_string())?)
-    }
-
-    pub async fn sink<K, V>(
-        &self,
-        topic: &str,
-    ) -> Result<PSinkBuilder<ExactlyOnce>, PeridotAppRuntimeError> {
-        info!("Creating sink for topic: {}", topic);
-        Ok(AppEngine::<(), ExactlyOnce>::sink(self.engine.clone(), topic.to_string()).await?)
     }
 }
 

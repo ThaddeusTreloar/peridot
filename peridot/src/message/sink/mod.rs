@@ -10,9 +10,13 @@ use pin_project_lite::pin_project;
 use rdkafka::{consumer::Consumer, TopicPartitionList};
 use tracing::info;
 
-use crate::{engine::QueueMetadata, serde_ext::PSerialize};
+use crate::{engine::wrapper::serde::PSerialize, engine::QueueMetadata};
 
 use super::types::Message;
+
+pub(crate) mod changelog_sink;
+pub mod print_sink;
+pub(crate) mod state_sink;
 
 pub trait MessageSink {
     type KeySerType: PSerialize;
@@ -38,6 +42,10 @@ pub trait MessageSinkExt<K, V>: MessageSink {
     {
     }
 }
+
+pub trait CommitingSink {}
+
+pub trait NonCommittingSink {}
 
 pin_project! {
     pub struct PrintSink<KS, VS>

@@ -43,3 +43,9 @@ pub enum TableRegistrationError {
     #[error("Table already registered.")]
     TableAlreadyRegistered,
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum EngineInitialisationError {
+    #[error("Attempted to reregister existing topic: {0}")]
+    ConflictingTopicRegistration(String),
+}

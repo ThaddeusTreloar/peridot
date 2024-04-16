@@ -5,12 +5,12 @@ use std::{
 };
 
 use crate::{
+    engine::wrapper::serde::PSerialize,
     engine::QueueMetadata,
     message::{
         sink::{MessageSink, PrintSink},
         stream::{MessageStream, PipelineStage},
     },
-    serde_ext::PSerialize,
 };
 
 use super::MessageSinkFactory;
