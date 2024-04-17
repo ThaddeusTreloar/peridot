@@ -1,5 +1,4 @@
 use std::{
-    default,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -7,8 +6,6 @@ use std::{
 use futures::ready;
 use pin_project_lite::pin_project;
 use tracing::info;
-
-use crate::engine::wrapper::serde::PSerialize;
 
 use super::{sink::MessageSink, stream::MessageStream};
 
@@ -26,8 +23,6 @@ pin_project! {
     where
         M: MessageStream,
         Si: MessageSink,
-        Si::KeySerType: PSerialize<Input = M::KeyType>,
-        Si::ValueSerType: PSerialize<Input = M::ValueType>,
     {
         #[pin]
         message_stream: M,
@@ -41,8 +36,6 @@ impl<M, Si> Fork<M, Si>
 where
     M: MessageStream,
     Si: MessageSink,
-    Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
-    Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
 {
     pub fn new(message_stream: M, message_sink: Si) -> Self {
         Self {
@@ -56,9 +49,9 @@ where
 impl<M, Si> MessageStream for Fork<M, Si>
 where
     M: MessageStream,
-    Si: MessageSink,
-    Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
-    Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
+    Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
+    M::KeyType: Clone,
+    M::ValueType: Clone,
 {
     type KeyType = M::KeyType;
     type ValueType = M::ValueType;
@@ -115,7 +108,7 @@ where
 
                 message_sink
                     .as_mut()
-                    .start_send(&message)
+                    .start_send(message.clone())
                     .expect("Failed to send message to sink.");
 
                 Poll::Ready(Some(message))

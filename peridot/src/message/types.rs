@@ -119,13 +119,13 @@ impl Into<Option<i64>> for &PeridotTimestamp {
 
 #[derive(Debug, serde::Serialize, Clone)]
 pub struct Message<K, V> {
-    topic: String,
-    timestamp: PeridotTimestamp,
-    partition: i32,
-    offset: i64,
-    headers: MessageHeaders,
-    key: K,   // TODO: Option?
-    value: V, // TODO: Option?
+    pub(crate) topic: String,
+    pub(crate) timestamp: PeridotTimestamp,
+    pub(crate) partition: i32,
+    pub(crate) offset: i64,
+    pub(crate) headers: MessageHeaders,
+    pub(crate) key: K,   // TODO: Option?
+    pub(crate) value: V, // TODO: Option?
 }
 
 impl<K, V> Display for Message<K, V>

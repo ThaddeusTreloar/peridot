@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     app::PeridotApp,
-    engine::util::{DeliveryGuaranteeType, ExactlyOnce},
+    engine::util::ExactlyOnce,
     engine::wrapper::serde::PSerialize,
     message::types::{FromMessage, PatchMessage},
     pipeline::{
@@ -10,7 +10,6 @@ use crate::{
         sink::print_sink::PrintSinkFactory,
         stream::{PipelineStream, PipelineStreamExt},
     },
-    state::backend::ReadableStateBackend,
 };
 
 use self::{transform::TransformTask, transparent::TransparentTask};
@@ -79,15 +78,11 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(app, move |input| input.map(next.clone()), output)
     }
 
-    fn into_table<S>(self, table_name: &str)
+    fn into_table(self, _table_name: &str)
     where
-        S: ReadableStateBackend<
-            KeyType = <Self::R as PipelineStream>::KeyType,
-            ValueType = <Self::R as PipelineStream>::ValueType,
-        >,
         Self: Sized,
     {
-        let (app, output) = self.into_parts();
+        let (_app, _output) = self.into_parts();
 
         unimplemented!("into_table")
     }
@@ -102,6 +97,8 @@ pub trait Task<'a> {
         <Self::R as PipelineStream>::KeyType: Display,
         VS: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
         <Self::R as PipelineStream>::ValueType: Display,
+        KS::Input: Send + 'static,
+        VS::Input: Send + 'static,
         Self: Sized,
         Self::R: PipelineStreamExt,
     {

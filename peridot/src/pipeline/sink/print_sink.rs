@@ -1,29 +1,11 @@
-use std::{
-    fmt::{Debug, Display},
-    marker::PhantomData,
-    pin::Pin,
-};
+use std::{fmt::Display, marker::PhantomData};
 
 use crate::{
-    engine::wrapper::serde::PSerialize,
-    engine::QueueMetadata,
-    message::{
-        sink::{MessageSink, PrintSink},
-        stream::{MessageStream, PipelineStage},
-    },
+    engine::{wrapper::serde::PSerialize, QueueMetadata},
+    message::sink::print_sink::PrintSink,
 };
 
 use super::MessageSinkFactory;
-
-pub trait PipelineSink<M>
-where
-    M: MessageStream,
-{
-    type Error: Display + Debug;
-    type SinkType: MessageSink;
-
-    fn start_send(self: Pin<&mut Self>, message: PipelineStage<M>) -> Result<(), Self::Error>;
-}
 
 pub struct PrintSinkFactory<KS, VS> {
     _key_ser_type: PhantomData<KS>,

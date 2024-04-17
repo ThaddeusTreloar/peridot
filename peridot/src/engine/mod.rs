@@ -2,15 +2,12 @@ use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use rdkafka::config::FromClientConfig;
 use rdkafka::consumer::ConsumerContext;
-use rdkafka::producer::{
-    FutureProducer, NoCustomPartitioner, Partitioner, Producer, ProducerContext,
-};
+use rdkafka::producer::{FutureProducer, NoCustomPartitioner, Producer};
 use rdkafka::util::Timeout;
 use rdkafka::{
     consumer::Consumer, producer::PARTITION_UA, topic_partition_list::TopicPartitionListElem,
     ClientConfig, TopicPartitionList,
 };
-use serde::Serialize;
 use std::ops::Deref;
 use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
@@ -20,20 +17,16 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::engine::distributor::QueueDistributor;
-use crate::engine::wrapper::serde::PSerialize;
 use crate::{
-    engine::wrapper::serde::PDeserialize,
-    pipeline::stream::serialiser::SerialiserPipeline,
-    state::backend::{ReadableStateBackend, StateBackend, WriteableStateBackend},
+    engine::wrapper::serde::PDeserialize, pipeline::stream::serialiser::SerialiserPipeline,
 };
 
-use self::context::EngineContext;
 use self::error::{EngineInitialisationError, TableRegistrationError};
 use self::partition_queue::StreamPeridotPartitionQueue;
 use self::streams::new_stream;
 use self::{
     error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
-    util::{ConsumerUtils, DeliveryGuaranteeType, ExactlyOnce},
+    util::{ConsumerUtils, ExactlyOnce},
 };
 
 use crate::app::{
@@ -179,14 +172,14 @@ where
         NoCustomPartitioner {}
     }
 
-    pub fn get_backend_view(&self, table_name: &str) -> StateStoreMap<BT> {
+    pub fn get_backend_view(&self, _table_name: &str) -> StateStoreMap<BT> {
         self.state_stores.clone()
     }
 
-    pub fn get_state_store_for_table(&self, table_name: String, partition: i32) -> Option<Arc<BT>> {
+    pub fn get_state_store_for_table(&self, table_name: &str, partition: i32) -> Option<Arc<BT>> {
         let source_topic = self
             .table_metadata
-            .get(&table_name)
+            .get(table_name)
             .expect("Table not registered")
             .clone();
 
@@ -203,7 +196,7 @@ where
         }
     }
 
-    fn create_state_store(&self, source_topic: String, partition: i32) -> Arc<BT> {
+    fn create_state_store(&self, _source_topic: String, _partition: i32) -> Arc<BT> {
         unimplemented!("Create state store")
     }
 
@@ -219,7 +212,7 @@ where
     }
 
     fn update_consumer(&self) {
-        let consumer = self.consumer.clone();
+        let _consumer = self.consumer.clone();
         unimplemented!("Create consumer")
     }
 

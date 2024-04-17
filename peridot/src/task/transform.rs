@@ -1,8 +1,4 @@
-use crate::{
-    app::PeridotApp,
-    engine::util::{DeliveryGuaranteeType, ExactlyOnce},
-    pipeline::stream::PipelineStream,
-};
+use crate::{app::PeridotApp, engine::util::ExactlyOnce, pipeline::stream::PipelineStream};
 
 use super::Task;
 

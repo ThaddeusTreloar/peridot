@@ -1,3 +1,5 @@
+#![allow(refining_impl_trait)]
+
 pub mod app;
 pub mod engine;
 pub mod init;

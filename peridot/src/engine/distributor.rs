@@ -9,7 +9,7 @@ use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use futures::{ready, Future};
 use pin_project_lite::pin_project;
-use rdkafka::{consumer::Consumer, producer::PARTITION_UA, Message, Offset, TopicPartitionList};
+use rdkafka::{producer::PARTITION_UA, Message, TopicPartitionList};
 use tokio::sync::broadcast::Receiver;
 use tracing::{debug, error, info};
 
@@ -60,7 +60,7 @@ fn forward_partitions(
     engine_state: &Arc<AtomicCell<EngineState>>,
 ) {
     info!("Handling rebalance");
-    let (state, mut for_downstream): (Vec<_>, Vec<_>) = partitions
+    let (_state, mut for_downstream): (Vec<_>, Vec<_>) = partitions
         .elements()
         .into_iter()
         .map(|tp| (tp.topic().to_string(), tp.partition()))

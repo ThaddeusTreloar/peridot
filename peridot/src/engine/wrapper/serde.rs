@@ -134,23 +134,3 @@ impl PDeserialize for String {
         String::from_utf8(bytes.to_vec())
     }
 }
-
-/// Delegate is a temporary workaround to meet trait bounds on
-/// crate::message::sink::MessageSink. Specifically for the
-/// crate::pipeline::sink::StateSink implementation as serialization
-/// for the sink is chosen by the backend. May be removed after a future refactor.
-pub struct Delegate<T> {
-    _type: PhantomData<T>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum DelegateError {}
-
-impl<T> PSerialize for Delegate<T> {
-    type Error = NativeSerdeError;
-    type Input = T;
-
-    fn serialize(_input: &Self::Input) -> Result<Vec<u8>, Self::Error> {
-        Ok(Vec::new())
-    }
-}

@@ -7,7 +7,7 @@ use std::{
 use pin_project_lite::pin_project;
 
 use crate::{
-    engine::{util::ExactlyOnce, wrapper::serde::PSerialize},
+    engine::util::ExactlyOnce,
     message::{
         fork::Fork,
         sink::MessageSink,
@@ -47,14 +47,14 @@ impl<S, SF, G> PipelineStream for PipelineFork<S, SF, G>
 where
     S: PipelineStream + Send + 'static,
     S::MStream: MessageStream<
-            KeyType = <<SF::SinkType as MessageSink>::KeySerType as PSerialize>::Input,
-            ValueType = <<SF::SinkType as MessageSink>::ValueSerType as PSerialize>::Input,
+            KeyType = <SF::SinkType as MessageSink>::KeyType,
+            ValueType = <SF::SinkType as MessageSink>::ValueType,
         > + Send
         + 'static,
     SF: MessageSinkFactory + Send + 'static,
     SF::SinkType: Send + 'static,
-    <SF::SinkType as MessageSink>::KeySerType: PSerialize,
-    <SF::SinkType as MessageSink>::ValueSerType: PSerialize,
+    <SF::SinkType as MessageSink>::KeyType: Clone,
+    <SF::SinkType as MessageSink>::ValueType: Clone,
 {
     type KeyType = <S::MStream as MessageStream>::KeyType;
     type ValueType = <S::MStream as MessageStream>::ValueType;

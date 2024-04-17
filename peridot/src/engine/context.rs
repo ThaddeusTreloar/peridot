@@ -1,4 +1,4 @@
-use std::{marker::PhantomPinned, sync::Arc};
+use std::sync::Arc;
 
 use super::{
     wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor},
@@ -17,6 +17,7 @@ pub trait EngineContext {
     fn get_table_partition_count(&self, table_name: &str) -> Option<i32>;
 }
 
+#[derive(Clone)]
 pub struct PeridotEngineContext<P, T, B> {
     engine_ref: Arc<AppEngine<B>>,
     partitioner: Arc<P>,
@@ -55,15 +56,15 @@ where
         &self.timestamp_extractor
     }
 
-    fn state_backend(&self, source_topic: String, partition: i32) -> Arc<Self::Backend> {
+    fn state_backend(&self, _source_topic: String, _partition: i32) -> Arc<Self::Backend> {
         unimplemented!("state_backend")
     }
 
-    fn get_source_topic_for_table(&self, table_name: &str) -> Option<String> {
+    fn get_source_topic_for_table(&self, _table_name: &str) -> Option<String> {
         unimplemented!("get_source_topic_for_table")
     }
 
-    fn get_table_partition_count(&self, table_name: &str) -> Option<i32> {
+    fn get_table_partition_count(&self, _table_name: &str) -> Option<i32> {
         unimplemented!("get_table_partition_count")
     }
 }

@@ -1,6 +1,5 @@
 use std::{
     pin::Pin,
-    sync::atomic::AtomicBool,
     task::{Context, Poll},
     time::Duration,
 };
@@ -10,7 +9,7 @@ use pin_project_lite::pin_project;
 use rdkafka::{consumer::Consumer, producer::Producer, Offset, TopicPartitionList};
 use tracing::info;
 
-use crate::{engine::wrapper::serde::PSerialize, engine::QueueMetadata};
+use crate::engine::QueueMetadata;
 
 use super::{sink::MessageSink, stream::MessageStream};
 
@@ -19,9 +18,7 @@ pin_project! {
     pub struct Forward<M, Si>
     where
         M: MessageStream,
-        Si: MessageSink,
-        Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
-        Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
+        Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
     {
         #[pin]
         message_stream: M,
@@ -35,9 +32,7 @@ pin_project! {
 impl<M, Si> Forward<M, Si>
 where
     M: MessageStream,
-    Si: MessageSink,
-    Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
-    Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
+    Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
 {
     pub fn new(message_stream: M, message_sink: Si, queue_metadata: QueueMetadata) -> Self {
         Self {
@@ -54,9 +49,7 @@ const BATCH_SIZE: usize = 1024;
 impl<M, Si> Future for Forward<M, Si>
 where
     M: MessageStream,
-    Si: MessageSink,
-    Si::KeySerType: PSerialize<Input = <M as MessageStream>::KeyType>,
-    Si::ValueSerType: PSerialize<Input = <M as MessageStream>::ValueType>,
+    Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
 {
     type Output = ();
 
@@ -100,9 +93,13 @@ where
                     return Poll::Pending;
                 }
                 Poll::Ready(Some(message)) => {
+                    let topic = String::from(message.topic());
+                    let partition = message.partition();
+                    let offset = message.offset();
+
                     message_sink
                         .as_mut()
-                        .start_send(&message)
+                        .start_send(message)
                         .expect("Failed to send message to sink.");
 
                     let cgm = queue_metadata
@@ -113,11 +110,7 @@ where
                     let mut offsets = TopicPartitionList::new();
 
                     offsets
-                        .add_partition_offset(
-                            message.topic(),
-                            message.partition(),
-                            Offset::Offset(message.offset()),
-                        )
+                        .add_partition_offset(&topic, partition, Offset::Offset(offset))
                         .expect("Failed to add partition offset.");
 
                     queue_metadata

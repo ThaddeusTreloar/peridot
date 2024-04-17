@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::state::table::IntoView;
+use crate::state::backend::IntoView;
 
 use super::stream::PipelineStream;
 

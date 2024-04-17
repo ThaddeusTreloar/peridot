@@ -6,7 +6,6 @@ use std::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    engine::wrapper::serde::PSerialize,
     engine::QueueMetadata,
     message::{
         sink::MessageSink,
@@ -16,7 +15,7 @@ use crate::{
         fork::PipelineFork, forward::PipelineForward, join::Join, join_by::JoinBy,
         map::MapPipeline, sink::MessageSinkFactory,
     },
-    state::table::IntoView,
+    state::backend::IntoView,
 };
 
 pub mod serialiser;
@@ -47,12 +46,8 @@ pub trait PipelineStreamExt: PipelineStream {
     fn forward<SF>(self, sink: SF) -> PipelineForward<Self, SF>
     where
         SF: MessageSinkFactory + Send + 'static,
-        <SF::SinkType as MessageSink>::KeySerType: PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::KeyType>
-            + Send
-            + 'static,
-        <SF::SinkType as MessageSink>::ValueSerType: PSerialize<Input = <<Self as PipelineStream>::MStream as MessageStream>::ValueType>
-            + Send
-            + 'static,
+        <SF::SinkType as MessageSink>::KeyType: Send + 'static,
+        <SF::SinkType as MessageSink>::ValueType: Send + 'static,
         Self: Sized,
     {
         PipelineForward::new(self, sink)

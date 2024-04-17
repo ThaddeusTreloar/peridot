@@ -8,7 +8,7 @@ use futures::Stream;
 use parking_lot::Mutex;
 use rdkafka::{consumer::base_consumer::PartitionQueue, message::OwnedMessage};
 
-use crate::{app::extensions::PeridotConsumerContext, message::types::PeridotTimestamp};
+use crate::app::extensions::PeridotConsumerContext;
 
 type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
 

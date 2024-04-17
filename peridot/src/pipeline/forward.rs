@@ -10,7 +10,6 @@ use pin_project_lite::pin_project;
 use crate::{
     app::error::PeridotAppRuntimeError,
     engine::util::ExactlyOnce,
-    engine::wrapper::serde::PSerialize,
     message::{
         forward::Forward,
         sink::MessageSink,
@@ -60,11 +59,11 @@ where
     S: PipelineStream + Send + 'static,
     S::MStream: MessageStream + Send + 'static,
     SF: MessageSinkFactory + Send + 'static,
-    SF::SinkType: Send + 'static,
-    <SF::SinkType as MessageSink>::KeySerType:
-        PSerialize<Input = <S::MStream as MessageStream>::KeyType>,
-    <SF::SinkType as MessageSink>::ValueSerType:
-        PSerialize<Input = <S::MStream as MessageStream>::ValueType>,
+    SF::SinkType: MessageSink<
+            KeyType = <S::MStream as MessageStream>::KeyType,
+            ValueType = <S::MStream as MessageStream>::ValueType,
+        > + Send
+        + 'static,
 {
     type Output = Result<(), PeridotAppRuntimeError>;
 
