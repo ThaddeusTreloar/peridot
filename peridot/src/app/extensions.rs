@@ -235,6 +235,6 @@ impl ConsumerContext for PeridotConsumerContext {
     }
 
     fn main_queue_min_poll_interval(&self) -> Timeout {
-        self.max_poll_interval.clone()
+        self.max_poll_interval
     }
 }

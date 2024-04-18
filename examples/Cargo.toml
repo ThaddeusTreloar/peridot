@@ -10,24 +10,8 @@ authors = {workspace = true}
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "app"
-path = "src/app.rs"
-
-[[bin]]
-name = "app-table-test"
-path = "src/app-table-test.rs"
-
-[[bin]]
-name = "app-stream-eos"
-path = "src/app-stream-eos.rs"
-
-[[bin]]
 name = "app-message-closures"
 path = "src/app-message-closures.rs"
-
-[[bin]]
-name = "app-message-stream"
-path = "src/app-message-stream.rs"
 
 [[bin]]
 name = "app-message-task"

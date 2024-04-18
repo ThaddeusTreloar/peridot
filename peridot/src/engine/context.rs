@@ -19,7 +19,7 @@ pub trait EngineContext {
 
 #[derive(Clone)]
 pub struct PeridotEngineContext<P, T, B> {
-    engine_ref: Arc<AppEngine<B>>,
+    _engine_ref: Arc<AppEngine<B>>,
     partitioner: Arc<P>,
     timestamp_extractor: Arc<T>,
 }
@@ -31,7 +31,7 @@ impl<P, T, B> PeridotEngineContext<P, T, B> {
         timestamp_extractor: Arc<T>,
     ) -> Self {
         PeridotEngineContext {
-            engine_ref,
+            _engine_ref: engine_ref,
             partitioner,
             timestamp_extractor,
         }

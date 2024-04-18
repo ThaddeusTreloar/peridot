@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     pin::Pin,
     sync::Arc,
     task::{ready, Context, Poll},
@@ -19,6 +18,8 @@ use crate::{
     state::backend::{facade::StateFacade, StateBackend, WriteableStateView},
 };
 
+type PendingCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>>>>>;
+
 pin_project! {
     pub struct StateSink<B, K, V>
     where
@@ -29,13 +30,7 @@ pin_project! {
         buffer: Vec<Message<K, V>>,
         _key_type: std::marker::PhantomData<K>,
         _value_type: std::marker::PhantomData<V>,
-        pending_commit: Option<
-            Pin<Box<
-                dyn Future<
-                    Output=Result<
-                        (),
-                        B::Error
-        >>>>>,
+        pending_commit: PendingCommit<B::Error>,
     }
 }
 

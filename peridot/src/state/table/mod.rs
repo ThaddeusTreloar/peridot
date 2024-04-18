@@ -16,7 +16,7 @@ use super::backend::StateBackend;
 type TableDownstream<P, B, K, V> =
     PipelineFork<PipelineFork<P, ChangelogSinkFactory<K, V>>, StateSinkFactory<B, K, V>>;
 
-pub struct PeridotTable<P, B>
+pub struct Table<P, B>
 where
     P: PipelineStream + Send + 'static,
     P::MStream: Send + 'static,
@@ -36,7 +36,7 @@ where
     P::KeyType: Clone + Send + 'static,
     P::ValueType: Clone + Send + 'static,
 {
-    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> PeridotTable<P, B>;
+    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> Table<P, B>;
 }
 
 impl<P, B> IntoTable<P, B> for P
@@ -46,12 +46,12 @@ where
     P::KeyType: Clone + Send + 'static,
     P::ValueType: Clone + Send + 'static,
 {
-    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> PeridotTable<P, B> {
-        PeridotTable::new("table".to_string(), app_engine_ref, self)
+    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> Table<P, B> {
+        Table::new("table".to_string(), app_engine_ref, self)
     }
 }
 
-impl<P, B> PeridotTable<P, B>
+impl<P, B> Table<P, B>
 where
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + 'static,

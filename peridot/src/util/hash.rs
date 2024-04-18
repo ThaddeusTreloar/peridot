@@ -22,10 +22,10 @@ pub(crate) fn get_partition_for_key(key_bytes: &[u8], partition_count: i32) -> i
         rd_kafka_msg_partitioner_murmur2(
             null(),
             key_bytes.as_ptr() as *const c_void,
-            key_bytes.len() as usize,
+            key_bytes.len(),
             partition_count,
-            null_mut() as *mut c_void,
-            null_mut() as *mut c_void,
+            null_mut(),
+            null_mut(),
         )
     }
 }

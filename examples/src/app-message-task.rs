@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 
-use peridot::app::PeridotApp;
+use peridot::app::builder::AppBuilder;
 use peridot::engine::util::ExactlyOnce;
+use peridot::engine::wrapper::serde::Json;
 use peridot::init::init_tracing;
 use peridot::message::types::{KeyValue, Value};
 use peridot::pipeline::stream::{PipelineStream, PipelineStreamExt};
-use peridot::serde_ext::Json;
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use peridot::task::Task;
 use rdkafka::ClientConfig;
@@ -76,12 +76,12 @@ fn filtering_task(
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
 
-    let mut source = ClientConfig::new();
+    let mut client_config = ClientConfig::new();
 
     let group = "rust-test71";
     let group_instance = "peridot-instance-1";
 
-    source
+    client_config
         .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
@@ -90,12 +90,15 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
+    let mut app = AppBuilder::new()
+        .with_client_config(client_config)
+        .with_delivery_guarantee::<ExactlyOnce>()
+        .with_state_backend::<InMemoryStateBackend>()
+        .build()
+        .expect("Failed to build app.");
 
-    //let table_a = app.table::<String, Topic, _>("topicTable");
-
-    let consent_table = app.task::<String, Json<ConsentGrant>>("consent.Client")
-        .into_table::<InMemoryStateBackend<_, _>>("consent");
+    let _consent_table = app.task::<String, Json<ConsentGrant>>("consent.Client")
+        .into_table("consent");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .and_then(partial_task)

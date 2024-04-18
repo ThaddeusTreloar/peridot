@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 
-use peridot::app::PeridotApp;
-use peridot::engine::util::ExactlyOnce;
+use peridot::app::builder::AppBuilder;
+use peridot::engine::wrapper::serde::Json;
 use peridot::init::init_tracing;
-use peridot::message::types::{KeyValue, Value};
-use peridot::pipeline::stream::{PipelineStream, PipelineStreamExt};
-use peridot::serde_ext::Json;
+use peridot::message::types::KeyValue;
 use peridot::task::Task;
 use rdkafka::ClientConfig;
 
@@ -60,12 +58,12 @@ struct Client {
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
 
-    let mut source = ClientConfig::new();
+    let mut client_config = ClientConfig::new();
 
     let group = "rust-test35";
     let group_instance = "peridot-instance-1";
 
-    source
+    client_config
         .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
@@ -74,7 +72,10 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let mut app: PeridotApp<ExactlyOnce> = PeridotApp::from_client_config(&source)?;
+    let mut app = AppBuilder::new()
+        .with_client_config(client_config)
+        .build()
+        .expect("Failed to build app.");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .map(|kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address)))

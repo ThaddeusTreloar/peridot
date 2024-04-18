@@ -2,22 +2,24 @@ use std::fmt::Display;
 
 use crate::{
     app::PeridotApp,
-    engine::util::ExactlyOnce,
-    engine::wrapper::serde::PSerialize,
+    engine::{util::DeliveryGuaranteeType, wrapper::serde::PSerialize},
     message::types::{FromMessage, PatchMessage},
     pipeline::{
         map::MapPipeline,
         sink::print_sink::PrintSinkFactory,
         stream::{PipelineStream, PipelineStreamExt},
-    },
+    }, state::{backend::StateBackend, table::Table},
 };
 
-use self::{transform::TransformTask, transparent::TransparentTask};
+use self::transform::TransformTask;
 
 pub mod transform;
 pub mod transparent;
 
+/*
 pub trait IntoTask {
+    type G: DeliveryGuaranteeType;
+    type B: StateBackend + Send + 'static;
     type R: PipelineStream + Send;
 
     fn into_task<'a>(self, app: &'a mut PeridotApp<ExactlyOnce>) -> impl Task<'a, R = Self::R>;
@@ -32,12 +34,14 @@ where
     fn into_task<'a>(self, app: &'a mut PeridotApp<ExactlyOnce>) -> impl Task<'a, R = Self::R> {
         TransparentTask::new(app, self)
     }
-}
+} */
 
 pub trait Task<'a> {
+    type G: DeliveryGuaranteeType;
+    type B: StateBackend + Send + Sync + 'static;
     type R: PipelineStream + Send + 'static;
 
-    fn and_then<F1, R1>(self, next: F1) -> TransformTask<'a, F1, Self::R, R1>
+    fn and_then<F1, R1>(self, next: F1) -> TransformTask<'a, F1, Self::R, R1, Self::B, Self::G>
     where
         F1: Fn(Self::R) -> R1,
         R1: PipelineStream + Send + 'static,
@@ -57,6 +61,8 @@ pub trait Task<'a> {
         impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
         Self::R,
         MapPipeline<Self::R, MF, ME, MR>,
+        Self::B, 
+        Self::G
     >
     where
         MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
@@ -78,20 +84,24 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(app, move |input| input.map(next.clone()), output)
     }
 
-    fn into_table(self, _table_name: &str)
+    fn into_table(self, table_name: &str) -> Table<Self::R, Self::B>
     where
-        Self: Sized,
+        <Self::R as PipelineStream>::KeyType: Clone + Send + 'static,
+        <Self::R as PipelineStream>::ValueType: Clone + Send + 'static,
+        Self: Sized + 'a,
     {
         let (app, output) = self.into_parts();
 
         app.engine_ref()
+            .register_table(table_name.to_owned())
+            .expect("Table already registered.");
 
         unimplemented!("into_table")
     }
 
     fn into_pipeline(self) -> Self::R;
 
-    fn into_parts(self) -> (&'a mut PeridotApp<ExactlyOnce>, Self::R);
+    fn into_parts(self) -> (&'a mut PeridotApp<Self::B, Self::G>, Self::R);
 
     fn into_topic<KS, VS>(self, _topic: &str)
     where
@@ -101,7 +111,7 @@ pub trait Task<'a> {
         <Self::R as PipelineStream>::ValueType: Display,
         KS::Input: Send + 'static,
         VS::Input: Send + 'static,
-        Self: Sized,
+        Self: Sized + 'a,
         Self::R: PipelineStreamExt,
     {
         let sink_factory = PrintSinkFactory::<KS, VS>::new();

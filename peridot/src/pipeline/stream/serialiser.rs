@@ -43,7 +43,7 @@ where
     }
 }
 
-impl<'a, KS, VS, G> PipelineStream for SerialiserPipeline<KS, VS, G>
+impl<KS, VS, G> PipelineStream for SerialiserPipeline<KS, VS, G>
 where
     KS: PDeserialize + Send,
     VS: PDeserialize + Send,

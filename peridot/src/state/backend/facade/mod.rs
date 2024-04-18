@@ -4,8 +4,7 @@ use futures::Future;
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::{
-    ReadableStateView, ReadableVersionedStateView, StateBackend, VersionedRecord,
-    VersionedStateBackend, WriteableStateView, WriteableVersionedStateView,
+    ReadableStateView, StateBackend, WriteableStateView,
 };
 
 //pub mod global_facade;

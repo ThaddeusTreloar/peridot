@@ -13,7 +13,9 @@ pub struct PeridotConfig {
 }
 
 fn gen_config_fields() -> HashSet<&'static str> {
-    let fields = HashSet::new();
+    let mut fields = HashSet::new();
+
+    // Compulsory fields
 
     fields
 }

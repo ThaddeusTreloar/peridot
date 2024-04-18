@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use futures::Future;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 
 use super::{StateBackend, StateBackendContext};
 
+#[derive(Default)]
 pub struct InMemoryStateBackend {
     store: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
 }
@@ -14,14 +14,6 @@ impl InMemoryStateBackend {}
 
 #[derive(Debug, thiserror::Error)]
 pub enum InMemoryStateBackendError {}
-
-impl Default for InMemoryStateBackend {
-    fn default() -> Self {
-        InMemoryStateBackend {
-            store: Default::default(),
-        }
-    }
-}
 
 impl StateBackendContext for InMemoryStateBackend {
     async fn with_topic_name_and_partition(_topic_name: &str, _partition: i32) -> Self {
@@ -36,93 +28,85 @@ impl StateBackendContext for InMemoryStateBackend {
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
 
-    fn get<K, V>(
+    async fn get<K, V>(
         self: Arc<Self>,
         key: K,
         store: Arc<String>,
-    ) -> impl Future<Output = Result<Option<V>, Self::Error>> + Send
+    ) -> Result<Option<V>, Self::Error>
     where
         K: Serialize + Send,
         V: DeserializeOwned,
     {
-        async move {
-            let store = self.store.get(store.as_ref()).expect("Failed to get store");
+        let store = self.store.get(store.as_ref()).expect("Failed to get store");
 
-            let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
+        let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
-            match store.get(&key_bytes).map(|v| v.value().clone()) {
-                None => Ok(None),
-                Some(value_bytes) => {
-                    let value: V =
-                        bincode::deserialize(&value_bytes).expect("Failed to deserialize value");
+        match store.get(&key_bytes).map(|v| v.value().clone()) {
+            None => Ok(None),
+            Some(value_bytes) => {
+                let value: V =
+                    bincode::deserialize(&value_bytes).expect("Failed to deserialize value");
 
-                    Ok(Some(value))
-                }
+                Ok(Some(value))
             }
         }
     }
 
-    fn put<K, V>(
+    async fn put<K, V>(
         self: Arc<Self>,
         key: K,
         value: V,
         store: Arc<String>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send,
     {
-        async move {
+        let store = self.store.get(store.as_ref()).expect("Failed to get store");
+
+        let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
+        let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
+
+        store.insert(key_bytes, value_byte);
+
+        Ok(())
+    }
+
+    async fn put_range<K, V>(
+        self: Arc<Self>,
+        range: Vec<(K, V)>,
+        store: Arc<String>,
+    ) -> Result<(), Self::Error>
+    where
+        K: Serialize + Send,
+        V: Serialize + Send,
+    {
+        for (key, value) in range {
             let store = self.store.get(store.as_ref()).expect("Failed to get store");
 
             let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
             let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
 
             store.insert(key_bytes, value_byte);
-
-            Ok(())
         }
+
+        Ok(())
     }
 
-    fn put_range<K, V>(
-        self: Arc<Self>,
-        range: Vec<(K, V)>,
-        store: Arc<String>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send
-    where
-        K: Serialize + Send,
-        V: Serialize + Send,
-    {
-        async move {
-            for (key, value) in range {
-                let store = self.store.get(store.as_ref()).expect("Failed to get store");
-
-                let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
-                let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
-
-                store.insert(key_bytes, value_byte);
-            }
-
-            Ok(())
-        }
-    }
-
-    fn delete<K>(
+    async fn delete<K>(
         self: Arc<Self>,
         key: K,
         store: Arc<String>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
     {
-        async move {
-            let store = self.store.get(store.as_ref()).expect("Failed to get store");
+        let store = self.store.get(store.as_ref()).expect("Failed to get store");
 
-            let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
+        let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
-            store.remove(&key_bytes);
+        store.remove(&key_bytes);
 
-            Ok(())
-        }
+        Ok(())
     }
 }

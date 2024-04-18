@@ -7,6 +7,7 @@ use crate::{
 
 use super::MessageSinkFactory;
 
+#[derive(Default)]
 pub struct PrintSinkFactory<KS, VS> {
     _key_ser_type: PhantomData<KS>,
     _value_ser_type: PhantomData<VS>,

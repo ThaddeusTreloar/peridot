@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use futures::Future;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::message::types::PeridotTimestamp;
 

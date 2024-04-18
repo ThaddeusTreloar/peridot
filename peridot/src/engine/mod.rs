@@ -101,10 +101,9 @@ pub struct AppEngine<B, G = ExactlyOnce> {
     consumer: Arc<PeridotConsumer>,
     waker_context: Arc<PeridotConsumerContext>,
     downstreams: Arc<DashMap<String, RawQueueForwarder>>,
-    state_streams: Arc<DashSet<String>>,
     engine_state: Arc<AtomicCell<EngineState>>,
     state_stores: StateStoreMap<B>,
-    table_metadata: Arc<DashMap<String, String>>,
+    table_metadata: Arc<DashSet<String>>,
     source_topic_metadata: Arc<DashMap<String, TopicMetadata>>,
     _delivery_guarantee: PhantomData<G>,
 }
@@ -118,10 +117,10 @@ where
         topic: String,
         partition_count: i32,
     ) -> Result<(), EngineInitialisationError> {
-        if let Some(_) = self.source_topic_metadata.get(topic.as_str()) {
-            return Err(EngineInitialisationError::ConflictingTopicRegistration(
+        if self.source_topic_metadata.get(topic.as_str()).is_some() {
+            Err(EngineInitialisationError::ConflictingTopicRegistration(
                 topic,
-            ));
+            ))
         } else {
             self.source_topic_metadata
                 .insert(topic.clone(), TopicMetadata::new(partition_count));
@@ -135,10 +134,7 @@ where
     }
 
     pub fn get_source_topic_for_table(&self, table_name: &str) -> Option<String> {
-        match self.table_metadata.get(table_name) {
-            Some(topic) => Some(topic.clone()),
-            None => None,
-        }
+        self.table_metadata.get(table_name).map(|topic| topic.clone())
     }
 
     pub fn get_table_partition_count(&self, table_name: &str) -> Option<i32> {
@@ -152,14 +148,12 @@ where
     pub fn register_table(
         &self,
         table_name: String,
-        source_topic: String,
     ) -> Result<(), TableRegistrationError> {
-        if self.table_metadata.contains_key(&table_name) {
-            return Err(TableRegistrationError::TableAlreadyRegistered);
+        if self.table_metadata.contains(&table_name) {
+            Err(TableRegistrationError::TableAlreadyRegistered)
         } else {
             self.table_metadata
-                .insert(table_name.clone(), source_topic.clone());
-            self.state_streams.insert(source_topic.clone());
+                .insert(table_name.clone());
             Ok(())
         }
     }
@@ -183,10 +177,8 @@ where
             .expect("Table not registered")
             .clone();
 
-        match self.state_stores.get(&(source_topic, partition)) {
-            Some(store) => Some(store.clone()),
-            None => None,
-        }
+        self.state_stores.get(&(source_topic, partition))
+            .map(|store|store.clone())
     }
 
     pub fn get_state_store(&self, source_topic: String, partition: i32) -> Arc<BT> {
@@ -230,7 +222,7 @@ where
         let queue_distributor = QueueDistributor::new(
             self.consumer.clone(),
             self.downstreams.clone(),
-            self.state_streams.clone(),
+            self.table_metadata.clone(),
             self.engine_state.clone(),
             pre_rebalance_waker,
         );
@@ -257,7 +249,6 @@ where
             consumer: Arc::new(consumer),
             waker_context: Arc::new(context),
             downstreams: Default::default(),
-            state_streams: Default::default(),
             engine_state: Default::default(),
             state_stores: Default::default(),
             table_metadata: Default::default(),
@@ -270,7 +261,7 @@ where
         let consumer = self.consumer.clone();
         let downstreams = self.downstreams.clone();
         let state = self.engine_state.clone();
-        let state_streams = self.state_streams.clone();
+        let state_streams = self.table_metadata.clone();
 
         tokio::spawn(async move {
             loop {
@@ -412,7 +403,7 @@ where
         let interval = Duration::from_millis(1000);
         let consumer = self.consumer.clone();
         let consumer_state = self.engine_state.clone();
-        let state_streams = self.state_streams.clone();
+        let state_streams = self.table_metadata.clone();
 
         tokio::spawn(async move {
             'outer: loop {

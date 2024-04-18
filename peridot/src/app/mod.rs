@@ -5,14 +5,11 @@ use rdkafka::{consumer::BaseConsumer, ClientConfig};
 use tracing::info;
 
 use crate::{
-    app::extensions::PeridotConsumerContext,
-    engine::{
+    app::extensions::PeridotConsumerContext, engine::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         wrapper::serde::PDeserialize,
         AppEngine,
-    },
-    pipeline::stream::serialiser::SerialiserPipeline,
-    task::transparent::TransparentTask,
+    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend}, task::transparent::TransparentTask
 };
 
 use self::{
@@ -31,31 +28,32 @@ type Job = Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Sen
 type JobList = Box<Job>;
 
 #[derive()]
-pub struct PeridotApp<G = ExactlyOnce>
+pub struct PeridotApp<B = InMemoryStateBackend, G = ExactlyOnce>
 where
     G: DeliveryGuaranteeType,
 {
     _config: PeridotConfig,
     jobs: Vec<JobList>,
-    engine: Arc<AppEngine<()>>,
-    app_builder: StreamBuilder<ExactlyOnce>,
+    engine: Arc<AppEngine<B>>,
+    app_builder: StreamBuilder<B, ExactlyOnce>,
     _phantom: std::marker::PhantomData<G>,
 }
 
-pub struct StreamBuilder<G>
+pub struct StreamBuilder<B, G>
 where
     G: DeliveryGuaranteeType,
 {
-    engine: Arc<AppEngine<(), ExactlyOnce>>,
+    engine: Arc<AppEngine<B, ExactlyOnce>>,
     _phantom: std::marker::PhantomData<G>,
 }
 
-impl<G> StreamBuilder<G>
+impl<B, G> StreamBuilder<B, G>
 where
     G: DeliveryGuaranteeType,
+    B: Send + Sync + 'static,
 {
-    pub fn from_engine(engine: Arc<AppEngine<(), ExactlyOnce>>) -> Self {
-        Self {
+    pub fn from_engine<NB>(engine: Arc<AppEngine<NB, ExactlyOnce>>) -> StreamBuilder<NB, G> {
+        StreamBuilder::<NB, G> {
             engine,
             _phantom: std::marker::PhantomData,
         }
@@ -74,7 +72,11 @@ where
     }
 }
 
-impl PeridotApp<ExactlyOnce> {
+impl<B, G> PeridotApp<B, G> 
+where
+    G: DeliveryGuaranteeType,
+    B: StateBackend + Send + Sync + 'static,
+{
     pub fn from_client_config(config: &ClientConfig) -> Result<Self, PeridotAppCreationError> {
         let config = PeridotConfig::from(config);
 
@@ -87,7 +89,7 @@ impl PeridotApp<ExactlyOnce> {
             _config: config,
             jobs: Default::default(),
             engine,
-            app_builder: StreamBuilder::from_engine(engine_ref),
+            app_builder: StreamBuilder::<B, _>::from_engine(engine_ref),
             _phantom: std::marker::PhantomData,
         })
     }
@@ -95,7 +97,7 @@ impl PeridotApp<ExactlyOnce> {
     pub fn task<'a, KS, VS>(
         &'a mut self,
         topic: &'a str,
-    ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, ExactlyOnce>>
+    ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, ExactlyOnce>, B, G>
     where
         KS: PDeserialize + Send + 'static,
         VS: PDeserialize + Send + 'static,
@@ -120,7 +122,7 @@ impl PeridotApp<ExactlyOnce> {
             _config: config.clone(),
             jobs: Default::default(),
             engine,
-            app_builder: StreamBuilder::from_engine(engine_ref),
+            app_builder: StreamBuilder::<B, _>::from_engine(engine_ref),
             _phantom: std::marker::PhantomData,
         })
     }
@@ -129,11 +131,11 @@ impl PeridotApp<ExactlyOnce> {
         self.jobs.push(Box::new(job));
     }
 
-    pub fn stream_builder(&self) -> &StreamBuilder<ExactlyOnce> {
+    pub fn stream_builder(&self) -> &StreamBuilder<B, ExactlyOnce> {
         &self.app_builder
     }
 
-    pub fn engine_ref(&self) -> Arc<AppEngine<(), ExactlyOnce>> {
+    pub fn engine_ref(&self) -> Arc<AppEngine<B, ExactlyOnce>> {
         self.engine.clone()
     }
 
@@ -143,7 +145,7 @@ impl PeridotApp<ExactlyOnce> {
         let job_results = self
             .jobs
             .into_iter()
-            .map(|job| tokio::spawn(job))
+            .map(tokio::spawn)
             .collect::<Vec<_>>();
 
         self.engine.run().await?;

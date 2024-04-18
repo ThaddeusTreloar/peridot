@@ -60,7 +60,7 @@ fn forward_partitions(
     engine_state: &Arc<AtomicCell<EngineState>>,
 ) {
     info!("Handling rebalance");
-    let (_state, mut for_downstream): (Vec<_>, Vec<_>) = partitions
+    let (_state, for_downstream): (Vec<_>, Vec<_>) = partitions
         .elements()
         .into_iter()
         .map(|tp| (tp.topic().to_string(), tp.partition()))
@@ -94,7 +94,7 @@ fn forward_partitions(
         }),
         );*/
 
-    let count = for_downstream.iter().count();
+    let count = for_downstream.len();
 
     if count == 0 {
         info!("No new partitions assigned, skipping...");
@@ -141,12 +141,9 @@ impl Future for QueueDistributor {
         let mut this = self.project();
 
         loop {
-            match this.sleep.as_mut() {
-                Some(sleep) => {
-                    ready!(sleep.as_mut().poll(cx));
-                    let _ = this.sleep.take();
-                }
-                _ => (),
+            if let Some(sleep) = this.sleep.as_mut() {
+                ready!(sleep.as_mut().poll(cx));
+                let _ = this.sleep.take();
             }
 
             // TODO: Check for failed queues and reassign them before the next poll.
