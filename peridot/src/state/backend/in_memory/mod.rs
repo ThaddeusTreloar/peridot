@@ -1,11 +1,16 @@
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use futures::Future;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use super::{StateBackend, StateBackendContext};
 
 pub struct InMemoryStateBackend {
-    store: DashMap<Vec<u8>, Vec<u8>>,
+    store: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
 }
+
+impl InMemoryStateBackend {}
 
 #[derive(Debug, thiserror::Error)]
 pub enum InMemoryStateBackendError {}
@@ -32,43 +37,92 @@ impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
 
     fn get<K, V>(
-        &self,
-        _key: &K,
-        _store: &str,
-    ) -> impl Future<Output = Result<Option<V>, Self::Error>> + Send {
-        //Ok(self.store.get(key).map(|v| v.value()))
-        async { unimplemented!("Get") }
+        self: Arc<Self>,
+        key: K,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<Option<V>, Self::Error>> + Send
+    where
+        K: Serialize + Send,
+        V: DeserializeOwned,
+    {
+        async move {
+            let store = self.store.get(store.as_ref()).expect("Failed to get store");
+
+            let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
+
+            match store.get(&key_bytes).map(|v| v.value().clone()) {
+                None => Ok(None),
+                Some(value_bytes) => {
+                    let value: V =
+                        bincode::deserialize(&value_bytes).expect("Failed to deserialize value");
+
+                    Ok(Some(value))
+                }
+            }
+        }
     }
 
     fn put<K, V>(
-        &self,
-        _key: &K,
-        _value: &V,
-        _store: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        //self.store.insert(key.clone(), value.clone());
-        async { unimplemented!("Put") }
+        self: Arc<Self>,
+        key: K,
+        value: V,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize + Send,
+        V: Serialize + Send,
+    {
+        async move {
+            let store = self.store.get(store.as_ref()).expect("Failed to get store");
+
+            let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
+            let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
+
+            store.insert(key_bytes, value_byte);
+
+            Ok(())
+        }
     }
 
     fn put_range<K, V>(
-        &self,
-        _range: Vec<(&K, &V)>,
-        _store: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        //for (key, value) in range {
-        //    self.store.insert(key.clone(), value.clone());
-        //}
+        self: Arc<Self>,
+        range: Vec<(K, V)>,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize + Send,
+        V: Serialize + Send,
+    {
+        async move {
+            for (key, value) in range {
+                let store = self.store.get(store.as_ref()).expect("Failed to get store");
 
-        async { unimplemented!("Put range") }
+                let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
+                let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
+
+                store.insert(key_bytes, value_byte);
+            }
+
+            Ok(())
+        }
     }
 
     fn delete<K>(
-        &self,
-        _key: &K,
-        _store: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        //self.store.remove(key);
+        self: Arc<Self>,
+        key: K,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize + Send,
+    {
+        async move {
+            let store = self.store.get(store.as_ref()).expect("Failed to get store");
 
-        async { unimplemented!("Delete") }
+            let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
+
+            store.remove(&key_bytes);
+
+            Ok(())
+        }
     }
 }

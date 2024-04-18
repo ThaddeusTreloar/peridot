@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use futures::Future;
 use surrealdb::{
@@ -53,34 +53,34 @@ impl StateBackend for PersistentStateBackend {
     type Error = PersistentStateBackendError;
 
     fn get<K, V>(
-        &self,
-        _key: &K,
-        _store: &str,
+        self: Arc<Self>,
+        _key: K,
+        _store: Arc<String>,
     ) -> impl Future<Output = Result<Option<V>, Self::Error>> + Send {
         async { unimplemented!("Get") }
     }
 
     fn put<K, V>(
-        &self,
-        _key: &K,
-        _value: &V,
-        _store: &str,
+        self: Arc<Self>,
+        _key: K,
+        _value: V,
+        _store: Arc<String>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         async { unimplemented!("Put") }
     }
 
     fn put_range<K, V>(
-        &self,
-        _range: Vec<(&K, &V)>,
-        _store: &str,
+        self: Arc<Self>,
+        _range: Vec<(K, V)>,
+        _store: Arc<String>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         async { unimplemented!("PutRange") }
     }
 
     fn delete<K>(
-        &self,
-        _key: &K,
-        _store: &str,
+        self: Arc<Self>,
+        _key: K,
+        _store: Arc<String>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         async { unimplemented!("Delete") }
     }

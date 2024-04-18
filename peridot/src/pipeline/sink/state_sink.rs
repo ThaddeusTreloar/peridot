@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use serde::{de::DeserializeOwned, Serialize};
+
 use crate::{
     engine::{AppEngine, QueueMetadata},
     message::sink::state_sink::StateSink,
@@ -28,8 +30,8 @@ impl<B, K, V> StateSinkFactory<B, K, V> {
 
 impl<B, K, V> MessageSinkFactory for StateSinkFactory<B, K, V>
 where
-    K: Clone,
-    V: Clone,
+    K: Serialize + Clone + Send + 'static,
+    V: Serialize + DeserializeOwned + Clone + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
 {
     type SinkType = StateSink<B, K, V>;

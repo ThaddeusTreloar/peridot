@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use futures::Future;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::message::types::PeridotTimestamp;
 
 pub mod error;
 pub mod facade;
 pub mod in_memory;
-pub mod persistent;
+//pub mod persistent;
 
 struct VersionedRecord<V> {
     pub value: V,
@@ -36,104 +39,130 @@ pub trait StateBackend {
     type Error: std::error::Error;
 
     fn get<K, V>(
-        &self,
-        key: &K,
-        store: &str,
-    ) -> impl Future<Output = Result<Option<V>, Self::Error>> + Send;
+        self: Arc<Self>,
+        key: K,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<Option<V>, Self::Error>> + Send
+    where
+        K: Serialize + Send,
+        V: DeserializeOwned;
     fn put<K, V>(
-        &self,
-        key: &K,
-        value: &V,
-        store: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+        self: Arc<Self>,
+        key: K,
+        value: V,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize + Send,
+        V: Serialize + Send;
     fn put_range<K, V>(
-        &self,
-        range: Vec<(&K, &V)>,
-        store: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+        self: Arc<Self>,
+        range: Vec<(K, V)>,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize + Send,
+        V: Serialize + Send;
     fn delete<K>(
-        &self,
-        key: &K,
-        store: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+        self: Arc<Self>,
+        key: K,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize + Send;
 }
 
 pub trait VersionedStateBackend {
     type Error: std::error::Error;
 
     fn get_version<K, V>(
-        &self,
-        key: &K,
-        store: &str,
+        self: Arc<Self>,
+        key: K,
+        store: Arc<String>,
         at_timestamp: i64,
-    ) -> impl Future<Output = Result<Option<VersionedRecord<V>>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<VersionedRecord<V>>, Self::Error>> + Send
+    where
+        K: Serialize,
+        V: DeserializeOwned;
     fn get_latest_version<K, V>(
-        &self,
-        key: &K,
-        store: &str,
-    ) -> impl Future<Output = Result<Option<VersionedRecord<V>>, Self::Error>> + Send;
+        self: Arc<Self>,
+        key: K,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<Option<VersionedRecord<V>>, Self::Error>> + Send
+    where
+        K: Serialize,
+        V: DeserializeOwned;
     fn put_version<K, V>(
-        &self,
-        key: &K,
-        value: &V,
-        store: &str,
+        self: Arc<Self>,
+        key: K,
+        value: V,
+        store: Arc<String>,
         timestamp: i64,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize,
+        V: DeserializeOwned;
     fn put_range_version<K, V>(
-        &self,
-        range: Vec<(&K, &V, i64)>,
-        store: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+        self: Arc<Self>,
+        range: Vec<(K, V, i64)>,
+        store: Arc<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize,
+        V: DeserializeOwned;
     fn delete_version<K>(
-        &self,
-        key: &K,
-        store: &str,
+        self: Arc<Self>,
+        key: K,
+        store: Arc<String>,
         timestamp: i64,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+    where
+        K: Serialize;
 }
 
 pub trait ReadableStateView {
     type Error: std::error::Error;
-    type KeyType;
-    type ValueType;
+    type KeyType: Serialize + Send;
+    type ValueType: DeserializeOwned + Send;
 
-    fn get<'a>(
-        &'a self,
-        key: &'a Self::KeyType,
-    ) -> impl Future<Output = Result<Option<Self::ValueType>, Self::Error>> + Send + 'a;
+    fn get(
+        self: Arc<Self>,
+        key: Self::KeyType,
+    ) -> impl Future<Output = Result<Option<Self::ValueType>, Self::Error>> + Send;
 }
 pub trait WriteableStateView {
     type Error: std::error::Error;
-    type KeyType;
-    type ValueType;
+    type KeyType: Serialize + Send;
+    type ValueType: Serialize + Send;
 
-    fn put<'a>(
-        &'a self,
-        key: &'a Self::KeyType,
-        value: &'a Self::ValueType,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+    fn put(
+        self: Arc<Self>,
+        key: Self::KeyType,
+        value: Self::ValueType,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn put_range<'a>(
-        &'a self,
-        range: Vec<(&'a Self::KeyType, &'a Self::ValueType)>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+    fn put_range(
+        self: Arc<Self>,
+        range: Vec<(Self::KeyType, Self::ValueType)>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn delete<'a>(
-        &'a self,
-        key: &'a Self::KeyType,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+    fn delete(
+        self: Arc<Self>,
+        key: Self::KeyType,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
+#[trait_variant::make(Send)]
 pub trait ReadableVersionedStateView {
     type Error: std::error::Error;
     type KeyType;
     type ValueType;
 
-    fn get_version<'a>(
-        &'a self,
-        key: &'a Self::KeyType,
+    async fn get_version(
+        self: Arc<Self>,
+        key: Self::KeyType,
         at_timestamp: i64,
-    ) -> impl Future<Output = Result<Option<VersionedRecord<Self::ValueType>>, Self::Error>> + Send + 'a;
+    ) -> Result<Option<VersionedRecord<Self::ValueType>>, Self::Error>;
 }
 
 pub trait WriteableVersionedStateView {
@@ -141,23 +170,23 @@ pub trait WriteableVersionedStateView {
     type KeyType;
     type ValueType;
 
-    fn put_version<'a>(
-        &'a self,
-        key: &'a Self::KeyType,
-        value: &'a Self::ValueType,
+    fn put_version(
+        self: Arc<Self>,
+        key: Self::KeyType,
+        value: Self::ValueType,
         timestamp: i64,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn put_version_range<'a>(
-        &'a self,
-        range: Vec<(&'a Self::KeyType, &'a Self::ValueType, i64)>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+    fn put_version_range(
+        self: Arc<Self>,
+        range: Vec<(Self::KeyType, Self::ValueType, i64)>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn delete_version<'a>(
-        &'a self,
-        key: &'a Self::KeyType,
+    fn delete_version(
+        self: Arc<Self>,
+        key: Self::KeyType,
         timestamp: i64,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
 pub trait ReadWriteStateView<K, V>:

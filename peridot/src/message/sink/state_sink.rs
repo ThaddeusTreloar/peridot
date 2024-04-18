@@ -1,12 +1,14 @@
 use std::{
     collections::VecDeque,
     pin::Pin,
+    sync::Arc,
     task::{ready, Context, Poll},
 };
 
 use futures::Future;
 use pin_project_lite::pin_project;
 use rdkafka::error::KafkaError;
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     engine::QueueMetadata,
@@ -23,8 +25,8 @@ pin_project! {
         B: StateBackend,
     {
         queue_metadata: QueueMetadata,
-        state_facade: StateFacade<K, V, B>,
-        buffer: VecDeque<Message<K, V>>,
+        state_facade: Arc<StateFacade<K, V, B>>,
+        buffer: Vec<Message<K, V>>,
         _key_type: std::marker::PhantomData<K>,
         _value_type: std::marker::PhantomData<V>,
         pending_commit: Option<
@@ -44,7 +46,7 @@ where
     pub fn new(queue_metadata: QueueMetadata, state_facade: StateFacade<K, V, B>) -> Self {
         Self {
             queue_metadata,
-            state_facade,
+            state_facade: Arc::new(state_facade),
             buffer: Default::default(),
             _key_type: Default::default(),
             _value_type: Default::default(),
@@ -69,7 +71,9 @@ where
 
 impl<B, K, V> MessageSink for StateSink<B, K, V>
 where
-    B: StateBackend + Send,
+    B: StateBackend + Send + 'static,
+    K: Serialize + Send + 'static,
+    V: Serialize + DeserializeOwned + Send + 'static
 {
     type Error = StateSinkError;
     type KeyType = K;
@@ -91,13 +95,11 @@ where
                 Poll::Ready(Ok(()))
             }
             None => {
-                let range: Vec<(&K, &V)> = this
-                    .buffer
-                    .iter()
-                    .map(|msg| (msg.key(), msg.value()))
-                    .collect();
+                let range: Vec<(K, V)> = this.buffer.drain(..).map(|m| (m.key, m.value)).collect();
 
-                let commit = Box::pin(this.state_facade.put_range(range));
+                let facade = this.state_facade.clone();
+
+                let commit = Box::pin(facade.put_range(range));
 
                 let _ = this.pending_commit.replace(commit);
 
@@ -123,7 +125,7 @@ where
     ) -> Result<(), Self::Error> {
         let this = self.project();
 
-        this.buffer.push_back(message);
+        this.buffer.push(message);
 
         Ok(())
     }

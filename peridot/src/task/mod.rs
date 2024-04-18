@@ -82,7 +82,9 @@ pub trait Task<'a> {
     where
         Self: Sized,
     {
-        let (_app, _output) = self.into_parts();
+        let (app, output) = self.into_parts();
+
+        app.engine_ref()
 
         unimplemented!("into_table")
     }

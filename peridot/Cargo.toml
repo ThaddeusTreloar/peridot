@@ -33,3 +33,4 @@ tokio = { version = "*", features = ["sync"] }
 tokio-stream = { version = "0.1.14", features = ["sync"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+trait-variant = "0.1.2"
