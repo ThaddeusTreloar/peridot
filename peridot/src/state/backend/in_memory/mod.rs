@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use dashmap::DashMap;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -29,15 +27,15 @@ impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
 
     async fn get<K, V>(
-        self: Arc<Self>,
+        &self,
         key: K,
-        store: Arc<String>,
+        store: &str,
     ) -> Result<Option<V>, Self::Error>
     where
         K: Serialize + Send,
         V: DeserializeOwned,
     {
-        let store = self.store.get(store.as_ref()).expect("Failed to get store");
+        let store = self.store.get(store).expect("Failed to get store");
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
@@ -53,16 +51,16 @@ impl StateBackend for InMemoryStateBackend {
     }
 
     async fn put<K, V>(
-        self: Arc<Self>,
+        &self,
         key: K,
         value: V,
-        store: Arc<String>,
+        store: &str,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send,
     {
-        let store = self.store.get(store.as_ref()).expect("Failed to get store");
+        let store = self.store.get(store).expect("Failed to get store");
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
         let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
@@ -73,16 +71,16 @@ impl StateBackend for InMemoryStateBackend {
     }
 
     async fn put_range<K, V>(
-        self: Arc<Self>,
+        &self,
         range: Vec<(K, V)>,
-        store: Arc<String>,
+        store: &str,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send,
     {
         for (key, value) in range {
-            let store = self.store.get(store.as_ref()).expect("Failed to get store");
+            let store = self.store.get(store).expect("Failed to get store");
 
             let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
             let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
@@ -94,14 +92,14 @@ impl StateBackend for InMemoryStateBackend {
     }
 
     async fn delete<K>(
-        self: Arc<Self>,
+        &self,
         key: K,
-        store: Arc<String>,
+        store: &str,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
     {
-        let store = self.store.get(store.as_ref()).expect("Failed to get store");
+        let store = self.store.get(store).expect("Failed to get store");
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 

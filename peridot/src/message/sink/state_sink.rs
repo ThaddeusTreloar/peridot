@@ -66,9 +66,9 @@ where
 
 impl<B, K, V> MessageSink for StateSink<B, K, V>
 where
-    B: StateBackend + Send + 'static,
-    K: Serialize + Send + 'static,
-    V: Serialize + DeserializeOwned + Send + 'static
+    B: StateBackend + Send + Sync + 'static,
+    K: Serialize + Send + Sync + 'static,
+    V: Serialize + DeserializeOwned + Send + Sync + 'static
 {
     type Error = StateSinkError;
     type KeyType = K;

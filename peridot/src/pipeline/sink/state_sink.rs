@@ -30,8 +30,8 @@ impl<B, K, V> StateSinkFactory<B, K, V> {
 
 impl<B, K, V> MessageSinkFactory for StateSinkFactory<B, K, V>
 where
-    K: Serialize + Clone + Send + 'static,
-    V: Serialize + DeserializeOwned + Clone + Send + 'static,
+    K: Serialize + Clone + Send + Sync + 'static,
+    V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     B: StateBackend + Send + Sync + 'static,
 {
     type SinkType = StateSink<B, K, V>;

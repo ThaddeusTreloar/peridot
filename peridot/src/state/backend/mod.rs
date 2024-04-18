@@ -35,39 +35,43 @@ pub trait StateBackendContext {
     fn get_state_store_time(&self) -> PeridotTimestamp;
 }
 
+#[trait_variant::make(Send)]
 pub trait StateBackend {
     type Error: std::error::Error;
 
-    fn get<K, V>(
-        self: Arc<Self>,
+    async fn get<K, V>(
+        &self,
         key: K,
-        store: Arc<String>,
-    ) -> impl Future<Output = Result<Option<V>, Self::Error>> + Send
+        store: &str,
+    ) -> Result<Option<V>, Self::Error>
     where
         K: Serialize + Send,
         V: DeserializeOwned;
-    fn put<K, V>(
-        self: Arc<Self>,
+
+    async fn put<K, V>(
+        &self,
         key: K,
         value: V,
-        store: Arc<String>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+        store: &str,
+    ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send;
-    fn put_range<K, V>(
-        self: Arc<Self>,
+
+    async fn put_range<K, V>(
+        &self,
         range: Vec<(K, V)>,
-        store: Arc<String>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+        store: &str,
+    ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send;
-    fn delete<K>(
-        self: Arc<Self>,
+
+    async fn delete<K>(
+        &self,
         key: K,
-        store: Arc<String>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send
+        store: &str,
+    ) -> Result<(), Self::Error>
     where
         K: Serialize + Send;
 }
@@ -120,16 +124,18 @@ pub trait VersionedStateBackend {
         K: Serialize;
 }
 
+#[trait_variant::make(Send)]
 pub trait ReadableStateView {
     type Error: std::error::Error;
     type KeyType: Serialize + Send;
     type ValueType: DeserializeOwned + Send;
 
-    fn get(
+    async fn get(
         self: Arc<Self>,
         key: Self::KeyType,
-    ) -> impl Future<Output = Result<Option<Self::ValueType>, Self::Error>> + Send;
+    ) -> Result<Option<Self::ValueType>, Self::Error>;
 }
+
 pub trait WriteableStateView {
     type Error: std::error::Error;
     type KeyType: Serialize + Send;

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use futures::Future;
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::{
@@ -9,18 +8,20 @@ use super::{
 
 //pub mod global_facade;
 
-pub struct StateFacade<K, V, B> {
+pub struct StateFacade<K, V, B> 
+{
     backend: Arc<B>,
-    store_name: Arc<String>,
+    store_name: String,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
 }
 
-impl<K, V, B> StateFacade<K, V, B> {
+impl<K, V, B> StateFacade<K, V, B> 
+{
     pub fn new(backend: Arc<B>, store_name: String) -> Self {
         Self {
             backend,
-            store_name: Arc::new(store_name),
+            store_name,
             _key_type: Default::default(),
             _value_type: Default::default(),
         }
@@ -37,65 +38,53 @@ impl<K, V, B> StateFacade<K, V, B> {
 
 impl<K, V, B> ReadableStateView for StateFacade<K, V, B>
 where
-    B: StateBackend,
-    K: Serialize + Send,
-    V: DeserializeOwned + Send,
-    B::Error: Send,
+    B: StateBackend + Send + Sync,
+    K: Serialize + Send + Sync,
+    V: DeserializeOwned + Send + Sync,
 {
     type Error = B::Error;
     type KeyType = K;
     type ValueType = V;
 
-    fn get(
+    async fn get(
         self: Arc<Self>,
         key: Self::KeyType,
-    ) -> impl Future<Output = Result<Option<Self::ValueType>, Self::Error>> + Send
+    ) -> Result<Option<Self::ValueType>, Self::Error>
     {
-        let backend_ref = self.backend.clone();
-        let store_ref = self.store_name.clone();
-
-        backend_ref.get(key, store_ref.clone())
+        self.backend.get(key, self.store_name()).await
     }
 }
 
 impl<K, V, B> WriteableStateView for StateFacade<K, V, B>
 where
-    B: StateBackend,
-    K: Serialize + Send,
-    V: Serialize + Send,
+    B: StateBackend + Send + Sync,
+    K: Serialize + Send + Sync,
+    V: Serialize + Send + Sync,
+    Self: Send
 {
     type Error = B::Error;
     type KeyType = K;
     type ValueType = V;
 
-    fn put(
+    async fn put(
         self: Arc<Self>,
         key: Self::KeyType,
         value: Self::ValueType,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        let backend_ref = self.backend.clone();
-        let store_ref = self.store_name.clone();
-
-        backend_ref.put(key, value, store_ref)
+    ) -> Result<(), Self::Error> {
+        self.backend.put(key, value, self.store_name()).await
     }
 
-    fn put_range(
+    async fn put_range(
         self: Arc<Self>,
         range: Vec<(Self::KeyType, Self::ValueType)>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        let backend_ref = self.backend.clone();
-        let store_ref = self.store_name.clone();
-
-        backend_ref.put_range(range, store_ref)
+    ) -> Result<(), Self::Error> {
+        self.backend.put_range(range, self.store_name()).await
     }
 
-    fn delete(
+    async fn delete(
         self: Arc<Self>,
         key: Self::KeyType,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        let backend_ref = self.backend.clone();
-        let store_ref = self.store_name.clone();
-
-        backend_ref.delete(key, store_ref)
+    ) -> Result<(), Self::Error> {
+        self.backend.delete(key, self.store_name()).await
     }
 }
