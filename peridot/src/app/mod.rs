@@ -9,7 +9,7 @@ use crate::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         wrapper::serde::PDeserialize,
         AppEngine,
-    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend}, task::transparent::TransparentTask
+    }, pipeline::stream::serialiser::SerialiserPipeline, state::{backend::{in_memory::InMemoryStateBackend, StateBackend}, table::Table}, task::{transparent::TransparentTask, Task}
 };
 
 use self::{
@@ -26,6 +26,7 @@ pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
 
 type Job = Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Send>>;
 type JobList = Box<Job>;
+type TransparentTable<KS, VS, B> = Table<SerialiserPipeline<KS, VS>, B>;
 
 #[derive()]
 pub struct PeridotApp<B = InMemoryStateBackend, G = ExactlyOnce>
@@ -92,6 +93,25 @@ where
             app_builder: StreamBuilder::<B, _>::from_engine(engine_ref),
             _phantom: std::marker::PhantomData,
         })
+    }
+
+    pub fn table<'a, KS, VS>(
+        &'a mut self,
+        topic: &'a str,
+        table_name: &'a str,
+    ) -> TransparentTable<KS, VS, B>
+    where
+        KS: PDeserialize + Send + 'static,
+        VS: PDeserialize + Send + 'static,
+        KS::Output: Clone + Send,
+        VS::Output: Clone + Send,
+    {
+        let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
+            .app_builder
+            .stream(topic)
+            .expect("Failed to create topic");
+
+        TransparentTask::new(self, input).into_table(table_name)
     }
 
     pub fn task<'a, KS, VS>(

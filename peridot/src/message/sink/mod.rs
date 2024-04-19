@@ -7,8 +7,10 @@ use std::{
 use super::types::Message;
 
 pub(crate) mod changelog_sink;
+pub(crate) mod noop_sink;
 pub mod print_sink;
 pub(crate) mod state_sink;
+pub mod topic_sink;
 
 pub trait MessageSink {
     type KeyType;

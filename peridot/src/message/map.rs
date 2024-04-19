@@ -56,11 +56,11 @@ where
             Poll::Ready(Some(msg)) => msg,
         };
 
-        let extractor = E::from_message(&msg);
+        let (extractor, partial_message) = E::from_message(msg);
 
         let map_result = (this.callback)(extractor);
 
-        let patched_message = map_result.patch(msg);
+        let patched_message = map_result.patch(partial_message);
 
         Poll::Ready(Some(patched_message))
     }

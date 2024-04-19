@@ -61,15 +61,15 @@ fn partial_task(
     input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
 ) -> impl PipelineStream<KeyType = String, ValueType = String> + Send {
     input
-        .map(|kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address)))
+        .map(|Value(coa)| Value(coa))
+        .map(|KeyValue::<String, ChangeOfAddress>(key, value)| KeyValue(key, value.address))
         .map(|(key, value)| (key, value))
-        .map(|value: String| Value::from(value))
 }
 
 fn filtering_task(
     input: impl PipelineStream<KeyType = String, ValueType = String> + Send,
 ) -> impl PipelineStream<KeyType = String, ValueType = String> + Send {
-    input.map(|kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value)))
+    input.map(|KeyValue(key, value): KeyValue<String, String>| KeyValue(key, value))
 }
 
 #[tokio::main]
@@ -97,25 +97,12 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .expect("Failed to build app.");
 
-    let _consent_table = app.task::<String, Json<ConsentGrant>>("consent.Client")
-        .into_table("consent");
+    let _consent_table = app.table::<String, Json<ConsentGrant>>("consent.Client", "consent_table");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .and_then(partial_task)
         .and_then(filtering_task)
         .into_topic::<String, String>("genericTopic");
-
-    /*let task_b = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress2", partial_task)
-        .into_pipeline();
-
-    let task_c = app.task::<String, Json<ChangeOfAddress>, _, _>("changeOfAddress3", partial_task)
-        .into_pipeline();
-
-    let htask = app.head_task::<String, Json<ChangeOfAddress>>("topic");
-
-    let joined_task = join_task(task_b, task_c);
-
-    app.job_from_pipeline::<PrintSink<String, String>, _>("sinkTopic", joined_task);*/
 
     app.run().await?;
 

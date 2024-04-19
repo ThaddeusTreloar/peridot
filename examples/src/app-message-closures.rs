@@ -78,8 +78,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .expect("Failed to build app.");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
-        .map(|kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address)))
-        .map(|kv: KeyValue<String, String>| KeyValue::from((kv.key, kv.value)))
+        .map(|kv: KeyValue<String, ChangeOfAddress>| KeyValue(kv.0, kv.1.address))
+        .map(|kv: KeyValue<String, String>| KeyValue(kv.0, kv.1))
         .into_topic::<String, String>("genericTopic");
 
     app.run().await?;
