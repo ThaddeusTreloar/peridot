@@ -4,6 +4,7 @@ use crate::message::types::{partial_message, FromMessage, Message, PatchMessage}
 
 pub struct KeyValue<K, V>(pub K, pub V);
 
+/*
 impl<K, V> FromMessage<K, V> for (K, V)
 {
     fn from_message(
@@ -64,7 +65,7 @@ impl<K, V, KR, VR> PatchMessage<K, V> for (KR, VR) {
         }
     }
 }
-
+ */
 
 impl<K, V> FromMessage<K, V> for KeyValue<K, V>
 {

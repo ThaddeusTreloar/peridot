@@ -61,9 +61,9 @@ fn partial_task(
     input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
 ) -> impl PipelineStream<KeyType = String, ValueType = String> + Send {
     input
-        .map(|Value(coa)| Value(coa))
-        .map(|(key, value)| (key, value.address))
-        .map(|(key, value)| (key, value))
+        .map(|Value(coa)| coa)
+        .map(|KeyValue(key, value)| KeyValue(key, value.address))
+        .map(|KeyValue(key, value)| KeyValue(key, value))
 }
 
 fn filtering_task(
