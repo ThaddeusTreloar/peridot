@@ -3,12 +3,10 @@ use std::fmt::Display;
 use crate::{
     app::PeridotApp,
     engine::{util::DeliveryGuaranteeType, wrapper::serde::PSerialize},
-    message::types::{FromMessage, PatchMessage},
+    message::{join::Combiner, types::{FromMessage, PatchMessage}},
     pipeline::{
-        map::MapPipeline,
-        sink::print_sink::PrintSinkFactory,
-        stream::{PipelineStream, PipelineStreamExt},
-    }, state::backend::StateBackend,
+        join::JoinPipeline, map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
+    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend},
 };
 
 use self::{table::TableTask, transform::TransformTask};
@@ -54,12 +52,43 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(app, next, output)
     }
 
+    fn join<T, C, RV>(self, table: T, combiner: C) -> TransformTask<
+        'a,
+        impl FnOnce(Self::R) -> JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C, RV>,
+        Self::R,
+        JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C, RV>,
+        Self::B, 
+        Self::G
+    >
+    where
+        T: GetViewDistributor + Send + 'a,
+        T::KeyType: Send + Sync + 'static,
+        T::ValueType: Send + Sync + 'static,
+        T::Backend: StateBackend + Sync + 'static,
+        C: Combiner<
+            <Self::R as PipelineStream>::ValueType,
+            T::ValueType,
+            RV
+        > + 'static,
+        RV: Send + 'static,
+        <Self::R as PipelineStream>::KeyType: PartialEq<T::KeyType> + Send,
+        Self: Sized,
+    {
+        let (app, output) = self.into_parts();
+
+        let view = table.get_view_distributor();
+
+        let transform = move |input: Self::R| input.join(view, combiner);
+
+        TransformTask::<'a>::new(app, transform, output)
+    }
+
     fn map<MF, ME, MR>(
         self,
         next: MF,
     ) -> TransformTask<
         'a,
-        impl Fn(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
+        impl FnOnce(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
         Self::R,
         MapPipeline<Self::R, MF, ME, MR>,
         Self::B, 
@@ -82,7 +111,7 @@ pub trait Task<'a> {
     {
         let (app, output) = self.into_parts();
 
-        TransformTask::<'a>::new(app, move |input| input.map(next.clone()), output)
+        TransformTask::<'a>::new(app, move |input| input.map(next), output)
     }
 
     fn into_table(self, table_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>

@@ -5,6 +5,8 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::message::types::PeridotTimestamp;
 
+use self::facade::{FacadeDistributor, StateFacade};
+
 pub mod error;
 pub mod facade;
 pub mod in_memory;
@@ -15,15 +17,27 @@ struct VersionedRecord<V> {
     pub timestamp: i64,
 }
 
-pub trait IntoView {
+pub trait GetViewDistributor {
     type Error: std::error::Error;
     type KeyType;
     type ValueType;
+    type Backend;
 
-    fn into_view(
+    fn get_view_distributor(
         &self,
-        parition: i32,
-    ) -> impl ReadableStateView<KeyType = Self::KeyType, ValueType = Self::ValueType, Error = Self::Error>;
+    ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend>;
+}
+
+pub trait GetView {
+    type Error: std::error::Error;
+    type KeyType;
+    type ValueType;
+    type Backend;
+
+    fn get_view (
+        &self,
+        partition: i32,
+    ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend>;
 }
 
 pub trait StateBackendContext {
@@ -36,7 +50,7 @@ pub trait StateBackendContext {
 }
 
 #[trait_variant::make(Send)]
-pub trait StateBackend {
+pub trait StateBackend: Send {
     type Error: std::error::Error;
 
     async fn get<K, V>(

@@ -8,7 +8,7 @@ use crate::{
         fork::PipelineFork,
         sink::{changelog_sink::ChangelogSinkFactory, state_sink::StateSinkFactory},
         stream::{PipelineStream, PipelineStreamExt},
-    }, state::backend::StateBackend
+    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend}
 };
 
 use super::Task;
@@ -27,7 +27,7 @@ where
     P::ValueType: Clone + Send + 'static,
 {
     app: &'a PeridotApp<B, G>,
-    _name: String,
+    name: String,
     backend_output: TableDownstream<P, B, P::KeyType, P::ValueType>,
     state: Arc<AtomicCell<EngineState>>,
     _delivery_guarantee: PhantomData<G>,
@@ -79,7 +79,7 @@ where
 
         Self {
             app,
-            _name: name,
+            name,
             backend_output,
             state: Default::default(),
             _delivery_guarantee: Default::default(),
@@ -124,3 +124,27 @@ where
         (app, backend_output)
     }
 }
+
+impl<'a, P, B, G> GetViewDistributor for &TableTask<'a, P, B, G> 
+where
+    P: PipelineStream + Send + 'static,
+    B: StateBackend + Send + Sync + 'static,
+    B::Error: Send,
+    P::KeyType: Serialize + Clone + Send + Sync + 'static,
+    P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
+    G: DeliveryGuaranteeType,
+{
+    type Error = B::Error;
+    type KeyType = P::KeyType;
+    type ValueType = P::ValueType;
+    type Backend = B;
+
+    fn get_view_distributor(
+            &self,
+        ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
+        let engine = self.app.engine_ref().clone();
+
+        FacadeDistributor::new(engine, self.name.clone())
+    }
+}
+

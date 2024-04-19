@@ -8,14 +8,13 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::{
     engine::QueueMetadata,
     message::{
-        sink::MessageSink,
-        stream::{ChannelStream, MessageStream, PipelineStage}, types::{FromMessage, PatchMessage},
+        join::Combiner, sink::MessageSink, stream::{ChannelStream, MessageStream, PipelineStage}, types::{FromMessage, PatchMessage}
     },
     pipeline::{
-        fork::PipelineFork, forward::PipelineForward, join::Join, join_by::JoinBy,
+        fork::PipelineFork, forward::PipelineForward, join::JoinPipeline, join_by::JoinBy,
         map::MapPipeline, sink::MessageSinkFactory,
     },
-    state::backend::IntoView,
+    state::backend::{GetView, GetViewDistributor},
 };
 
 pub mod serialiser;
@@ -73,19 +72,19 @@ pub trait PipelineStreamExt: PipelineStream {
     fn filter() {}
     fn fold() {}
 
-    fn join<T, C, RV>(self, table: T, combiner: C) -> Join<Self, T, C>
+    fn join<T, C, RV>(self, table: T, combiner: C) -> JoinPipeline<Self, T, C, RV>
     where
-        T: IntoView + Send + 'static,
-        C: Fn(&Self::ValueType, &T::ValueType) -> RV,
+        T: GetView + Send + 'static,
+        C: Combiner<Self::ValueType, T::ValueType, RV>,
         Self::KeyType: PartialEq<T::KeyType>,
         Self: Sized,
     {
-        Join::new(self, table, combiner)
+        JoinPipeline::new(self, table, combiner)
     }
 
     fn join_by<T, J, C, RV>(self, table: T, joiner: J, combiner: C) -> JoinBy<Self, T, J, C>
     where
-        T: IntoView + Send + 'static,
+        T: GetViewDistributor + Send + 'static,
         J: Fn(&Self::KeyType, &T::KeyType) -> bool,
         C: Fn(&Self::ValueType, &T::ValueType) -> RV,
         Self: Sized,

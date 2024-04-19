@@ -5,7 +5,7 @@ use super::Task;
 #[must_use = "pipelines do nothing unless patched to a topic"]
 pub struct TransformTask<'a, F, I, R, B, G>
 where
-    F: Fn(I) -> R,
+    F: FnOnce(I) -> R,
     I: PipelineStream,
     R: PipelineStream,
     G: DeliveryGuaranteeType,
@@ -17,7 +17,7 @@ where
 
 impl<'a, F, I, R, B, G> TransformTask<'a, F, I, R, B, G>
 where
-    F: Fn(I) -> R,
+    F: FnOnce(I) -> R,
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
     R::MStream: Send + 'static,
@@ -34,7 +34,7 @@ where
 
 impl<'a, F, I, R, B, G> Task<'a> for TransformTask<'a, F, I, R, B, G>
 where
-    F: Fn(I) -> R,
+    F: FnOnce(I) -> R,
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
     G: DeliveryGuaranteeType,

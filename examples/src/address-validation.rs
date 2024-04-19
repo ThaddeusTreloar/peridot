@@ -79,6 +79,10 @@ fn validate_address(Value(address): Value<ChangeOfAddress>) -> Value<ValidatedAd
     Value(validated)
 }
 
+fn combiner(left: ValidatedAddress, right: String) -> String {
+    unimplemented!("")
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
@@ -104,14 +108,12 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .expect("Failed to build app.");
 
-    let s = app.table::<String, String>("asd", "table_name");
+    let joining_table = app.table::<String, String>("asd", "table_name");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .map(validate_address)
+        .join(&joining_table, |_, right| right)// combiner as fn(ValidatedAddress, String) -> String)
         .into_topic::<String, Json<_>>("genericTopic");
-
-    s.map(|KeyValue(k, v)|KeyValue(k, v.len()))
-        .into_topic::<String, Json<usize>>("topic");
 
     app.run().await?;
 

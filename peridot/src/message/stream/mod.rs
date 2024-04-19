@@ -32,10 +32,6 @@ pub trait MessageStream {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>>;
-
-    fn commit(self: Pin<&mut Self>, _commit: StreamCommit, _cx: &mut Context<'_>) -> Poll<()> {
-        Poll::Ready(())
-    }
 }
 
 pub trait MessageStreamExt: MessageStream {}

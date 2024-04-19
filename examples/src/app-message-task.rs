@@ -97,7 +97,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .expect("Failed to build app.");
 
-    let _consent_table = app.table::<String, Json<ConsentGrant>>("consent.Client", "consent_table");
+    let consent_table = app.table::<String, Json<ConsentGrant>>("consent.Client", "consent_table");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .and_then(partial_task)

@@ -1,5 +1,6 @@
 pub mod fork;
 pub mod forward;
+pub mod join;
 pub mod map;
 pub mod sink;
 pub mod stream;
