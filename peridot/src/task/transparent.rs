@@ -9,7 +9,7 @@ where
     B: StateBackend,
     G: DeliveryGuaranteeType,
 {
-    app: &'a mut PeridotApp<B, G>,
+    app: &'a PeridotApp<B, G>,
     output: R,
 }
 
@@ -19,7 +19,7 @@ where
     B: StateBackend,
     G: DeliveryGuaranteeType,
 {
-    pub fn new(app: &'a mut PeridotApp<B, G>, handler: R) -> Self {
+    pub fn new(app: &'a PeridotApp<B, G>, handler: R) -> Self {
         Self {
             app,
             output: handler,
@@ -42,7 +42,7 @@ where
         self.output
     }
 
-    fn into_parts(self) -> (&'a mut PeridotApp<Self::B, Self::G>, Self::R) {
+    fn into_parts(self) -> (&'a PeridotApp<Self::B, Self::G>, Self::R) {
         let Self { app, output, .. } = self;
 
         (app, output)

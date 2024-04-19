@@ -18,7 +18,7 @@ use crate::{
     state::backend::{facade::StateFacade, StateBackend, WriteableStateView},
 };
 
-type PendingCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>>>>>;
+type PendingCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>> + Send>>>;
 
 pin_project! {
     pub struct StateSink<B, K, V>

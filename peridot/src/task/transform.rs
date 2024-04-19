@@ -10,7 +10,7 @@ where
     R: PipelineStream,
     G: DeliveryGuaranteeType,
 {
-    app: &'a mut PeridotApp<B, G>,
+    app: &'a PeridotApp<B, G>,
     handler: F,
     input: I,
 }
@@ -23,7 +23,7 @@ where
     R::MStream: Send + 'static,
     G: DeliveryGuaranteeType,
 {
-    pub fn new(app: &'a mut PeridotApp<B, G>, handler: F, input: I) -> Self {
+    pub fn new(app: &'a PeridotApp<B, G>, handler: F, input: I) -> Self {
         Self {
             app,
             handler,
@@ -48,7 +48,7 @@ where
         (self.handler)(self.input)
     }
 
-    fn into_parts(self) -> (&'a mut PeridotApp<Self::B, Self::G>, Self::R) {
+    fn into_parts(self) -> (&'a PeridotApp<Self::B, Self::G>, Self::R) {
         let Self {
             app,
             handler,

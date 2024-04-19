@@ -17,6 +17,10 @@ path = "src/app-message-closures.rs"
 name = "app-message-task"
 path = "src/app-message-task.rs"
 
+[[bin]]
+name = "address-validation"
+path = "src/address-validation.rs"
+
 [dependencies]
 crossbeam = "0.8.4"
 futures = "0.3.30"

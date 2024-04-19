@@ -8,11 +8,12 @@ use crate::{
         map::MapPipeline,
         sink::print_sink::PrintSinkFactory,
         stream::{PipelineStream, PipelineStreamExt},
-    }, state::{backend::StateBackend, table::Table},
+    }, state::backend::StateBackend,
 };
 
-use self::transform::TransformTask;
+use self::{table::TableTask, transform::TransformTask};
 
+pub mod table;
 pub mod transform;
 pub mod transparent;
 
@@ -84,7 +85,7 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(app, move |input| input.map(next.clone()), output)
     }
 
-    fn into_table(self, table_name: &str) -> Table<Self::R, Self::B>
+    fn into_table(self, table_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
     where
         <Self::R as PipelineStream>::KeyType: Clone + Send + 'static,
         <Self::R as PipelineStream>::ValueType: Clone + Send + 'static,
@@ -96,30 +97,25 @@ pub trait Task<'a> {
             .register_table(table_name.to_owned())
             .expect("Table already registered.");
 
-        unimplemented!("into_table")
+        TableTask::new(app, table_name.to_owned(), output)
     }
 
     fn into_pipeline(self) -> Self::R;
 
-    fn into_parts(self) -> (&'a mut PeridotApp<Self::B, Self::G>, Self::R);
+    fn into_parts(self) -> (&'a PeridotApp<Self::B, Self::G>, Self::R);
 
     fn into_topic<KS, VS>(self, _topic: &str)
     where
         KS: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
-        <Self::R as PipelineStream>::KeyType: Display,
         VS: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
-        <Self::R as PipelineStream>::ValueType: Display,
-        KS::Input: Send + 'static,
-        VS::Input: Send + 'static,
+        KS::Input: Send + Display + 'static,
+        VS::Input: Send + Display + 'static,
         Self: Sized + 'a,
         Self::R: PipelineStreamExt,
     {
         let sink_factory = PrintSinkFactory::<KS, VS>::new();
-
         let (app, output) = self.into_parts();
-
         let job = output.forward(sink_factory);
-
         app.job(Box::pin(job));
     }
 }

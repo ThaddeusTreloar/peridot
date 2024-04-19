@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::{Arc, Mutex}};
 
 use futures::{future::join_all, Future};
 use rdkafka::{consumer::BaseConsumer, ClientConfig};
@@ -9,7 +9,7 @@ use crate::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         wrapper::serde::PDeserialize,
         AppEngine,
-    }, pipeline::stream::serialiser::SerialiserPipeline, state::{backend::{in_memory::InMemoryStateBackend, StateBackend}, table::Table}, task::{transparent::TransparentTask, Task}
+    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend}, task::{table::TableTask, transparent::TransparentTask, Task}
 };
 
 use self::{
@@ -26,7 +26,7 @@ pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
 
 type Job = Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Send>>;
 type JobList = Box<Job>;
-type TransparentTable<KS, VS, B> = Table<SerialiserPipeline<KS, VS>, B>;
+type DirectTableTask<'a, KS, VS, B, G> = TableTask<'a, SerialiserPipeline<KS, VS>, B, G>;
 
 #[derive()]
 pub struct PeridotApp<B = InMemoryStateBackend, G = ExactlyOnce>
@@ -34,7 +34,7 @@ where
     G: DeliveryGuaranteeType,
 {
     _config: PeridotConfig,
-    jobs: Vec<JobList>,
+    jobs: Mutex<Vec<JobList>>,
     engine: Arc<AppEngine<B>>,
     app_builder: StreamBuilder<B, ExactlyOnce>,
     _phantom: std::marker::PhantomData<G>,
@@ -96,10 +96,10 @@ where
     }
 
     pub fn table<'a, KS, VS>(
-        &'a mut self,
+        &'a self,
         topic: &'a str,
         table_name: &'a str,
-    ) -> TransparentTable<KS, VS, B>
+    ) -> DirectTableTask<KS, VS, B, G>
     where
         KS: PDeserialize + Send + 'static,
         VS: PDeserialize + Send + 'static,
@@ -115,7 +115,7 @@ where
     }
 
     pub fn task<'a, KS, VS>(
-        &'a mut self,
+        &'a self,
         topic: &'a str,
     ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, ExactlyOnce>, B, G>
     where
@@ -147,8 +147,11 @@ where
         })
     }
 
-    pub fn job(&mut self, job: Job) {
-        self.jobs.push(Box::new(job));
+    pub(crate) fn job(&self, job: Job) {
+        let mut jobs = self.jobs.lock()
+            .expect("Job lock poinsoned.");
+
+        jobs.push(Box::new(job));
     }
 
     pub fn stream_builder(&self) -> &StreamBuilder<B, ExactlyOnce> {
@@ -162,9 +165,11 @@ where
     pub async fn run(self) -> Result<(), PeridotAppRuntimeError> {
         info!("Running PeridotApp");
 
-        let job_results = self
-            .jobs
-            .into_iter()
+        let jobs = self.jobs.lock();
+
+        let job_results = jobs
+            .expect("Job lock poinsoned!")
+            .drain(..)
             .map(tokio::spawn)
             .collect::<Vec<_>>();
 
