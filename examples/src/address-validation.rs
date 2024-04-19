@@ -110,8 +110,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .map(validate_address)
         .into_topic::<String, Json<_>>("genericTopic");
 
-    s.map(|Value(s)|Value(s))
-        .into_topic::<String, String>("topic");
+    s.map(|KeyValue(k, v)|KeyValue(k, v.len()))
+        .into_topic::<String, Json<usize>>("topic");
 
     app.run().await?;
 

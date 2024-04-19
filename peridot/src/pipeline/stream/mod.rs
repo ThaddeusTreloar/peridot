@@ -9,7 +9,7 @@ use crate::{
     engine::QueueMetadata,
     message::{
         sink::MessageSink,
-        stream::{ChannelStream, MessageStream, PipelineStage},
+        stream::{ChannelStream, MessageStream, PipelineStage}, types::{FromMessage, PatchMessage},
     },
     pipeline::{
         fork::PipelineFork, forward::PipelineForward, join::Join, join_by::JoinBy,
@@ -38,6 +38,15 @@ pub trait PipelineStream {
 pub trait PipelineStreamExt: PipelineStream {
     fn map<F, E, R>(self, f: F) -> MapPipeline<Self, F, E, R>
     where
+        F: Fn(E) -> R,
+        E: FromMessage<
+                Self::KeyType,
+                Self::ValueType,
+            >,
+        R: PatchMessage<
+                Self::KeyType,
+                Self::ValueType,
+            >,
         Self: Sized,
     {
         MapPipeline::new(self, f)

@@ -23,7 +23,8 @@
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*
@@ -66,7 +67,8 @@ Cargo.lock
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,linux,rust
 
-
+# VSCode files
+.vscode
 
 # Added by cargo
 

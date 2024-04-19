@@ -43,25 +43,25 @@ struct Client {
 
 fn partial_task(
     input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
-) -> impl PipelineStream<KeyType = String, ValueType = String> + Send
+) -> impl PipelineStream<KeyType = String, ValueType = usize> + Send
 {
-    input.map(|kv: KeyValue<String, ChangeOfAddress>| {
-        KeyValue::from((kv.key, kv.value.address))
+    input.map(|KeyValue(key, value)| {
+        KeyValue(key, value.len())
     })
 }
 
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let mut source = ClientConfig::new();
+    let mut client_config = ClientConfig::new();
 
     ... some normal kafka configuration ...
 
-    let app = PeridotApp::from_client_config(&source)?;
+    let app = PeridotApp::from_client_config(&client_config)?;
 
     app.task::<String, Json<Client>>("clientTopic")
         .and_then(partial_task)
-        .into_topic::<String, String>("genericTopic");
+        .into_topic::<String, Json<usize>>("genericTopic");
 
     app.run().await?;
 
@@ -82,17 +82,17 @@ struct Client {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let mut source = ClientConfig::new();
+    let mut client_config = ClientConfig::new();
 
     ... some normal kafka configuration ...
 
-    let app = PeridotApp::from_client_config(&source)?;
+    let app = PeridotApp::from_client_config(&client_config)?;
 
-    app.head_task::<String, Json<Client>>("clientTopic")
+    app.task::<String, Json<Client>>("clientTopic")
         .map(
-            |kv: KeyValue<String, ChangeOfAddress>| KeyValue::from((kv.key, kv.value.address))
+            |(key, value)| (key, value.len())
         )
-        .into_topic::<String, String>("genericTopic");
+        .into_topic::<String, Json<usize>>("genericTopic");
 
     app.run().await?;
 
