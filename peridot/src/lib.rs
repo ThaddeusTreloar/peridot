@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 #![allow(refining_impl_trait)]
 
 pub mod app;

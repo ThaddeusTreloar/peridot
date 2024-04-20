@@ -50,7 +50,7 @@ pub trait StateBackendContext {
 }
 
 #[trait_variant::make(Send)]
-pub trait StateBackend: Send {
+pub trait StateBackend {
     type Error: std::error::Error;
 
     async fn get<K, V>(
