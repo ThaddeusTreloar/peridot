@@ -90,14 +90,14 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let mut app = AppBuilder::new()
+    let app = AppBuilder::new()
         .with_client_config(client_config)
         .with_delivery_guarantee::<ExactlyOnce>()
         .with_state_backend::<InMemoryStateBackend>()
         .build()
         .expect("Failed to build app.");
 
-    let consent_table = app.table::<String, Json<ConsentGrant>>("consent.Client", "consent_table");
+    let _consent_table = app.table::<String, Json<ConsentGrant>>("consent.Client", "consent_table");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .and_then(partial_task)

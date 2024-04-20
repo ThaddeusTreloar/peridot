@@ -72,7 +72,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let mut app = AppBuilder::new()
+    let app = AppBuilder::new()
         .with_client_config(client_config)
         .build()
         .expect("Failed to build app.");

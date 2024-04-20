@@ -5,8 +5,8 @@ use peridot::app::builder::AppBuilder;
 use peridot::engine::util::ExactlyOnce;
 use peridot::engine::wrapper::serde::Json;
 use peridot::init::init_tracing;
-use peridot::message::types::{KeyValue, Value};
-use peridot::pipeline::stream::{PipelineStream, PipelineStreamExt};
+use peridot::message::types::{Value};
+use peridot::pipeline::stream::{PipelineStreamExt};
 use peridot::state::backend::in_memory::InMemoryStateBackend;
 use peridot::task::Task;
 use rdkafka::ClientConfig;
@@ -51,7 +51,7 @@ pub struct ValidatedAddress {
 }
 
 impl Display for ValidatedAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         unimplemented!("")
     }
 }
@@ -79,7 +79,7 @@ fn validate_address(Value(address): Value<ChangeOfAddress>) -> Value<ValidatedAd
     Value(validated)
 }
 
-fn combiner(left: ValidatedAddress, right: String) -> String {
+fn combiner(_left: ValidatedAddress, _right: String) -> String {
     unimplemented!("")
 }
 
@@ -101,7 +101,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let mut app = AppBuilder::new()
+    let app = AppBuilder::new()
         .with_client_config(client_config)
         .with_delivery_guarantee::<ExactlyOnce>()
         .with_state_backend::<InMemoryStateBackend>()
