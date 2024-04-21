@@ -2,8 +2,17 @@ use std::marker::PhantomData;
 
 use super::{PeridotDeserializer, PeridotSerializer};
 
+#[derive(Debug)]
 pub struct Json<T> {
     _type: PhantomData<T>,
+}
+
+impl <T> Default for Json<T> {
+    fn default() -> Self {
+        Self {
+            _type: Default::default()
+        }
+    }
 }
 
 impl<S> PeridotSerializer for Json<S>

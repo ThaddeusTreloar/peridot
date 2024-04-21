@@ -1,11 +1,11 @@
 use std::{fmt::Display, marker::PhantomData};
 
 use crate::{
-    engine::{wrapper::serde::PeridotSerializer, QueueMetadata},
+    engine::{wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer}, QueueMetadata},
     message::sink::print_sink::PrintSink,
 };
 
-use super::MessageSinkFactory;
+use super::{DynamicSerialiserSinkFactory, MessageSinkFactory};
 
 #[derive(Default)]
 pub struct PrintSinkFactory<KS, VS> {

@@ -4,6 +4,7 @@ pub mod arvo;
 pub mod json;
 pub mod native;
 pub mod proto;
+pub mod serializers;
 
 pub trait PeridotSerializer {
     type Input;
@@ -31,12 +32,6 @@ pub trait PeridotStatefulDeserializer {
     type Error: Error;
 
     fn deserialize(&self, bytes: &[u8]) -> Result<Self::Output, Self::Error>;
-}
-
-pub trait SerializerFactory {
-    type Output;
-
-    fn get_serializer() -> Self::Output;
 }
 
 impl PeridotSerializer for String {

@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::{
     app::PeridotApp,
-    engine::{util::DeliveryGuaranteeType, wrapper::serde::PeridotSerializer},
+    engine::{util::DeliveryGuaranteeType, wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer}},
     message::{join::Combiner, types::{FromMessage, PatchMessage}},
     pipeline::{
         join::JoinPipeline, map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
@@ -150,4 +150,20 @@ pub trait Task<'a> {
         let job = output.forward(sink_factory);
         app.job(Box::pin(job));
     }
+
+    /*
+    fn into_topic_with_ser<KS, VS>(self, _topic: &str, key_serialiser: KS, value_serialiser: VS)
+    where
+        KS: PeridotStatefulSerializer<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
+        VS: PeridotStatefulSerializer<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        KS::Input: Send + Display + 'static,
+        VS::Input: Send + Display + 'static,
+        Self: Sized + 'a,
+        Self::R: PipelineStreamExt,
+    {
+        let sink_factory = PrintSinkFactory::<KS, VS>::new();
+        let (app, output) = self.into_parts();
+        let job = output.forward(sink_factory);
+        app.job(Box::pin(job));
+    } */
 }

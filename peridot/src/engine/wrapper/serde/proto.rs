@@ -4,8 +4,17 @@ use prost::Message;
 
 use super::{PeridotDeserializer, PeridotSerializer};
 
+#[derive(Debug)]
 pub struct Proto<T> {
     _type: PhantomData<T>,
+}
+
+impl <T> Default for Proto<T> {
+    fn default() -> Self {
+        Self {
+            _type: Default::default()
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

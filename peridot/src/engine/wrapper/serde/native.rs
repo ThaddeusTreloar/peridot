@@ -2,8 +2,17 @@ use std::marker::PhantomData;
 
 use super::{PeridotDeserializer, PeridotSerializer};
 
+#[derive(Debug)]
 pub struct NativeBytes<T> {
     _type: PhantomData<T>,
+}
+
+impl <T> Default for NativeBytes<T> {
+    fn default() -> Self {
+        Self {
+            _type: Default::default()
+        }
+    }
 }
 
 impl<T> PeridotSerializer for NativeBytes<T> 

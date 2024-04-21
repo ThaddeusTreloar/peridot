@@ -1,4 +1,4 @@
-use crate::{engine::QueueMetadata, message::sink::MessageSink};
+use crate::{engine::{wrapper::serde::{serializers::Serializers, PeridotStatefulSerializer}, QueueMetadata}, message::sink::MessageSink};
 
 pub(crate) mod changelog_sink;
 pub mod print_sink;
@@ -27,4 +27,12 @@ pub trait MessageSinkFactory<K, V> {
     type SinkType: MessageSink<K, V>;
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType;
+}
+
+pub trait DynamicSerialiserSinkFactory<KS, VS>: MessageSinkFactory<KS::Input, VS::Input> 
+where
+    KS: PeridotStatefulSerializer,
+    VS: PeridotStatefulSerializer
+{
+    fn new_sink_with_serialisers(serialisers: Serializers<KS, VS>) -> Self::SinkType;
 }
