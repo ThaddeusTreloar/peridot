@@ -49,15 +49,13 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum PrintSinkError {}
 
-impl<KS, VS> MessageSink for PrintSink<KS, VS>
+impl<KS, VS> MessageSink<KS::Input, VS::Input> for PrintSink<KS, VS>
 where
     KS: PSerialize,
     VS: PSerialize,
     KS::Input: Display,
     VS::Input: Display,
 {
-    type KeyType = KS::Input;
-    type ValueType = VS::Input;
     type Error = PrintSinkError;
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -66,7 +64,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<Self::KeyType, Self::ValueType>,
+        message: Message<KS::Input, VS::Input>,
     ) -> Result<(), Self::Error> {
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");

@@ -46,15 +46,14 @@ where
 impl<S, SF, G> PipelineStream for PipelineFork<S, SF, G>
 where
     S: PipelineStream + Send + 'static,
-    S::MStream: MessageStream<
-            KeyType = <SF::SinkType as MessageSink>::KeyType,
-            ValueType = <SF::SinkType as MessageSink>::ValueType,
-        > + Send
-        + 'static,
-    SF: MessageSinkFactory + Send + 'static,
+    S::MStream: MessageStream,
+    S::KeyType: Clone + Send + 'static,
+    S::ValueType: Clone + Send + 'static,
+    SF: MessageSinkFactory<
+        S::KeyType,
+        S::ValueType
+    > + Send + 'static,
     SF::SinkType: Send + 'static,
-    <SF::SinkType as MessageSink>::KeyType: Clone,
-    <SF::SinkType as MessageSink>::ValueType: Clone,
 {
     type KeyType = <S::MStream as MessageStream>::KeyType;
     type ValueType = <S::MStream as MessageStream>::ValueType;

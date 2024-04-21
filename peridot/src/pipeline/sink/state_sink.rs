@@ -28,7 +28,7 @@ impl<B, K, V> StateSinkFactory<B, K, V> {
     }
 }
 
-impl<B, K, V> MessageSinkFactory for StateSinkFactory<B, K, V>
+impl<B, K, V> MessageSinkFactory<K, V> for StateSinkFactory<B, K, V>
 where
     K: Serialize + Clone + Send + Sync + 'static,
     V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,

@@ -12,21 +12,19 @@ pub mod print_sink;
 pub(crate) mod state_sink;
 pub mod topic_sink;
 
-pub trait MessageSink {
-    type KeyType;
-    type ValueType;
+pub trait MessageSink<K, V> {
     type Error: Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<Self::KeyType, Self::ValueType>,
+        message: Message<K, V>,
     ) -> Result<(), Self::Error>;
     fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 }
 
-pub trait MessageSinkExt<K, V>: MessageSink {
+pub trait MessageSinkExt<K, V>: MessageSink<K, V> {
     fn sink(self)
     where
         Self: Sized,

@@ -36,14 +36,12 @@ pub enum ChangelogSinkError {}
 
 impl<K, V> NonCommittingSink for ChangelogSink<K, V> {}
 
-impl<K, V> MessageSink for ChangelogSink<K, V>
+impl<K, V> MessageSink<K, V> for ChangelogSink<K, V>
 where
     K: Clone,
     V: Clone,
 {
     type Error = ChangelogSinkError;
-    type KeyType = K;
-    type ValueType = V;
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -59,7 +57,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: crate::message::types::Message<Self::KeyType, Self::ValueType>,
+        message: crate::message::types::Message<K, V>,
     ) -> Result<(), Self::Error> {
         let key =
             NativeBytes::serialize(message.key()).expect("Failed to serialise key in StateSink.");

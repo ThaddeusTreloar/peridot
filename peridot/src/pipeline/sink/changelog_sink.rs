@@ -18,7 +18,7 @@ impl<K, V> ChangelogSinkFactory<K, V> {
     }
 }
 
-impl<K, V> MessageSinkFactory for ChangelogSinkFactory<K, V>
+impl<K, V> MessageSinkFactory<K, V> for ChangelogSinkFactory<K, V>
 where
     K: Clone,
     V: Clone,

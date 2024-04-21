@@ -36,11 +36,9 @@ impl <K, V> CommitingSink for NoopSink<K, V> {}
 #[derive(Debug, thiserror::Error)]
 pub enum NoopSinkError {}
 
-impl<K, V> MessageSink for NoopSink<K, V>
+impl<K, V> MessageSink<K, V> for NoopSink<K, V>
 {
     type Error = NoopSinkError;
-    type KeyType = K;
-    type ValueType = V;
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.poll_commit(cx)
@@ -79,7 +77,7 @@ impl<K, V> MessageSink for NoopSink<K, V>
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: crate::message::types::Message<Self::KeyType, Self::ValueType>,
+        message: crate::message::types::Message<K, V>,
     ) -> Result<(), Self::Error> {
         let NoopProjection {
             offsets,

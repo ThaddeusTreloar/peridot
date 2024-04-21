@@ -18,7 +18,7 @@ pin_project! {
     pub struct Forward<M, Si>
     where
         M: MessageStream,
-        Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
+        Si: MessageSink<M::KeyType, M::ValueType>,
     {
         #[pin]
         message_stream: M,
@@ -32,7 +32,7 @@ pin_project! {
 impl<M, Si> Forward<M, Si>
 where
     M: MessageStream,
-    Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
+    Si: MessageSink<M::KeyType, M::ValueType>,
 {
     pub fn new(message_stream: M, message_sink: Si, queue_metadata: QueueMetadata) -> Self {
         Self {
@@ -49,7 +49,7 @@ const BATCH_SIZE: usize = 1024;
 impl<M, Si> Future for Forward<M, Si>
 where
     M: MessageStream,
-    Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
+    Si: MessageSink<M::KeyType, M::ValueType>,
 {
     type Output = ();
 

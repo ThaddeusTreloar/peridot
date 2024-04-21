@@ -22,7 +22,7 @@ impl<KS, VS> PrintSinkFactory<KS, VS> {
     }
 }
 
-impl<KS, VS> MessageSinkFactory for PrintSinkFactory<KS, VS>
+impl<KS, VS> MessageSinkFactory<KS::Input, VS::Input> for PrintSinkFactory<KS, VS>
 where
     KS: PSerialize,
     KS::Input: Display,

@@ -64,15 +64,13 @@ where
 {
 }
 
-impl<B, K, V> MessageSink for StateSink<B, K, V>
+impl<B, K, V> MessageSink<K, V> for StateSink<B, K, V>
 where
     B: StateBackend + Send + Sync + 'static,
     K: Serialize + Send + Sync + 'static,
     V: Serialize + DeserializeOwned + Send + Sync + 'static
 {
     type Error = StateSinkError;
-    type KeyType = K;
-    type ValueType = V;
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -116,7 +114,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: Message<Self::KeyType, Self::ValueType>,
+        message: Message<K, V>,
     ) -> Result<(), Self::Error> {
         let this = self.project();
 

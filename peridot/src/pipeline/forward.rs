@@ -58,12 +58,11 @@ impl<S, SF, G> Future for PipelineForward<S, SF, G>
 where
     S: PipelineStream + Send + 'static,
     S::MStream: MessageStream + Send + 'static,
-    SF: MessageSinkFactory + Send + 'static,
-    SF::SinkType: MessageSink<
-            KeyType = <S::MStream as MessageStream>::KeyType,
-            ValueType = <S::MStream as MessageStream>::ValueType,
-        > + Send
-        + 'static,
+    SF: MessageSinkFactory<
+        S::KeyType,
+        S::ValueType,
+    > + Send + 'static,
+    SF::SinkType: Send,
 {
     type Output = Result<(), PeridotAppRuntimeError>;
 

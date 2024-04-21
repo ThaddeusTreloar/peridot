@@ -23,8 +23,8 @@ committed to, only all topic backed states have been committed:
 
 */
 
-pub trait MessageSinkFactory {
-    type SinkType: MessageSink;
+pub trait MessageSinkFactory<K, V> {
+    type SinkType: MessageSink<K, V>;
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType;
 }

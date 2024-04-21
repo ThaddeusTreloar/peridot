@@ -53,9 +53,9 @@ pub trait PipelineStreamExt: PipelineStream {
 
     fn forward<SF>(self, sink: SF) -> PipelineForward<Self, SF>
     where
-        SF: MessageSinkFactory + Send + 'static,
-        <SF::SinkType as MessageSink>::KeyType: Send + 'static,
-        <SF::SinkType as MessageSink>::ValueType: Send + 'static,
+        SF: MessageSinkFactory<Self::KeyType, Self::ValueType> + Send + 'static,
+        Self::KeyType: Send + 'static,
+        Self::ValueType: Send + 'static,
         Self: Sized,
     {
         PipelineForward::new(self, sink)

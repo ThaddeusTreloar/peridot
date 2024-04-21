@@ -22,7 +22,7 @@ pin_project! {
     pub struct Fork<M, Si>
     where
         M: MessageStream,
-        Si: MessageSink,
+        Si: MessageSink<M::KeyType, M::ValueType>,
     {
         #[pin]
         message_stream: M,
@@ -35,7 +35,7 @@ pin_project! {
 impl<M, Si> Fork<M, Si>
 where
     M: MessageStream,
-    Si: MessageSink,
+    Si: MessageSink<M::KeyType, M::ValueType>,
 {
     pub fn new(message_stream: M, message_sink: Si) -> Self {
         Self {
@@ -49,7 +49,7 @@ where
 impl<M, Si> MessageStream for Fork<M, Si>
 where
     M: MessageStream,
-    Si: MessageSink<KeyType = M::KeyType, ValueType = M::ValueType>,
+    Si: MessageSink<M::KeyType, M::ValueType>,
     M::KeyType: Clone,
     M::ValueType: Clone,
 {
