@@ -15,6 +15,7 @@ pub trait EngineContext {
     fn state_backend(&self, source_topic: String, partition: i32) -> Arc<Self::Backend>;
     fn get_source_topic_for_table(&self, table_name: &str) -> Option<String>;
     fn get_table_partition_count(&self, table_name: &str) -> Option<i32>;
+    fn get_table_meta_for_topic(&self, source_topic: &str) -> Vec<String>;
 }
 
 #[derive(Clone)]
@@ -66,5 +67,9 @@ where
 
     fn get_table_partition_count(&self, _table_name: &str) -> Option<i32> {
         unimplemented!("get_table_partition_count")
+    }
+
+    fn get_table_meta_for_topic(&self, source_topic: &str) -> Vec<String> {
+        self._engine_ref.get_
     }
 }

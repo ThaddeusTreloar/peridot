@@ -88,11 +88,44 @@ pub struct TopicMetadata {
 
 impl TopicMetadata {
     pub fn new(partition_count: i32) -> Self {
-        Self { partition_count }
+        Self { 
+            partition_count,
+        }
     }
 
     pub fn partition_count(&self) -> i32 {
         self.partition_count
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TableMetadata {
+    source_topic: String,
+    changelog_topic: Option<String>,
+}
+
+impl TableMetadata {
+    fn new(source_topic: String) -> Self {
+        Self {
+            source_topic,
+            changelog_topic: Default::default(),
+        }
+    }
+
+    fn new_with_changelog(source_topic: String, changelog_topic: String) -> Self {
+        let mut new = Self::new(source_topic);
+
+        let _ = new.set_changelog_topic(changelog_topic);
+
+        new
+    }
+
+    pub(crate) fn set_changelog_topic(&mut self, changelog_topic: String) -> Option<String> {
+        self.changelog_topic.replace(changelog_topic)
+    }
+
+    pub(crate) fn changelog_topic(&self) -> Option<&String> {
+        self.changelog_topic.as_ref()
     }
 }
 
@@ -103,7 +136,7 @@ pub struct AppEngine<B, G = ExactlyOnce> {
     downstreams: Arc<DashMap<String, RawQueueForwarder>>,
     engine_state: Arc<AtomicCell<EngineState>>,
     state_stores: StateStoreMap<B>,
-    table_metadata: Arc<DashSet<String>>,
+    table_metadata: Arc<DashMap<String, TableMetadata>>,
     source_topic_metadata: Arc<DashMap<String, TopicMetadata>>,
     _delivery_guarantee: PhantomData<G>,
 }
@@ -133,7 +166,7 @@ where
         unimplemented!("Not implemented yet")
     }
 
-    pub fn get_source_topic_for_table(&self, table_name: &str) -> Option<String> {
+    pub fn get_source_topic_for_table(&self, table_name: &str) -> Option<TableMetadata> {
         self.table_metadata.get(table_name).map(|topic| topic.clone())
     }
 
