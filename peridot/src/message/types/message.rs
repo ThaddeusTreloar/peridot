@@ -5,7 +5,7 @@ use rdkafka::message::{
     OwnedHeaders, OwnedMessage,
 };
 
-use crate::engine::wrapper::serde::PDeserialize;
+use crate::engine::wrapper::serde::PeridotDeserializer;
 
 use super::{MessageHeaders, PeridotTimestamp};
 
@@ -75,8 +75,8 @@ pub trait TryFromOwnedMessage<'a, KS, VS> {
 
 impl<'a, KS, VS> TryFromOwnedMessage<'a, KS, VS> for Message<KS::Output, VS::Output>
 where
-    KS: PDeserialize,
-    VS: PDeserialize,
+    KS: PeridotDeserializer,
+    VS: PeridotDeserializer,
 {
     fn try_from_owned_message(msg: OwnedMessage) -> Result<Self, TryFromKafkaMessageError> {
         let raw_key = msg.key().unwrap();
@@ -116,8 +116,8 @@ pub trait TryFromBorrowedMessage<'a, KS, VS> {
 
 impl<'a, KS, VS> TryFromBorrowedMessage<'a, KS, VS> for Message<KS::Output, VS::Output>
 where
-    KS: PDeserialize,
-    VS: PDeserialize,
+    KS: PeridotDeserializer,
+    VS: PeridotDeserializer,
 {
     /*  TODO: Make the deserialisation, and cloning of each field lazy.
      *  Currently all fields are cloned into this object, even if they are not used.

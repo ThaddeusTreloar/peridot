@@ -18,7 +18,7 @@ use tracing::{error, info, warn};
 
 use crate::engine::distributor::QueueDistributor;
 use crate::{
-    engine::wrapper::serde::PDeserialize, pipeline::stream::serialiser::SerialiserPipeline,
+    engine::wrapper::serde::PeridotDeserializer, pipeline::stream::serialiser::SerialiserPipeline,
 };
 
 use self::error::{EngineInitialisationError, TableRegistrationError};
@@ -631,8 +631,8 @@ where
         topic: String,
     ) -> Result<SerialiserPipeline<KS, VS>, PeridotEngineRuntimeError>
     where
-        KS: PDeserialize,
-        VS: PDeserialize,
+        KS: PeridotDeserializer,
+        VS: PeridotDeserializer,
     {
         let mut subscription = self.consumer.get_subscribed_topics();
 

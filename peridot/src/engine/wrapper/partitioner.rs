@@ -1,9 +1,9 @@
-use crate::{engine::wrapper::serde::PSerialize, util::hash::get_partition_for_key};
+use crate::{engine::wrapper::serde::PeridotSerializer, util::hash::get_partition_for_key};
 
 pub trait PeridotPartitioner {
     fn partition_key<KS>(&self, key: KS::Input, partition_count: i32) -> i32
     where
-        KS: PSerialize;
+        KS: PeridotSerializer;
 }
 
 pub struct DefaultPartitioner;
@@ -11,7 +11,7 @@ pub struct DefaultPartitioner;
 impl PeridotPartitioner for DefaultPartitioner {
     fn partition_key<KS>(&self, key: KS::Input, partition_count: i32) -> i32
     where
-        KS: PSerialize,
+        KS: PeridotSerializer,
     {
         let key_bytes = KS::serialize(&key).expect("Failed to serialise key while paritioning.");
 

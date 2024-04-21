@@ -37,3 +37,5 @@ tokio-stream = { version = "0.1.14", features = ["sync"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 trait-variant = "0.1.2"
+apache-avro = "0.16.0"
+prost = "0.12.4"

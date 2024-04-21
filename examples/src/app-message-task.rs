@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use peridot::app::builder::AppBuilder;
 use peridot::engine::util::ExactlyOnce;
-use peridot::engine::wrapper::serde::Json;
+use peridot::engine::wrapper::serde::json::Json;
 use peridot::init::init_tracing;
 use peridot::message::types::{KeyValue, Value};
 use peridot::pipeline::stream::{PipelineStream, PipelineStreamExt};

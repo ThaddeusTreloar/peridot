@@ -2,12 +2,13 @@ use std::{pin::Pin, sync::{Arc, Mutex}};
 
 use futures::{future::join_all, Future};
 use rdkafka::{consumer::BaseConsumer, ClientConfig};
+use serde::Serialize;
 use tracing::info;
 
 use crate::{
     app::extensions::PeridotConsumerContext, engine::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
-        wrapper::serde::PDeserialize,
+        wrapper::serde::PeridotDeserializer,
         AppEngine,
     }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend}, task::{table::TableTask, transparent::TransparentTask, Task}
 };
@@ -65,8 +66,8 @@ where
         topic: &str,
     ) -> Result<SerialiserPipeline<KS, VS, ExactlyOnce>, PeridotAppRuntimeError>
     where
-        KS: PDeserialize,
-        VS: PDeserialize,
+        KS: PeridotDeserializer,
+        VS: PeridotDeserializer,
     {
         info!("Creating stream for topic: {}", topic);
         Ok(self.engine.clone().stream(topic.to_string())?)
@@ -101,10 +102,10 @@ where
         table_name: &'a str,
     ) -> DirectTableTask<KS, VS, B, G>
     where
-        KS: PDeserialize + Send + 'static,
-        VS: PDeserialize + Send + 'static,
-        KS::Output: Clone + Send,
-        VS::Output: Clone + Send,
+        KS: PeridotDeserializer + Send + 'static,
+        VS: PeridotDeserializer + Send + 'static,
+        KS::Output: Clone + Serialize + Send,
+        VS::Output: Clone + Serialize + Send,
     {
         let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
             .app_builder
@@ -119,8 +120,8 @@ where
         topic: &'a str,
     ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, ExactlyOnce>, B, G>
     where
-        KS: PDeserialize + Send + 'static,
-        VS: PDeserialize + Send + 'static,
+        KS: PeridotDeserializer + Send + 'static,
+        VS: PeridotDeserializer + Send + 'static,
     {
         let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
             .app_builder

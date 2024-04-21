@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::{engine::QueueMetadata, message::sink::changelog_sink::ChangelogSink};
 
 use super::MessageSinkFactory;
@@ -20,8 +22,8 @@ impl<K, V> ChangelogSinkFactory<K, V> {
 
 impl<K, V> MessageSinkFactory<K, V> for ChangelogSinkFactory<K, V>
 where
-    K: Clone,
-    V: Clone,
+    K: Clone + Serialize,
+    V: Clone + Serialize,
 {
     type SinkType = ChangelogSink<K, V>;
 

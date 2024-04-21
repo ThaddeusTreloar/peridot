@@ -4,10 +4,11 @@ use std::{
 };
 
 use rdkafka::producer::FutureRecord;
+use serde::Serialize;
 
 use crate::{
     engine::{
-        wrapper::serde::{NativeBytes, PSerialize},
+        wrapper::serde::{native::NativeBytes, PeridotSerializer},
         QueueMetadata,
     },
     message::sink::{MessageSink, NonCommittingSink},
@@ -38,8 +39,8 @@ impl<K, V> NonCommittingSink for ChangelogSink<K, V> {}
 
 impl<K, V> MessageSink<K, V> for ChangelogSink<K, V>
 where
-    K: Clone,
-    V: Clone,
+    K: Clone + Serialize,
+    V: Clone + Serialize,
 {
     type Error = ChangelogSinkError;
 

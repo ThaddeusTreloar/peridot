@@ -10,7 +10,7 @@ use rdkafka::{consumer::Consumer, TopicPartitionList};
 use tracing::info;
 
 use crate::{
-    engine::{wrapper::serde::PSerialize, QueueMetadata},
+    engine::{wrapper::serde::PeridotSerializer, QueueMetadata},
     message::types::Message,
 };
 
@@ -19,8 +19,8 @@ use super::MessageSink;
 pin_project! {
     pub struct PrintSink<KS, VS>
     where
-        KS: PSerialize,
-        VS: PSerialize,
+        KS: PeridotSerializer,
+        VS: PeridotSerializer,
     {
         queue_metadata: QueueMetadata,
         _key_serialiser_type: PhantomData<KS>,
@@ -30,8 +30,8 @@ pin_project! {
 
 impl<KS, VS> PrintSink<KS, VS>
 where
-    KS: PSerialize,
-    VS: PSerialize,
+    KS: PeridotSerializer,
+    VS: PeridotSerializer,
 {
     pub fn new(queue_metadata: QueueMetadata) -> Self {
         Self {
@@ -51,8 +51,8 @@ pub enum PrintSinkError {}
 
 impl<KS, VS> MessageSink<KS::Input, VS::Input> for PrintSink<KS, VS>
 where
-    KS: PSerialize,
-    VS: PSerialize,
+    KS: PeridotSerializer,
+    VS: PeridotSerializer,
     KS::Input: Display,
     VS::Input: Display,
 {

@@ -1,8 +1,10 @@
 use std::fmt::Display;
 
+use serde::Serialize;
+
 use crate::{
     app::PeridotApp,
-    engine::{util::DeliveryGuaranteeType, wrapper::serde::PSerialize},
+    engine::{util::DeliveryGuaranteeType, wrapper::serde::PeridotSerializer},
     message::{join::Combiner, types::{FromMessage, PatchMessage}},
     pipeline::{
         join::JoinPipeline, map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
@@ -115,8 +117,8 @@ pub trait Task<'a> {
 
     fn into_table(self, table_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
     where
-        <Self::R as PipelineStream>::KeyType: Clone + Send + 'static,
-        <Self::R as PipelineStream>::ValueType: Clone + Send + 'static,
+        <Self::R as PipelineStream>::KeyType: Clone + Serialize + Send + 'static,
+        <Self::R as PipelineStream>::ValueType: Clone + Serialize + Send + 'static,
         Self: Sized + 'a,
     {
         let (app, output) = self.into_parts();
@@ -136,8 +138,8 @@ pub trait Task<'a> {
 
     fn into_topic<KS, VS>(self, _topic: &str)
     where
-        KS: PSerialize<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
-        VS: PSerialize<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        KS: PeridotSerializer<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
+        VS: PeridotSerializer<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
         KS::Input: Send + Display + 'static,
         VS::Input: Send + Display + 'static,
         Self: Sized + 'a,

@@ -1,7 +1,7 @@
 use std::{fmt::Display, marker::PhantomData};
 
 use crate::{
-    engine::{wrapper::serde::PSerialize, QueueMetadata},
+    engine::{wrapper::serde::PeridotSerializer, QueueMetadata},
     message::sink::print_sink::PrintSink,
 };
 
@@ -24,9 +24,9 @@ impl<KS, VS> PrintSinkFactory<KS, VS> {
 
 impl<KS, VS> MessageSinkFactory<KS::Input, VS::Input> for PrintSinkFactory<KS, VS>
 where
-    KS: PSerialize,
+    KS: PeridotSerializer,
     KS::Input: Display,
-    VS: PSerialize,
+    VS: PeridotSerializer,
     VS::Input: Display,
 {
     type SinkType = PrintSink<KS, VS>;

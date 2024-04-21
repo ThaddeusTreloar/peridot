@@ -23,8 +23,8 @@ where
     G: DeliveryGuaranteeType,
     P: PipelineStream + Send + 'static,
     P::MStream: Send + 'static,
-    P::KeyType: Clone + Send + 'static,
-    P::ValueType: Clone + Send + 'static,
+    P::KeyType: Clone + Serialize + Send + 'static,
+    P::ValueType: Clone + Serialize + Send + 'static,
 {
     app: &'a PeridotApp<B, G>,
     name: String,
@@ -61,8 +61,8 @@ where
     G: DeliveryGuaranteeType,
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
-    P::KeyType: Clone + Send + 'static,
-    P::ValueType: Clone + Send + 'static,
+    P::KeyType: Clone + Serialize + Send + 'static,
+    P::ValueType: Clone + Serialize + Send + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, name: String, stream_queue: P) -> Self {
         let changelog_sink_factory = ChangelogSinkFactory::new(format!("{}-changelog", name));

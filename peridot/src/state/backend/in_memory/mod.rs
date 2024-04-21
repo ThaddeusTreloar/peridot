@@ -39,15 +39,13 @@ impl StateBackend for InMemoryStateBackend {
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
-        match store.get(&key_bytes).map(|v| v.value().clone()) {
-            None => Ok(None),
-            Some(value_bytes) => {
-                let value: V =
-                    bincode::deserialize(&value_bytes).expect("Failed to deserialize value");
+        let value = match store.get(&key_bytes) {
+            None => return Ok(None),
+            Some(value_bytes) => 
+                    bincode::deserialize(value_bytes.as_ref()).expect("Failed to deserialize value")
+        };
 
-                Ok(Some(value))
-            }
-        }
+        Ok(Some(value))
     }
 
     async fn put<K, V>(

@@ -10,7 +10,7 @@ use tracing::error;
 
 use crate::{
     engine::partition_queue::StreamPeridotPartitionQueue,
-    engine::wrapper::serde::PDeserialize,
+    engine::wrapper::serde::PeridotDeserializer,
     message::types::{Message, TryFromOwnedMessage},
 };
 
@@ -43,8 +43,8 @@ impl<KS, VS> From<StreamPeridotPartitionQueue> for QueueSerialiser<KS, VS> {
 
 impl<KS, VS> MessageStream for QueueSerialiser<KS, VS>
 where
-    KS: PDeserialize,
-    VS: PDeserialize,
+    KS: PeridotDeserializer,
+    VS: PeridotDeserializer,
 {
     type KeyType = KS::Output;
     type ValueType = VS::Output;

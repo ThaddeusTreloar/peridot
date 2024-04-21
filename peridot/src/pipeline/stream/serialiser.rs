@@ -8,7 +8,7 @@ use pin_project_lite::pin_project;
 use tracing::info;
 
 use crate::{
-    engine::wrapper::serde::PDeserialize,
+    engine::wrapper::serde::PeridotDeserializer,
     engine::{util::ExactlyOnce, QueueReceiver},
     message::stream::{serialiser::QueueSerialiser, PipelineStage},
 };
@@ -17,8 +17,8 @@ use super::PipelineStream;
 
 pin_project! {
     pub struct SerialiserPipeline<KS, VS, G = ExactlyOnce>
-    where KS: PDeserialize,
-        VS: PDeserialize
+    where KS: PeridotDeserializer,
+        VS: PeridotDeserializer
     {
         #[pin]
         queue_stream: QueueReceiver,
@@ -30,8 +30,8 @@ pin_project! {
 
 impl<KS, VS, G> SerialiserPipeline<KS, VS, G>
 where
-    KS: PDeserialize,
-    VS: PDeserialize,
+    KS: PeridotDeserializer,
+    VS: PeridotDeserializer,
 {
     pub fn new(queue_stream: QueueReceiver) -> Self {
         Self {
@@ -45,8 +45,8 @@ where
 
 impl<KS, VS, G> PipelineStream for SerialiserPipeline<KS, VS, G>
 where
-    KS: PDeserialize + Send,
-    VS: PDeserialize + Send,
+    KS: PeridotDeserializer + Send,
+    VS: PeridotDeserializer + Send,
 {
     type KeyType = KS::Output;
     type ValueType = VS::Output;

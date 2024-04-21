@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::{
-    engine::wrapper::serde::PDeserialize,
+    engine::wrapper::serde::PeridotDeserializer,
     engine::{QueueForwarder, QueueMetadataProtoype, RawQueueReceiver},
     pipeline::stream::serialiser::SerialiserPipeline,
 };
@@ -35,8 +35,8 @@ pub fn new_stream<KS, VS, B, G>(
     raw_queue_receiver: RawQueueReceiver,
 ) -> SerialiserPipeline<KS, VS, G>
 where
-    KS: PDeserialize,
-    VS: PDeserialize,
+    KS: PeridotDeserializer,
+    VS: PeridotDeserializer,
     B: Send + Sync + 'static,
 {
     let qmp_ref = Arc::new(queue_metadata_prototype);

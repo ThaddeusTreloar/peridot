@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 
 use peridot::app::builder::AppBuilder;
-use peridot::engine::wrapper::serde::Json;
+use peridot::engine::wrapper::serde::json::Json;
 use peridot::init::init_tracing;
 use peridot::message::types::KeyValue;
 use peridot::task::Task;
