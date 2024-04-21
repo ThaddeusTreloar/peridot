@@ -72,25 +72,25 @@ pub trait PipelineStreamExt: PipelineStream {
     fn filter() {}
     fn fold() {}
 
-    fn join<T, C, RV>(self, table: T, combiner: C) -> JoinPipeline<Self, T, C, RV>
+    fn join<T, C>(self, table: T, combiner: C) -> JoinPipeline<Self, T, C>
     where
         T: GetView + Send + 'static,
-        C: Combiner<Self::ValueType, T::ValueType, RV>,
+        C: Combiner<Self::ValueType, T::ValueType>,
         Self::KeyType: PartialEq<T::KeyType>,
         Self: Sized,
     {
         JoinPipeline::new(self, table, combiner)
     }
-
-    fn join_by<T, J, C, RV>(self, table: T, joiner: J, combiner: C) -> JoinBy<Self, T, J, C>
+/*
+    fn join_by<T, J, C>(self, table: T, joiner: J, combiner: C) -> JoinBy<Self, T, J, C>
     where
         T: GetViewDistributor + Send + 'static,
         J: Fn(&Self::KeyType, &T::KeyType) -> bool,
-        C: Fn(&Self::ValueType, &T::ValueType) -> RV,
+        C: Fn(&Self::ValueType, &T::ValueType) -> C::Output,
         Self: Sized,
     {
         JoinBy::new(self, table, joiner, combiner)
-    }
+    } */
 
     fn reduce() {}
 }

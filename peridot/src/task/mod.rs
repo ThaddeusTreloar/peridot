@@ -52,11 +52,11 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(app, next, output)
     }
 
-    fn join<T, C, RV>(self, table: T, combiner: C) -> TransformTask<
+    fn join<T, C>(self, table: T, combiner: C) -> TransformTask<
         'a,
-        impl FnOnce(Self::R) -> JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C, RV>,
+        impl FnOnce(Self::R) -> JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C>,
         Self::R,
-        JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C, RV>,
+        JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C>,
         Self::B, 
         Self::G
     >
@@ -68,9 +68,8 @@ pub trait Task<'a> {
         C: Combiner<
             <Self::R as PipelineStream>::ValueType,
             T::ValueType,
-            RV
         > + 'static,
-        RV: Send + 'static,
+        C::Output: Send + 'static,
         <Self::R as PipelineStream>::KeyType: PartialEq<T::KeyType> + Send,
         Self: Sized,
     {
@@ -122,8 +121,10 @@ pub trait Task<'a> {
     {
         let (app, output) = self.into_parts();
 
+        unimplemented!("");
+
         app.engine_ref()
-            .register_table(table_name.to_owned())
+            .register_table(table_name.to_owned(), String::new())
             .expect("Table already registered.");
 
         TableTask::new(app, table_name.to_owned(), output)

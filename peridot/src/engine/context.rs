@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::{
     wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor},
-    AppEngine,
+    AppEngine, TableMetadata,
 };
 
 pub trait EngineContext {
@@ -70,6 +70,6 @@ where
     }
 
     fn get_table_meta_for_topic(&self, source_topic: &str) -> Vec<String> {
-        self._engine_ref.get_
+        unimplemented!("")
     }
 }

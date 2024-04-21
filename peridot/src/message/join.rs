@@ -7,26 +7,25 @@ use crate::state::backend::{facade::StateFacade, StateBackend};
 use super::stream::MessageStream;
 
 pin_project! {
-    pub struct JoinMessage<M, C, B, R, RV>
+    pub struct JoinMessage<M, C, B, R>
     where
         M: MessageStream,
-        C: Combiner<M::ValueType, R, RV>,
+        C: Combiner<M::ValueType, R>,
     {
         stream: M,
         state: StateFacade<M::KeyType, R, B>,
         combiner: Arc<C>,
-        _return_value: PhantomData<RV>,
     }
 }
 
-impl <M, C, B, R, RV> MessageStream for JoinMessage<M, C, B, R, RV>
+impl <M, C, B, R> MessageStream for JoinMessage<M, C, B, R>
 where
     M: MessageStream,
     B: StateBackend,
-    C: Combiner<M::ValueType, R, RV>,
+    C: Combiner<M::ValueType, R>,
 {
     type KeyType = M::KeyType;
-    type ValueType = RV;
+    type ValueType = C::Output;
 
     fn poll_next(
             self: std::pin::Pin<&mut Self>,
@@ -36,15 +35,19 @@ where
     }
 }
 
-pub trait Combiner<L, R, RV>: Send + Sync {
-    fn combine(&self, left: L, right: R) -> RV;
+pub trait Combiner<L, R>: Send + Sync {
+    type Output;
+
+    fn combine(&self, left: L, right: R) -> Self::Output;
 }
 
-impl <L, R, RV, F> Combiner<L, R, RV> for F
+impl <L, R, F, RV> Combiner<L, R> for F
 where
     F: Send + Sync + Fn(L, R) -> RV
 {
-    fn combine(&self, left: L, right: R) -> RV {
+    type Output = RV;
+    
+    fn combine(&self, left: L, right: R) -> Self::Output {
         (self)(left, right)
     }
 }

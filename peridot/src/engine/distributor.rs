@@ -17,7 +17,7 @@ use crate::app::{extensions::OwnedRebalance, PeridotConsumer};
 
 use super::{
     error::PeridotEngineRuntimeError, partition_queue::StreamPeridotPartitionQueue, EngineState,
-    RawQueueForwarder,
+    RawQueueForwarder, TableMetadata,
 };
 
 pin_project! {
@@ -25,7 +25,7 @@ pin_project! {
     pub struct QueueDistributor {
         consumer: Arc<PeridotConsumer>,
         downstreams: Arc<DashMap<String, RawQueueForwarder>>,
-        state_streams: Arc<DashSet<String>>,
+        state_streams: Arc<DashMap<String, TableMetadata>>,
         engine_state: Arc<AtomicCell<EngineState>>,
         #[pin]
         rebalance_waker: Receiver<OwnedRebalance>,
@@ -37,7 +37,7 @@ impl QueueDistributor {
     pub fn new(
         consumer: Arc<PeridotConsumer>,
         downstreams: Arc<DashMap<String, RawQueueForwarder>>,
-        state_streams: Arc<DashSet<String>>,
+        state_streams: Arc<DashMap<String, TableMetadata>>,
         engine_state: Arc<AtomicCell<EngineState>>,
         rebalance_waker: Receiver<OwnedRebalance>,
     ) -> Self {
@@ -54,7 +54,7 @@ impl QueueDistributor {
 
 fn forward_partitions(
     partitions: TopicPartitionList,
-    state_streams: &Arc<DashSet<String>>,
+    state_streams: &Arc<DashMap<String, TableMetadata>>,
     consumer: &Arc<PeridotConsumer>,
     downstreams: &Arc<DashMap<String, RawQueueForwarder>>,
     engine_state: &Arc<AtomicCell<EngineState>>,
@@ -65,7 +65,7 @@ fn forward_partitions(
         .into_iter()
         .map(|tp| (tp.topic().to_string(), tp.partition()))
         .filter(|(_, p)| *p != PARTITION_UA)
-        .partition(|(t, _)| state_streams.contains(t));
+        .partition(|(t, _)| state_streams.contains_key(t));
 
     // We shouldn't have to worry about seeking inline consumers.
     // State stores, when behind, should rebuild themselves from the changelog,

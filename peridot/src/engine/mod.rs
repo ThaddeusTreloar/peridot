@@ -127,6 +127,10 @@ impl TableMetadata {
     pub(crate) fn changelog_topic(&self) -> Option<&String> {
         self.changelog_topic.as_ref()
     }
+
+    pub(crate) fn source_topic(&self) -> &str{
+        &self.source_topic
+    }
 }
 
 pub struct AppEngine<B, G = ExactlyOnce> {
@@ -174,19 +178,22 @@ where
         let topic = self.get_source_topic_for_table(table_name)?;
 
         self.source_topic_metadata
-            .get(topic.as_str())
+            .get(topic.source_topic())
             .map(|metadata| metadata.partition_count())
     }
 
     pub fn register_table(
         &self,
         table_name: String,
+        source_topic: String,
     ) -> Result<(), TableRegistrationError> {
-        if self.table_metadata.contains(&table_name) {
+        let table_meta = TableMetadata::new(source_topic);
+
+        if self.table_metadata.contains_key(&table_name) {
             Err(TableRegistrationError::TableAlreadyRegistered)
         } else {
             self.table_metadata
-                .insert(table_name.clone());
+                .insert(table_name.clone(), table_meta);
             Ok(())
         }
     }
@@ -204,13 +211,13 @@ where
     }
 
     pub fn get_state_store_for_table(&self, table_name: &str, partition: i32) -> Option<Arc<BT>> {
-        let source_topic = self
+        let table_meta = self
             .table_metadata
             .get(table_name)
             .expect("Table not registered")
             .clone();
 
-        self.state_stores.get(&(source_topic, partition))
+        self.state_stores.get(&(table_meta.source_topic().to_owned(), partition))
             .map(|store|store.clone())
     }
 
@@ -326,7 +333,7 @@ where
                             .split_partition_queue(topic.as_str(), partition)
                             .expect("No partition queue");
 
-                        if state_streams.contains(&topic) {
+                        if state_streams.contains_key(&topic) {
                             let mut topic_partition_list = TopicPartitionList::new();
                             topic_partition_list.add_partition(topic.as_str(), partition);
 
@@ -453,7 +460,7 @@ where
                     let topic = consumer_tp.topic();
                     let partition = consumer_tp.partition();
 
-                    if !state_streams.contains(topic) {
+                    if !state_streams.contains_key(topic) {
                         continue;
                     }
 
@@ -500,7 +507,7 @@ where
 
                                 let stream_topics = assignment_elements
                                     .iter()
-                                    .filter(|tp| !state_streams.contains(tp.topic()))
+                                    .filter(|tp| !state_streams.contains_key(tp.topic()))
                                     .collect::<Vec<&TopicPartitionListElem>>();
 
                                 let mut tp_list = TopicPartitionList::new();
@@ -529,7 +536,7 @@ where
 
                     let stream_topics = assignment_elements
                         .iter()
-                        .filter(|tp| !state_streams.contains(tp.topic()))
+                        .filter(|tp| !state_streams.contains_key(tp.topic()))
                         .collect::<Vec<&TopicPartitionListElem>>();
 
                     let mut tp_list = TopicPartitionList::new();

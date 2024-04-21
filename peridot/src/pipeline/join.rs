@@ -4,17 +4,16 @@ use crate::{message::join::{Combiner, JoinMessage}, state::backend::{GetView, Ge
 
 use super::stream::PipelineStream;
 
-pub struct JoinPipeline<S, T, C, RV> 
+pub struct JoinPipeline<S, T, C> 
 where
     S: PipelineStream,
 {
     inner: S,
     table: Arc<T>,
     combiner: Arc<C>,
-    _return_value: PhantomData<RV>
 }
 
-impl<S, T, C, RV> JoinPipeline<S, T, C, RV>
+impl<S, T, C> JoinPipeline<S, T, C>
 where
     S: PipelineStream,
     T: GetView,
@@ -25,12 +24,11 @@ where
             inner,
             table: Arc::new(table),
             combiner: Arc::new(combiner),
-            _return_value: Default::default(),
         }
     }
 }
 
-impl<S, T, C, RV> PipelineStream for JoinPipeline<S, T, C, RV> 
+impl<S, T, C> PipelineStream for JoinPipeline<S, T, C> 
 where
     S: PipelineStream,
     S::KeyType: Send,
@@ -39,12 +37,12 @@ where
     T::ValueType: Send,
     T::Backend: StateBackend + Send + Sync,
     S::KeyType: PartialEq<T::KeyType>,
-    C: Combiner<S::ValueType, T::ValueType, RV> + Send + Sync,
-    RV: Send,
+    C: Combiner<S::ValueType, T::ValueType> + Send + Sync,
+    C::Output: Send,
 {
-    type MStream = JoinMessage<S::MStream, C, T::Backend, T::ValueType, RV>;
+    type MStream = JoinMessage<S::MStream, C, T::Backend, T::ValueType>;
     type KeyType = S::KeyType;
-    type ValueType = RV;
+    type ValueType = C::Output;
 
     fn poll_next(
             self: std::pin::Pin<&mut Self>,
