@@ -1,3 +1,15 @@
+pub type Queue = (QueueMetadata, StreamPeridotPartitionQueue);
+
+pub type QueueForwarder = UnboundedSender<Queue>;
+pub type QueueReceiver = UnboundedReceiver<Queue>;
+
+pub type RawQueue = (i32, StreamPeridotPartitionQueue);
+
+pub type RawQueueForwarder = UnboundedSender<RawQueue>;
+pub type RawQueueReceiver = UnboundedReceiver<RawQueue>;
+
+pub type StateStoreMap<B> = Arc<DashMap<(String, i32), Arc<B>>>;
+
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use rdkafka::config::FromClientConfig;
@@ -22,6 +34,7 @@ use crate::{
     engine::wrapper::serde::PeridotDeserializer, pipeline::stream::serialiser::SerialiserPipeline,
 };
 
+use self::engine_state::EngineState;
 use self::error::{EngineInitialisationError, TableRegistrationError};
 use self::partition_queue::StreamPeridotPartitionQueue;
 use self::streams::new_stream;
@@ -40,6 +53,7 @@ pub mod circuit_breaker;
 pub mod context;
 pub mod distributor;
 pub mod error;
+pub mod engine_state;
 pub mod partition_queue;
 pub mod sinks;
 pub mod streams;
@@ -47,59 +61,12 @@ pub mod tasks;
 pub mod util;
 pub mod wrapper;
 
-/// Transitions when starting are:
-///     Stopped -> Rebalancing -> Rebuilding -> Running
-#[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
-pub enum EngineState {
-    Failed,
-    Lagging,
-    NotReady,
-    Rebalancing,
-    Rebuilding,
-    Running,
-    #[default]
-    Stopped,
-}
-
-impl Display for EngineState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Debug, thiserror::Error, derive_more::Display)]
-pub enum StateTransitionError {
-    #[display(fmt = "StateTransitionError::InvalidStateTransition: from {} to {}", from, to)]
-    InvalidStateTransition {
-        to: String,
-        from: String,
-    }
-}
-
-impl EngineState {
-    fn transition_state(self, state: EngineState) -> Result<Self, StateTransitionError> {
-        Ok(self)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum StateType {
     #[default]
     Persistent,
     InMemory,
 }
-
-pub type Queue = (QueueMetadata, StreamPeridotPartitionQueue);
-
-pub type QueueForwarder = UnboundedSender<Queue>;
-pub type QueueReceiver = UnboundedReceiver<Queue>;
-
-pub type RawQueue = (i32, StreamPeridotPartitionQueue);
-
-pub type RawQueueForwarder = UnboundedSender<RawQueue>;
-pub type RawQueueReceiver = UnboundedReceiver<RawQueue>;
-
-pub type StateStoreMap<B> = Arc<DashMap<(String, i32), Arc<B>>>;
 
 #[derive(Debug, Clone)]
 pub struct TopicMetadata {
@@ -253,7 +220,7 @@ where
     }
 
     pub fn create_producer(&self) -> FutureProducer {
-        let producer = FutureProducer::from_config(self.config.clients_config())
+        let producer = FutureProducer::from_config(self.config.client_config())
             .expect("Failed to build producer");
 
         producer
@@ -302,7 +269,7 @@ where
         let context = PeridotConsumerContext::from_config(config);
 
         let consumer = config
-            .clients_config()
+            .client_config()
             .create_with_context(context.clone())?;
 
         Ok(Self {

@@ -17,25 +17,6 @@ pub mod table;
 pub mod transform;
 pub mod transparent;
 
-/*
-pub trait IntoTask {
-    type G: DeliveryGuaranteeType;
-    type B: StateBackend + Send + 'static;
-    type R: PipelineStream + Send;
-
-    fn into_task<'a>(self, app: &'a mut PeridotApp<ExactlyOnce>) -> impl Task<'a, R = Self::R>;
-}
-
-impl<P> IntoTask for P
-where
-    P: PipelineStream + Send + 'static,
-{
-    type R = P;
-
-    fn into_task<'a>(self, app: &'a mut PeridotApp<ExactlyOnce>) -> impl Task<'a, R = Self::R> {
-        TransparentTask::new(app, self)
-    }
-} */
 
 pub trait Task<'a> {
     type G: DeliveryGuaranteeType;

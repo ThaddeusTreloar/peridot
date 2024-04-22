@@ -16,8 +16,7 @@ use tracing::{debug, error, info};
 use crate::app::{extensions::OwnedRebalance, PeridotConsumer};
 
 use super::{
-    error::PeridotEngineRuntimeError, partition_queue::StreamPeridotPartitionQueue, EngineState,
-    RawQueueForwarder, TableMetadata,
+    engine_state::EngineState, error::PeridotEngineRuntimeError, partition_queue::StreamPeridotPartitionQueue, RawQueueForwarder, TableMetadata
 };
 
 pin_project! {

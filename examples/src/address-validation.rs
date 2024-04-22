@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 
 use peridot::app::builder::AppBuilder;
+use peridot::app::config::builder::PeridotConfigBuilder;
 use peridot::engine::util::ExactlyOnce;
 use peridot::engine::wrapper::serde::json::Json;
 use peridot::init::init_tracing;
@@ -78,10 +79,6 @@ fn validate_address(Value(address): Value<ChangeOfAddress>) -> Value<ValidatedAd
     Value(validated)
 }
 
-fn combiner(_left: ValidatedAddress, _right: String) -> String {
-    unimplemented!("")
-}
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
@@ -101,7 +98,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set_log_level(RDKafkaLogLevel::Debug);
 
     let app = AppBuilder::new()
-        .with_client_config(client_config)
+        .with_config(PeridotConfigBuilder::from(&client_config).build().expect("Failed to build config."))
         .with_delivery_guarantee::<ExactlyOnce>()
         .with_state_backend::<InMemoryStateBackend>()
         .build()

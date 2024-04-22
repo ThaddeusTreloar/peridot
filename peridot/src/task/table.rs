@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    app::PeridotApp, engine::{util::{DeliveryGuaranteeType, ExactlyOnce}, EngineState}, pipeline::{
+    app::PeridotApp, engine::{engine_state::EngineState, util::{DeliveryGuaranteeType, ExactlyOnce}}, pipeline::{
         fork::PipelineFork,
         sink::{changelog_sink::ChangelogSinkFactory, state_sink::StateSinkFactory},
         stream::{PipelineStream, PipelineStreamExt},
@@ -32,29 +32,6 @@ where
     state: Arc<AtomicCell<EngineState>>,
     _delivery_guarantee: PhantomData<G>,
 }
-
-/*
-pub trait IntoTable<P, B, G>
-where
-    P: PipelineStream + Send + 'static,
-    P::MStream: Send + 'static,
-    P::KeyType: Clone + Send + 'static,
-    P::ValueType: Clone + Send + 'static,
-{
-    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> Table<P, B, G>;
-}
-
-impl<P, B, G> IntoTable<P, B, G> for P
-where
-    P: PipelineStream + Send + 'static,
-    B: StateBackend + Send + 'static,
-    P::KeyType: Clone + Send + 'static,
-    P::ValueType: Clone + Send + 'static,
-{
-    fn into_table(self, app_engine_ref: Arc<AppEngine<B>>) -> Table<P, B, G> {
-        Table::new("table".to_string(), app_engine_ref, self)
-    }
-} */
 
 impl<'a, P, B, G> TableTask<'a, P, B, G>
 where

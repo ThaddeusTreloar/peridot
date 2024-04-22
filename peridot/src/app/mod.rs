@@ -79,23 +79,6 @@ where
     G: DeliveryGuaranteeType,
     B: StateBackend + Send + Sync + 'static,
 {
-    pub fn from_client_config(config: &ClientConfig) -> Result<Self, PeridotAppCreationError> {
-        let config = PeridotConfig::from(config);
-
-        let engine = AppEngine::from_config(&config)?;
-
-        let engine = Arc::new(engine);
-        let engine_ref = engine.clone();
-
-        Ok(Self {
-            _config: config,
-            jobs: Default::default(),
-            engine,
-            app_builder: StreamBuilder::<B, _>::from_engine(engine_ref),
-            _phantom: std::marker::PhantomData,
-        })
-    }
-
     pub fn table<'a, KS, VS>(
         &'a self,
         topic: &'a str,
@@ -132,8 +115,6 @@ where
     }
 
     pub fn from_config(mut config: PeridotConfig) -> Result<Self, PeridotAppCreationError> {
-        config.clean_config();
-
         let engine = AppEngine::from_config(&config)?;
 
         let engine = Arc::new(engine);

@@ -1,6 +1,5 @@
 use std::{
-    pin::Pin,
-    task::{Context, Poll},
+    marker::PhantomData, pin::Pin, task::{Context, Poll}
 };
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -8,7 +7,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::{
     engine::QueueMetadata,
     message::{
-        join::Combiner, sink::MessageSink, stream::{ChannelStream, MessageStream, PipelineStage}, types::{FromMessage, PatchMessage}
+        join::Combiner, sink::MessageSink, stream::{ChannelStream, MessageStream, PipelineStage}, types::{FromMessage, Message, PatchMessage}
     },
     pipeline::{
         fork::PipelineFork, forward::PipelineForward, join::JoinPipeline, join_by::JoinBy,

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 
 use peridot::app::builder::AppBuilder;
+use peridot::app::config::builder::PeridotConfigBuilder;
 use peridot::engine::wrapper::serde::json::Json;
 use peridot::init::init_tracing;
 use peridot::message::types::KeyValue;
@@ -73,7 +74,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set_log_level(RDKafkaLogLevel::Debug);
 
     let app = AppBuilder::new()
-        .with_client_config(client_config)
+        .with_config(PeridotConfigBuilder::from(&client_config).build().expect("Failed to build config."))
         .build()
         .expect("Failed to build app.");
 
