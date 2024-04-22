@@ -39,3 +39,4 @@ tracing-subscriber = { workspace = true }
 trait-variant = "0.1.2"
 apache-avro = "0.16.0"
 prost = "0.12.4"
+derive_more = "0.99.17"

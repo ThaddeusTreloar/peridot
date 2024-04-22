@@ -8,6 +8,7 @@ use rdkafka::{
     consumer::Consumer, producer::PARTITION_UA, topic_partition_list::TopicPartitionListElem,
     ClientConfig, TopicPartitionList,
 };
+use tracing_subscriber::field::display;
 use std::ops::Deref;
 use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
@@ -46,11 +47,15 @@ pub mod tasks;
 pub mod util;
 pub mod wrapper;
 
+/// Transitions when starting are:
+///     Stopped -> Rebalancing -> Rebuilding -> Running
 #[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
 pub enum EngineState {
+    Failed,
     Lagging,
     NotReady,
     Rebalancing,
+    Rebuilding,
     Running,
     #[default]
     Stopped,
@@ -59,6 +64,21 @@ pub enum EngineState {
 impl Display for EngineState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Debug, thiserror::Error, derive_more::Display)]
+pub enum StateTransitionError {
+    #[display(fmt = "StateTransitionError::InvalidStateTransition: from {} to {}", from, to)]
+    InvalidStateTransition {
+        to: String,
+        from: String,
+    }
+}
+
+impl EngineState {
+    fn transition_state(self, state: EngineState) -> Result<Self, StateTransitionError> {
+        Ok(self)
     }
 }
 
@@ -274,7 +294,8 @@ where
 
         info!("Engine running...");
 
-        Ok(())
+        Ok(())                    // Transition engine state.
+
     }
 
     pub fn from_config(config: &PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
@@ -656,31 +677,32 @@ where
 
         self.downstreams.insert(topic.clone(), queue_sender);
 
-        let queue_metadata_prototype = QueueMetadataProtoype::new(
-            self.config.clients_config().clone(),
+        let queue_metadata_factory = QueueMetadataFactory::new(
+            self.config.clone(),
             self.consumer.clone(),
             self.clone(),
             topic,
         );
 
-        Ok(new_stream(queue_metadata_prototype, queue_receiver))
+        Ok(new_stream(queue_metadata_factory, queue_receiver))
     }
 }
 
+/// Curried constructor for QueueMetadata types.
 #[derive(Clone)]
-pub struct QueueMetadataProtoype<B> {
-    clients_config: ClientConfig,
+pub struct QueueMetadataFactory<B> {
+    clients_config: PeridotConfig,
     consumer_ref: Arc<PeridotConsumer>,
     app_engine_ref: Arc<AppEngine<B>>,
     source_topic: String,
 }
 
-impl<B> QueueMetadataProtoype<B>
+impl<B> QueueMetadataFactory<B>
 where
     B: Send + Sync + 'static,
 {
     pub fn new(
-        clients_config: ClientConfig,
+        clients_config: PeridotConfig,
         consumer_ref: Arc<PeridotConsumer>,
         app_engine_ref: Arc<AppEngine<B>>,
         source_topic: String,
@@ -708,7 +730,7 @@ where
 
 #[derive(Clone)]
 pub struct QueueMetadata {
-    clients_config: ClientConfig,
+    clients_config: PeridotConfig,
     consumer_ref: Arc<PeridotConsumer>,
     producer_ref: Arc<FutureProducer>,
     partition: i32,
@@ -724,7 +746,7 @@ impl QueueMetadata {
         self.source_topic.as_str()
     }
 
-    pub fn client_config(&self) -> &ClientConfig {
+    pub fn client_config(&self) -> &PeridotConfig {
         &self.clients_config
     }
 

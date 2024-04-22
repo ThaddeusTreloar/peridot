@@ -4,12 +4,12 @@ use tracing::info;
 
 use crate::{
     engine::wrapper::serde::PeridotDeserializer,
-    engine::{QueueForwarder, QueueMetadataProtoype, RawQueueReceiver},
+    engine::{QueueForwarder, QueueMetadataFactory, RawQueueReceiver},
     pipeline::stream::serialiser::SerialiserPipeline,
 };
 
 async fn forwarding_thread<B>(
-    prototype_metadata: Arc<QueueMetadataProtoype<B>>,
+    prototype_metadata: Arc<QueueMetadataFactory<B>>,
     mut reciever: RawQueueReceiver,
     forwarder: QueueForwarder,
 ) where
@@ -31,7 +31,7 @@ async fn forwarding_thread<B>(
 }
 
 pub fn new_stream<KS, VS, B, G>(
-    queue_metadata_prototype: QueueMetadataProtoype<B>,
+    queue_metadata_prototype: QueueMetadataFactory<B>,
     raw_queue_receiver: RawQueueReceiver,
 ) -> SerialiserPipeline<KS, VS, G>
 where

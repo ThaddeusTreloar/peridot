@@ -1,6 +1,6 @@
 use std::{pin::Pin, sync::{Arc, Mutex}};
 
-use futures::{future::join_all, Future};
+use futures::{future::{join_all, select_all}, Future};
 use rdkafka::{consumer::BaseConsumer, ClientConfig};
 use serde::Serialize;
 use tracing::info;
@@ -176,8 +176,19 @@ where
 
         self.engine.run().await?;
 
-        for job_result in join_all(job_results).await {
-            job_result??
+        let mut select = select_all(job_results.into_iter());
+        
+        loop {
+            let (job_result, _, remaining) = select.await;
+
+            match job_result {
+                Ok(_) => (),
+                Err(e) => {
+                    unimplemented!("Transition engine state on job fail: {}", e)
+                },
+            }
+
+            select = select_all(remaining);
         }
 
         Ok(())
