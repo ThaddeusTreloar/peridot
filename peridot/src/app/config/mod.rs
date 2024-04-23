@@ -8,6 +8,7 @@ use crate::help;
 use self::builder::{PeridotConfigBuilder, PeridotConfigError};
 
 pub mod builder;
+mod persistent_config;
 
 #[derive(Default, Debug, Clone)]
 pub struct PeridotConfig {

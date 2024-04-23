@@ -15,7 +15,6 @@ unused = "allow"
 default = []
 
 [dependencies]
-anyhow = "*"
 bincode = "*"
 dashmap = { workspace = true }
 crossbeam = "0.8.4"
