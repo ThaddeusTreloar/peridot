@@ -5,7 +5,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use crate::{
     engine::{AppEngine, QueueMetadata},
     message::sink::state_sink::StateSink,
-    state::backend::{facade::StateFacade, StateBackend},
+    state::backend::{facade::StateFacade, StateBackend, StateBackendContext},
 };
 
 use super::MessageSinkFactory;
@@ -32,7 +32,7 @@ impl<B, K, V> MessageSinkFactory<K, V> for StateSinkFactory<B, K, V>
 where
     K: Serialize + Clone + Send + Sync + 'static,
     V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateBackendContext + StateBackend + Send + Sync + 'static,
 {
     type SinkType = StateSink<B, K, V>;
 

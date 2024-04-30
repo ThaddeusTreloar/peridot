@@ -1,6 +1,7 @@
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PeridotTimestamp {
+    #[default]
     NotAvailable,
     CreateTime(i64),
     IngestionTime(i64),

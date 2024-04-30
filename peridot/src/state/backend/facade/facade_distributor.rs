@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{engine::AppEngine, state::backend::{GetView, StateBackend}};
+use crate::{engine::AppEngine, state::backend::{GetView, StateBackend, StateBackendContext, VersionedStateBackend}};
 
 use super::StateFacade;
 
@@ -14,7 +14,7 @@ pub struct FacadeDistributor<K, V, B>
 
 impl<K, V, B> FacadeDistributor<K, V, B> 
 where
-    B: Send + Sync + 'static,
+    B: StateBackendContext + Send + Sync + 'static,
 {
     pub fn new(backend: Arc<AppEngine<B>>, store_name: String) -> Self {
         Self {
@@ -37,7 +37,7 @@ where
 
 impl<K, V, B> GetView for FacadeDistributor<K, V, B> 
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateBackendContext + StateBackend + Send + Sync + 'static,
 {
     type Error = B::Error;
     type KeyType = K;
@@ -53,4 +53,3 @@ where
         StateFacade::new(backend, self.store_name().to_owned())
     }
 }
-

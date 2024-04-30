@@ -7,7 +7,7 @@ use rdkafka::message::{
 
 use crate::engine::wrapper::serde::PeridotDeserializer;
 
-use super::{MessageHeaders, PeridotTimestamp};
+use super::{MessageHeaders, PartialMessage, PeridotTimestamp};
 
 #[derive(Debug, serde::Serialize, Clone)]
 pub struct Message<K, V> {
@@ -28,6 +28,20 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Message {{ topic: {}, timestamp: {:?}, partition: {}, offset: {}, headers: {:?}, key: {}, value: {} }}",
             self.topic, self.timestamp, self.partition, self.offset, self.headers, self.key, self.value)
+    }
+}
+
+impl Default for Message<(), ()> {
+    fn default() -> Self {
+        Self {
+            topic: Default::default(),
+            timestamp: Default::default(), // TODO: Maybe set to ingestion time to allow synchronisation.
+            partition: Default::default(),
+            offset: -1,
+            headers: Default::default(),
+            key: Default::default(),
+            value: Default::default(),
+        }
     }
 }
 
@@ -58,6 +72,20 @@ impl<K, V> Message<K, V> {
 
     pub fn headers(&self) -> &MessageHeaders {
         &self.headers
+    }
+}
+
+impl Into<PartialMessage<(), ()>> for Message<(), ()> {
+    fn into(self) -> PartialMessage<(), ()> {
+        PartialMessage {
+            topic: Some(self.topic),
+            timestamp: Some(self.timestamp), // TODO: Maybe set to ingestion time to allow synchronisation.
+            partition: Some(self.partition),
+            offset: Some(self.offset),
+            headers: Some(self.headers),
+            key: Some(self.key),
+            value: Some(self.value),
+        }
     }
 }
 

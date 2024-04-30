@@ -10,7 +10,7 @@ use crate::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         wrapper::serde::PeridotDeserializer,
         AppEngine,
-    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend}, task::{table::TableTask, transparent::TransparentTask, Task}
+    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend, StateBackendContext}, task::{table::TableTask, transparent::TransparentTask, Task}
 };
 
 use self::{
@@ -37,30 +37,14 @@ where
     _config: PeridotConfig,
     jobs: Mutex<Vec<JobList>>,
     engine: Arc<AppEngine<B>>,
-    app_builder: StreamBuilder<B, ExactlyOnce>,
     _phantom: std::marker::PhantomData<G>,
 }
 
-pub struct StreamBuilder<B, G>
+impl<B, G> PeridotApp<B, G> 
 where
     G: DeliveryGuaranteeType,
+    B: StateBackendContext + StateBackend + Send + Sync + 'static,
 {
-    engine: Arc<AppEngine<B, ExactlyOnce>>,
-    _phantom: std::marker::PhantomData<G>,
-}
-
-impl<B, G> StreamBuilder<B, G>
-where
-    G: DeliveryGuaranteeType,
-    B: Send + Sync + 'static,
-{
-    pub fn from_engine<NB>(engine: Arc<AppEngine<NB, ExactlyOnce>>) -> StreamBuilder<NB, G> {
-        StreamBuilder::<NB, G> {
-            engine,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-
     pub fn stream<KS, VS>(
         &self,
         topic: &str,
@@ -70,15 +54,9 @@ where
         VS: PeridotDeserializer,
     {
         info!("Creating stream for topic: {}", topic);
-        Ok(self.engine.clone().stream(topic.to_string())?)
+        Ok(self.engine.clone().new_input_stream(topic.to_string())?)
     }
-}
 
-impl<B, G> PeridotApp<B, G> 
-where
-    G: DeliveryGuaranteeType,
-    B: StateBackend + Send + Sync + 'static,
-{
     pub fn table<'a, KS, VS>(
         &'a self,
         topic: &'a str,
@@ -91,7 +69,6 @@ where
         VS::Output: Clone + Serialize + Send,
     {
         let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
-            .app_builder
             .stream(topic)
             .expect("Failed to create topic");
 
@@ -107,7 +84,6 @@ where
         VS: PeridotDeserializer + Send + 'static,
     {
         let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
-            .app_builder
             .stream(topic)
             .expect("Failed to create topic");
 
@@ -124,7 +100,6 @@ where
             _config: config.clone(),
             jobs: Default::default(),
             engine,
-            app_builder: StreamBuilder::<B, _>::from_engine(engine_ref),
             _phantom: std::marker::PhantomData,
         })
     }
@@ -136,11 +111,7 @@ where
         jobs.push(Box::new(job));
     }
 
-    pub fn stream_builder(&self) -> &StreamBuilder<B, ExactlyOnce> {
-        &self.app_builder
-    }
-
-    pub fn engine_ref(&self) -> Arc<AppEngine<B, ExactlyOnce>> {
+    pub(crate) fn engine_ref(&self) -> Arc<AppEngine<B, ExactlyOnce>> {
         self.engine.clone()
     }
 

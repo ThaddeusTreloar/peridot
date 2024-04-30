@@ -111,6 +111,10 @@ async fn main() -> Result<(), anyhow::Error> {
         .join(&joining_table, |_, right| right)// combiner as fn(ValidatedAddress, String) -> String)
         .into_topic::<String, Json<_>>("genericTopic");
 
+    joining_table
+        .map(|Value(s)|s)
+        .into_topic::<String , String>("topic");
+
     app.run().await?;
 
     Ok(())

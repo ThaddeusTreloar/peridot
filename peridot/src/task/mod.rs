@@ -8,11 +8,12 @@ use crate::{
     message::{join::Combiner, types::{FromMessage, PatchMessage}},
     pipeline::{
         join::JoinPipeline, map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
-    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend},
+    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend, StateBackendContext},
 };
 
 use self::{table::TableTask, transform::TransformTask};
 
+pub mod import;
 pub mod table;
 pub mod transform;
 pub mod transparent;
@@ -20,7 +21,7 @@ pub mod transparent;
 
 pub trait Task<'a> {
     type G: DeliveryGuaranteeType;
-    type B: StateBackend + Send + Sync + 'static;
+    type B: StateBackendContext + StateBackend + Send + Sync + 'static;
     type R: PipelineStream + Send + 'static;
 
     fn and_then<F1, R1>(self, next: F1) -> TransformTask<'a, F1, Self::R, R1, Self::B, Self::G>
@@ -47,7 +48,7 @@ pub trait Task<'a> {
         T: GetViewDistributor + Send + 'a,
         T::KeyType: Send + Sync + 'static,
         T::ValueType: Send + Sync + 'static,
-        T::Backend: StateBackend + Sync + 'static,
+        T::Backend: StateBackendContext + StateBackend + Sync + 'static,
         C: Combiner<
             <Self::R as PipelineStream>::ValueType,
             T::ValueType,

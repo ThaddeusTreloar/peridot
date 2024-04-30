@@ -3,9 +3,8 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::{
-    engine::wrapper::serde::PeridotDeserializer,
-    engine::{QueueForwarder, QueueMetadataFactory, RawQueueReceiver},
-    pipeline::stream::serialiser::SerialiserPipeline,
+    engine::{wrapper::serde::PeridotDeserializer, QueueForwarder, QueueMetadataFactory, RawQueueReceiver},
+    pipeline::stream::serialiser::SerialiserPipeline, state::backend::StateBackendContext,
 };
 
 async fn forwarding_thread<B>(
@@ -13,7 +12,7 @@ async fn forwarding_thread<B>(
     mut reciever: RawQueueReceiver,
     forwarder: QueueForwarder,
 ) where
-    B: Send + Sync + 'static,
+    B: StateBackendContext + Send + Sync + 'static,
 {
     while let Some((partition, queue)) = reciever.recv().await {
         let queue_metadata = prototype_metadata.create_queue_metadata(partition);
@@ -37,12 +36,12 @@ pub fn new_stream<KS, VS, B, G>(
 where
     KS: PeridotDeserializer,
     VS: PeridotDeserializer,
-    B: Send + Sync + 'static,
+    B: StateBackendContext + Send + Sync + 'static,
 {
-    let qmp_ref = Arc::new(queue_metadata_prototype);
+    let qmf_ref = Arc::new(queue_metadata_prototype);
     let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-    tokio::spawn(forwarding_thread(qmp_ref, raw_queue_receiver, queue_sender));
+    tokio::spawn(forwarding_thread(qmf_ref, raw_queue_receiver, queue_sender));
 
     SerialiserPipeline::new(queue_receiver)
 }

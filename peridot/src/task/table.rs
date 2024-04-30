@@ -8,7 +8,7 @@ use crate::{
         fork::PipelineFork,
         sink::{changelog_sink::ChangelogSinkFactory, state_sink::StateSinkFactory},
         stream::{PipelineStream, PipelineStreamExt},
-    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend}
+    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend, StateBackendContext}
 };
 
 use super::Task;
@@ -37,11 +37,13 @@ impl<'a, P, B, G> TableTask<'a, P, B, G>
 where
     G: DeliveryGuaranteeType,
     P: PipelineStream + Send + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateBackendContext + StateBackend + Send + Sync + 'static,
     P::KeyType: Clone + Serialize + Send + 'static,
     P::ValueType: Clone + Serialize + Send + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, name: String, stream_queue: P) -> Self {
+        // Submit changelog job
+
         let changelog_sink_factory = ChangelogSinkFactory::new(format!("{}-changelog", name));
 
         let changelog_output = stream_queue.fork::<_, ExactlyOnce>(changelog_sink_factory);
@@ -72,7 +74,7 @@ where
 impl<'a, P, B, G> Task<'a> for TableTask<'a, P, B, G> 
 where
     P: PipelineStream + Send + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateBackendContext + StateBackend + Send + Sync + 'static,
     B::Error: Send,
     P::KeyType: Serialize + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
@@ -105,7 +107,7 @@ where
 impl<'a, P, B, G> GetViewDistributor for &TableTask<'a, P, B, G> 
 where
     P: PipelineStream + Send + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateBackendContext + StateBackend + Send + Sync + 'static,
     B::Error: Send,
     P::KeyType: Serialize + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,

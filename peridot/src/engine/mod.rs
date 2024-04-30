@@ -21,6 +21,7 @@ use rdkafka::{
     ClientConfig, TopicPartitionList,
 };
 use tracing_subscriber::field::display;
+use std::default;
 use std::ops::Deref;
 use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
@@ -30,6 +31,7 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::engine::distributor::QueueDistributor;
+use crate::state::backend::StateBackendContext;
 use crate::{
     engine::wrapper::serde::PeridotDeserializer, pipeline::stream::serialiser::SerialiserPipeline,
 };
@@ -85,17 +87,46 @@ impl TopicMetadata {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum TableState {
+    #[default]
+    Uninitialised,
+    Rebuilding,
+    Ready,
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TableStateAggregate {
+    inner: DashMap<i32, TableState>,
+}
+
+impl TableStateAggregate {
+    pub(crate) fn new() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn table_state(&self) -> TableState {
+        self.inner.iter()
+            .map(|s|s.value().clone())
+            .min()
+            .unwrap_or(Default::default())
+    }
+}
+
+#[derive(Debug, Default, Clone)]
 pub struct TableMetadata {
     source_topic: String,
     changelog_topic: Option<String>,
+    table_state: TableStateAggregate,
 }
 
 impl TableMetadata {
     fn new(source_topic: String) -> Self {
         Self {
             source_topic,
-            changelog_topic: Default::default(),
+            ..Default::default()
         }
     }
 
@@ -109,6 +140,14 @@ impl TableMetadata {
 
     pub(crate) fn set_changelog_topic(&mut self, changelog_topic: String) -> Option<String> {
         self.changelog_topic.replace(changelog_topic)
+    }
+
+    pub (crate) fn set_table_state(&mut self, partition: i32, state: TableState) {
+        self.table_state.inner.insert(partition, state);
+    }
+
+    pub (crate) fn table_state(&mut self) -> TableState {
+        self.table_state.table_state()
     }
 
     pub(crate) fn changelog_topic(&self) -> Option<&String> {
@@ -132,9 +171,9 @@ pub struct AppEngine<B, G = ExactlyOnce> {
     _delivery_guarantee: PhantomData<G>,
 }
 
-impl<BT> AppEngine<BT>
+impl<B> AppEngine<B>
 where
-    BT: Send + Sync + 'static,
+    B: StateBackendContext + Send + Sync + 'static,
 {
     fn register_source_topic(
         &self,
@@ -185,38 +224,34 @@ where
         }
     }
 
-    pub fn get_partitioner(&self) -> NoCustomPartitioner {
-        // TODO: This is quick workaround to get the partitioner
-        // from the producer. We need to find a better way to
-        // get the partitioner.
-
-        NoCustomPartitioner {}
-    }
-
-    pub fn get_backend_view(&self, _table_name: &str) -> StateStoreMap<BT> {
+    pub fn get_backend_view(&self, _table_name: &str) -> StateStoreMap<B> {
         self.state_stores.clone()
     }
 
-    pub fn get_state_store_for_table(&self, table_name: &str, partition: i32) -> Option<Arc<BT>> {
+    pub fn get_state_store_for_table(&self, table_name: &str, partition: i32) -> Option<Arc<B>> {
         let table_meta = self
             .table_metadata
             .get(table_name)
-            .expect("Table not registered")
-            .clone();
+            .expect("Table not registered");
 
         self.state_stores.get(&(table_meta.source_topic().to_owned(), partition))
             .map(|store|store.clone())
     }
 
-    pub fn get_state_store(&self, source_topic: String, partition: i32) -> Arc<BT> {
-        match self.state_stores.get(&(source_topic.clone(), partition)) {
-            Some(store) => store.clone(),
-            None => self.create_state_store(source_topic, partition),
-        }
+    pub fn get_state_store(&self, source_topic: String, partition: i32) -> Option<Arc<B>> {
+        self.state_stores
+            .get(&(source_topic.clone(), partition))
+            .map(|s|s.clone())
     }
 
-    fn create_state_store(&self, _source_topic: String, _partition: i32) -> Arc<BT> {
-        unimplemented!("Create state store")
+    async fn create_state_store(&self, source_topic: &str, partition: i32) -> Arc<B> {
+        let new_state_store = B::with_topic_name_and_partition(source_topic, partition).await;
+
+        let store_arc = Arc::new(new_state_store);
+
+        self.state_stores.insert((source_topic.to_owned(), partition), store_arc.clone());
+
+        store_arc
     }
 
     pub fn create_producer(&self) -> FutureProducer {
@@ -544,78 +579,9 @@ where
             }
         });
     }
-    /*
-    pub async fn table<KS, VS, B>(
-        app_engine: Arc<AppEngine<B>>,
-        topic: String,
-    ) -> Result<PTable<KS, VS, B>, PeridotEngineRuntimeError>
-    where
-        B: StateBackend
-            + ReadableStateBackend<KeyType = KS::Output, ValueType = VS::Output>
-            + WriteableStateBackend<KS::Output, VS::Output>
-            + Send
-            + Sync
-            + 'static,
-        KS: PDeserialize + Send + Sync + 'static,
-        VS: PDeserialize + Send + Sync + 'static,
-        KS::Output: Send + Sync + 'static,
-        VS::Output: Send + Sync + 'static,
-    {
-        let mut subscription = app_engine
-            .consumer
-            .subscription()
-            .expect("Failed to get subscription.")
-            .elements()
-            .into_iter()
-            .map(|tp| tp.topic().to_string())
-            .collect::<Vec<String>>();
 
-        if subscription.contains(&topic) {
-            return Err(PeridotEngineRuntimeError::TableCreationError(
-                error::TableCreationError::TableAlreadyExists,
-            ));
-        }
-
-        subscription.push(topic.clone());
-
-        app_engine
-            .consumer
-            .subscribe(
-                subscription
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<&str>>()
-                    .as_slice(),
-            )
-            .expect("Failed to subscribe to topic.");
-
-        app_engine.state_streams.insert(topic.clone());
-
-        let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
-
-        app_engine.downstreams.insert(topic.clone(), queue_sender);
-
-        let _commit_waker = app_engine.waker_context.commit_waker();
-
-        let backend = B::with_topic_name_and_commit_log(
-            topic.as_str(),
-            app_engine.downstream_commit_logs.clone(),
-        )
-        .await;
-
-        let state_store: StateStore<KS, VS, B> = StateStore::try_new(
-            topic,
-            backend,
-            app_engine.consumer.clone(),
-            app_engine.engine_state.clone(),
-            queue_receiver,
-        )?;
-
-        Ok(PTable::<KS, VS, B>::new(Arc::new(state_store)))
-        } */
-
-    pub fn stream<KS, VS>(
-        self: Arc<AppEngine<BT>>,
+    pub(crate) fn new_input_stream<KS, VS>(
+        self: Arc<AppEngine<B>>,
         topic: String,
     ) -> Result<SerialiserPipeline<KS, VS>, PeridotEngineRuntimeError>
     where
@@ -666,7 +632,7 @@ pub struct QueueMetadataFactory<B> {
 
 impl<B> QueueMetadataFactory<B>
 where
-    B: Send + Sync + 'static,
+    B: StateBackendContext + Send + Sync + 'static,
 {
     pub fn new(
         clients_config: PeridotConfig,

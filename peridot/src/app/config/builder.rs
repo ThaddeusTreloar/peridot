@@ -53,7 +53,6 @@ pub enum PeridotConfigError {
     PersistConfigReadError(#[from] PersistentConfigParseError),
     #[error(transparent)]
     PersistConversionError(#[from] PersistentConfigConversionError),
-    
 }
 
 impl PeridotConfigBuilder {

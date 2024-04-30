@@ -1,4 +1,4 @@
-use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream, state::backend::StateBackend};
+use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream, state::backend::{StateBackend, StateBackendContext}};
 
 use super::Task;
 
@@ -31,7 +31,7 @@ impl<'a, R, B, G> Task<'a> for TransparentTask<'a, R, B, G>
 where
     R: PipelineStream + Send + 'static,
     R::MStream: Send,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateBackendContext + StateBackend + Send + Sync + 'static,
     G: DeliveryGuaranteeType,
 {
     type G = G;
