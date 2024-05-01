@@ -1,4 +1,3 @@
-use uuid::Uuid;
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum TableState {
     #[default]

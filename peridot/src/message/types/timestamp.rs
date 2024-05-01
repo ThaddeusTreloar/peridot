@@ -24,9 +24,9 @@ impl From<rdkafka::message::Timestamp> for PeridotTimestamp {
     }
 }
 
-impl Into<Option<i64>> for PeridotTimestamp {
-    fn into(self) -> Option<i64> {
-        match self {
+impl From<PeridotTimestamp> for Option<i64> {
+    fn from(value: PeridotTimestamp) -> Self {
+        match value {
             PeridotTimestamp::NotAvailable => None,
             PeridotTimestamp::CreateTime(ts) => Some(ts),
             PeridotTimestamp::IngestionTime(ts) => Some(ts),
@@ -35,9 +35,9 @@ impl Into<Option<i64>> for PeridotTimestamp {
     }
 }
 
-impl Into<Option<i64>> for &PeridotTimestamp {
-    fn into(self) -> Option<i64> {
-        match self {
+impl From<&PeridotTimestamp> for Option<i64> {
+    fn from(value: &PeridotTimestamp) -> Self {
+        match value {
             PeridotTimestamp::NotAvailable => None,
             PeridotTimestamp::CreateTime(ts) => Some(*ts),
             PeridotTimestamp::IngestionTime(ts) => Some(*ts),

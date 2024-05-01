@@ -39,7 +39,7 @@ impl ChangelogManager {
         let consumer = config
             .client_config()
             .create_with_context(context.clone())
-            .map_err(|e|ChangelogManagerError::CreateConsumerError(e))?;
+            .map_err(ChangelogManagerError::CreateConsumerError)?;
 
         Ok(Self {
             consumer: Arc::new(consumer),

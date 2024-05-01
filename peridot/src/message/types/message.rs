@@ -58,7 +58,7 @@ impl<K, V> Message<K, V> {
         &self.topic
     }
 
-    pub fn timestamp<'a>(&'a self) -> &'a PeridotTimestamp {
+    pub fn timestamp(&self) -> &PeridotTimestamp {
         &self.timestamp
     }
 
@@ -75,16 +75,16 @@ impl<K, V> Message<K, V> {
     }
 }
 
-impl Into<PartialMessage<(), ()>> for Message<(), ()> {
-    fn into(self) -> PartialMessage<(), ()> {
+impl From<Message<(), ()>> for PartialMessage<(), ()> {
+    fn from(value: Message<(), ()>) -> Self {
         PartialMessage {
-            topic: Some(self.topic),
-            timestamp: Some(self.timestamp), // TODO: Maybe set to ingestion time to allow synchronisation.
-            partition: Some(self.partition),
-            offset: Some(self.offset),
-            headers: Some(self.headers),
-            key: Some(self.key),
-            value: Some(self.value),
+            topic: Some(value.topic),
+            timestamp: Some(value.timestamp), // TODO: Maybe set to ingestion time to allow synchronisation.
+            partition: Some(value.partition),
+            offset: Some(value.offset),
+            headers: Some(value.headers),
+            key: Some(()),
+            value: Some(()),
         }
     }
 }

@@ -32,15 +32,15 @@ where
         }
     }
 
-    pub fn filter<F>(&self, callback: F) -> () {
+    pub fn filter<F>(&self, callback: F) {
 
     }
 
-    pub fn map<F>(&self, callback: F) -> () {
+    pub fn map<F>(&self, callback: F) {
 
     }
 
-    pub fn integrate<F, RM>(&self, callback: F) -> () 
+    pub fn integrate<F, RM>(&self, callback: F) 
     where
         F: Fn(S::Item) -> RM,
         RM: PatchMessage<(), ()>

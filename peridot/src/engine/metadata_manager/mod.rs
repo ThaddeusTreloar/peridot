@@ -8,7 +8,7 @@ pub mod table_metadata;
 pub mod topic_metadata;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum MetadataManagerError {
+pub enum MetadataManagerError {
     #[error("MetadataError::TopicAlreadyRegistered: {}", topic)]
     TopicAlreadyRegistered {
         topic: String,

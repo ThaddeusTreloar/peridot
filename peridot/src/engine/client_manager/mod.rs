@@ -55,7 +55,7 @@ impl ClientManager {
         let consumer = config
             .client_config()
             .create_with_context(context.clone())
-            .map_err(|e|ClientManagerError::CreateConsumerError(e))?;
+            .map_err(ClientManagerError::CreateConsumerError)?;
 
         Ok(Self {
             consumer: Arc::new(consumer),
