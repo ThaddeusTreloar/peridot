@@ -6,7 +6,7 @@ use std::{
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::engine::QueueMetadata;
+use crate::engine::queue_manager::queue_metadata::QueueMetadata;
 
 use super::{
     map::MapMessage,

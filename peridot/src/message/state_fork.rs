@@ -1,25 +1,27 @@
 use std::{
-    pin::Pin,
-    task::{Context, Poll},
+    ops::DerefMut, pin::Pin, task::{Context, Poll}, time::Duration
 };
 
 use futures::ready;
 use pin_project_lite::pin_project;
+use serde::{de::DeserializeOwned, Deserialize};
 use tracing::info;
 
-use super::{sink::MessageSink, stream::MessageStream};
+use crate::{engine::wrapper::serde::native::NativeBytes, message::types::{Message, TryFromOwnedMessage}};
+
+use super::{fork::CommitState, sink::MessageSink, stream::MessageStream};
 
 #[derive(Debug, Default)]
-pub (super) enum CommitState {
+enum StoreState {
     #[default]
-    NotCommitting,
-    Committing,
-    Committed,
+    Empty,
+    Rebuilding,
+    Rebuilt,
 }
 
 pin_project! {
-    #[project = ForkProjection]
-    pub struct Fork<M, Si>
+    #[project = StateSinkForkProjection]
+    pub struct StateSinkFork<M, Si>
     where
         M: MessageStream,
         Si: MessageSink<M::KeyType, M::ValueType>,
@@ -27,31 +29,36 @@ pin_project! {
         #[pin]
         message_stream: M,
         #[pin]
+        changelog_stream: M,
+        #[pin]
         message_sink: Si,
         commit_state: CommitState,
+        store_state: StoreState,
     }
 }
 
-impl<M, Si> Fork<M, Si>
+impl<M, Si> StateSinkFork<M, Si>
 where
     M: MessageStream,
     Si: MessageSink<M::KeyType, M::ValueType>,
 {
-    pub fn new(message_stream: M, message_sink: Si) -> Self {
+    pub fn new(changelog_stream: M, message_stream: M, message_sink: Si) -> Self {
         Self {
+            changelog_stream,
             message_stream,
             message_sink,
             commit_state: Default::default(),
+            store_state: Default::default(),
         }
     }
 }
 
-impl<M, Si> MessageStream for Fork<M, Si>
+impl<M, Si> MessageStream for StateSinkFork<M, Si>
 where
     M: MessageStream,
     Si: MessageSink<M::KeyType, M::ValueType>,
-    M::KeyType: Clone,
-    M::ValueType: Clone,
+    M::KeyType: Clone + DeserializeOwned,
+    M::ValueType: Clone + DeserializeOwned,
 {
     type KeyType = M::KeyType;
     type ValueType = M::ValueType;
@@ -60,10 +67,12 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<super::types::Message<Self::KeyType, Self::ValueType>>> {
-        let ForkProjection {
+        let StateSinkForkProjection {
+            mut changelog_stream,
             mut message_stream,
             mut message_sink,
             commit_state,
+            store_state,
         } = self.project();
 
         info!("ForkedSinking messages from stream to sink...");
@@ -75,6 +84,19 @@ where
             ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
             *commit_state = CommitState::Committed;
         }
+
+        if let StoreState::Empty = store_state {
+            match ready!(changelog_stream.poll_next(cx)) {
+                None => {
+                    unimplemented!("")
+                },
+                Some(message) => {
+                    message_sink.as_mut().start_send(message)
+                        .expect("Failed to start send.");
+                },
+            }
+        }
+
 
         // Poll the stream for the next message. If self.commit_state is
         // Committed, we know that we have committed our producer transaction,

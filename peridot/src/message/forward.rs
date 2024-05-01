@@ -9,7 +9,7 @@ use pin_project_lite::pin_project;
 use rdkafka::{consumer::Consumer, producer::Producer, Offset, TopicPartitionList};
 use tracing::info;
 
-use crate::engine::QueueMetadata;
+use crate::engine::queue_manager::queue_metadata::QueueMetadata;
 
 use super::{sink::MessageSink, stream::MessageStream};
 
@@ -103,7 +103,9 @@ where
                         .expect("Failed to send message to sink.");
 
                     let cgm = queue_metadata
-                        .consumer()
+                        .engine_context()
+                        .client_manager()
+                        .consumer_ref()
                         .group_metadata()
                         .expect("No consumer group metadata present while committing transaction.");
 

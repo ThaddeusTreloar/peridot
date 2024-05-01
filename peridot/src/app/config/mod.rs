@@ -31,6 +31,11 @@ impl PeridotConfig {
     pub fn get(&self, key: &str) -> Option<&str> {
         self.client_config().get(key)
     }
+
+    pub fn app_id(&self) -> &str {
+        self.client_config.get("app.id")
+            .expect("Failed to get 'app.id' from PeridotConfig. This should not be possible")
+    }
 }
 
 impl TryFrom<&ClientConfig> for PeridotConfig {

@@ -8,8 +8,7 @@ use serde::Serialize;
 
 use crate::{
     engine::{
-        wrapper::serde::{native::NativeBytes, PeridotSerializer},
-        QueueMetadata,
+        queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{native::NativeBytes, PeridotSerializer}
     },
     message::sink::{MessageSink, NonCommittingSink},
 };

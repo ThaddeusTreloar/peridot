@@ -6,7 +6,7 @@ use std::{
 use pin_project_lite::pin_project;
 use rdkafka::{consumer::Consumer, producer::Producer, Offset, TopicPartitionList};
 
-use crate::engine::QueueMetadata;
+use crate::engine::queue_manager::queue_metadata::QueueMetadata;
 
 use super::{CommitingSink, MessageSink};
 
@@ -54,7 +54,9 @@ impl<K, V> MessageSink<K, V> for NoopSink<K, V>
         queue_metadata.producer().send_offsets_to_transaction(
             offsets, 
             &queue_metadata
-                .consumer()
+                .engine_context()
+                .client_manager()
+                .consumer_ref()
                 .group_metadata()
                 .expect("Failed to get consumer group metadata."), 
             Duration::from_millis(1000)

@@ -10,7 +10,7 @@ use rdkafka::{consumer::Consumer, TopicPartitionList};
 use tracing::info;
 
 use crate::{
-    engine::{wrapper::serde::PeridotSerializer, QueueMetadata},
+    engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer},
     message::types::Message,
 };
 
@@ -90,7 +90,9 @@ where
             .expect("Failed to add partition offset");
 
         self.queue_metadata
-            .consumer()
+            .engine_context()
+            .client_manager()
+            .consumer_ref()
             .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)
             .expect("Failed to make async commit in state store");
 

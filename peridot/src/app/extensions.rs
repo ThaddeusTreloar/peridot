@@ -108,9 +108,9 @@ impl ClientContext for PeridotConsumerContext {}
 
 impl Default for PeridotConsumerContext {
     fn default() -> Self {
-        let (pre_rebalance_waker, _) = channel(100);
-        let (post_rebalance_waker, _) = channel(100);
-        let (commit_waker, _) = channel(100);
+        let (pre_rebalance_waker, _) = channel(1024);
+        let (post_rebalance_waker, _) = channel(1024);
+        let (commit_waker, _) = channel(1024);
 
         PeridotConsumerContext {
             pre_rebalance_waker,

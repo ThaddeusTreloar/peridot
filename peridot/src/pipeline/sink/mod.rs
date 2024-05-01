@@ -1,4 +1,4 @@
-use crate::{engine::{wrapper::serde::{serializers::Serializers, PeridotStatefulSerializer}, QueueMetadata}, message::sink::MessageSink};
+use crate::{engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{serializers::Serializers, PeridotStatefulSerializer}}, message::sink::MessageSink};
 
 pub(crate) mod changelog_sink;
 pub mod print_sink;

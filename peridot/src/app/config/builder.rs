@@ -117,7 +117,7 @@ impl PeridotConfigBuilder {
             .collect();
 
         if !missing_fields.is_empty() {
-            return Err(PeridotConfigError::MissingConfig { configs: missing_fields })
+            Err(PeridotConfigError::MissingConfig { configs: missing_fields })?
         }
 
         Ok(self)

@@ -107,9 +107,9 @@ pub trait Task<'a> {
 
         unimplemented!("");
 
-        app.engine_ref()
-            .register_table(table_name.to_owned(), String::new())
-            .expect("Table already registered.");
+        //app.engine_ref()
+        //    .register_table(table_name, "")
+        //    .expect("Table already registered.");
 
         TableTask::new(app, table_name.to_owned(), output)
     }

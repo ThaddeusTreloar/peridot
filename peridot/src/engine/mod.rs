@@ -1,19 +1,11 @@
-pub type Queue = (QueueMetadata, StreamPeridotPartitionQueue);
-
-pub type QueueForwarder = UnboundedSender<Queue>;
-pub type QueueReceiver = UnboundedReceiver<Queue>;
-
-pub type RawQueue = (i32, StreamPeridotPartitionQueue);
-
-pub type RawQueueForwarder = UnboundedSender<RawQueue>;
-pub type RawQueueReceiver = UnboundedReceiver<RawQueue>;
+pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
 
 pub type StateStoreMap<B> = Arc<DashMap<(String, i32), Arc<B>>>;
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use rdkafka::config::FromClientConfig;
-use rdkafka::consumer::ConsumerContext;
+use rdkafka::consumer::{BaseConsumer, ConsumerContext};
 use rdkafka::producer::{FutureProducer, NoCustomPartitioner, Producer};
 use rdkafka::util::Timeout;
 use rdkafka::{
@@ -30,16 +22,23 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use crate::engine::distributor::QueueDistributor;
+use crate::engine::queue_manager::QueueManager;
 use crate::state::backend::StateBackendContext;
 use crate::{
     engine::wrapper::serde::PeridotDeserializer, pipeline::stream::serialiser::SerialiserPipeline,
 };
 
+use self::changelog_manager::ChangelogManager;
+use self::client_manager::ClientManager;
+use self::context::EngineContext;
 use self::engine_state::EngineState;
 use self::error::{EngineInitialisationError, TableRegistrationError};
-use self::partition_queue::StreamPeridotPartitionQueue;
-use self::streams::new_stream;
+use self::metadata_manager::table_metadata::TableMetadata;
+use self::metadata_manager::topic_metadata::{self, TopicMetadata};
+use self::metadata_manager::MetadataManager;
+use self::producer_factory::ProducerFactory;
+use self::queue_manager::partition_queue::StreamPeridotPartitionQueue;
+use self::queue_manager::QueueSender;
 use self::{
     error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
     util::{ConsumerUtils, ExactlyOnce},
@@ -48,20 +47,28 @@ use self::{
 use crate::app::{
     config::PeridotConfig,
     extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
-    PeridotConsumer,
 };
 
+pub mod changelog_manager;
 pub mod circuit_breaker;
+pub mod client_manager;
 pub mod context;
-pub mod distributor;
+pub mod queue_manager;
 pub mod error;
 pub mod engine_state;
-pub mod partition_queue;
-pub mod sinks;
-pub mod streams;
-pub mod tasks;
+pub mod metadata_manager;
+pub mod producer_factory;
+pub mod state_store_manager;
 pub mod util;
 pub mod wrapper;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DeliverySemantics {
+    #[default]
+    ExactlyOnce,
+    AtLeastOnce,
+    AtMostOnce,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum StateType {
@@ -70,104 +77,14 @@ pub enum StateType {
     InMemory,
 }
 
-#[derive(Debug, Clone)]
-pub struct TopicMetadata {
-    partition_count: i32,
-}
-
-impl TopicMetadata {
-    pub fn new(partition_count: i32) -> Self {
-        Self { 
-            partition_count,
-        }
-    }
-
-    pub fn partition_count(&self) -> i32 {
-        self.partition_count
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum TableState {
-    #[default]
-    Uninitialised,
-    Rebuilding,
-    Ready,
-}
-
-#[derive(Debug, Default, Clone)]
-pub(crate) struct TableStateAggregate {
-    inner: DashMap<i32, TableState>,
-}
-
-impl TableStateAggregate {
-    pub(crate) fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    pub(crate) fn table_state(&self) -> TableState {
-        self.inner.iter()
-            .map(|s|s.value().clone())
-            .min()
-            .unwrap_or(Default::default())
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct TableMetadata {
-    source_topic: String,
-    changelog_topic: Option<String>,
-    table_state: TableStateAggregate,
-}
-
-impl TableMetadata {
-    fn new(source_topic: String) -> Self {
-        Self {
-            source_topic,
-            ..Default::default()
-        }
-    }
-
-    fn new_with_changelog(source_topic: String, changelog_topic: String) -> Self {
-        let mut new = Self::new(source_topic);
-
-        let _ = new.set_changelog_topic(changelog_topic);
-
-        new
-    }
-
-    pub(crate) fn set_changelog_topic(&mut self, changelog_topic: String) -> Option<String> {
-        self.changelog_topic.replace(changelog_topic)
-    }
-
-    pub (crate) fn set_table_state(&mut self, partition: i32, state: TableState) {
-        self.table_state.inner.insert(partition, state);
-    }
-
-    pub (crate) fn table_state(&mut self) -> TableState {
-        self.table_state.table_state()
-    }
-
-    pub(crate) fn changelog_topic(&self) -> Option<&String> {
-        self.changelog_topic.as_ref()
-    }
-
-    pub(crate) fn source_topic(&self) -> &str{
-        &self.source_topic
-    }
-}
-
 pub struct AppEngine<B, G = ExactlyOnce> {
-    config: PeridotConfig,
-    consumer: Arc<PeridotConsumer>,
-    waker_context: Arc<PeridotConsumerContext>,
-    downstreams: Arc<DashMap<String, RawQueueForwarder>>,
+    client_manager: Arc<ClientManager>,
+    metadata_manager: Arc<MetadataManager>,
+    changelog_manager: Arc<ChangelogManager>,
+    producer_factory: Arc<ProducerFactory>,
+    downstreams: Arc<DashMap<String, QueueSender>>,
     engine_state: Arc<AtomicCell<EngineState>>,
     state_stores: StateStoreMap<B>,
-    table_metadata: Arc<DashMap<String, TableMetadata>>,
-    source_topic_metadata: Arc<DashMap<String, TopicMetadata>>,
     _delivery_guarantee: PhantomData<G>,
 }
 
@@ -175,409 +92,49 @@ impl<B> AppEngine<B>
 where
     B: StateBackendContext + Send + Sync + 'static,
 {
-    fn register_source_topic(
-        &self,
-        topic: String,
-        partition_count: i32,
-    ) -> Result<(), EngineInitialisationError> {
-        if self.source_topic_metadata.get(topic.as_str()).is_some() {
-            Err(EngineInitialisationError::ConflictingTopicRegistration(
-                topic,
-            ))
-        } else {
-            self.source_topic_metadata
-                .insert(topic.clone(), TopicMetadata::new(partition_count));
-            Ok(())
+    pub fn get_engine_context(&self) -> EngineContext {
+        EngineContext { 
+            client_manager: self.client_manager.clone(), 
+            metadata_manager: self.metadata_manager.clone(), 
+            changelog_manager: self.changelog_manager.clone(), 
         }
-    }
-
-    pub fn get_engine_context(&self) {
-        //-> impl EngineContext {
-        unimplemented!("Not implemented yet")
-    }
-
-    pub fn get_source_topic_for_table(&self, table_name: &str) -> Option<TableMetadata> {
-        self.table_metadata.get(table_name).map(|topic| topic.clone())
-    }
-
-    pub fn get_table_partition_count(&self, table_name: &str) -> Option<i32> {
-        let topic = self.get_source_topic_for_table(table_name)?;
-
-        self.source_topic_metadata
-            .get(topic.source_topic())
-            .map(|metadata| metadata.partition_count())
-    }
-
-    pub fn register_table(
-        &self,
-        table_name: String,
-        source_topic: String,
-    ) -> Result<(), TableRegistrationError> {
-        let table_meta = TableMetadata::new(source_topic);
-
-        if self.table_metadata.contains_key(&table_name) {
-            Err(TableRegistrationError::TableAlreadyRegistered)
-        } else {
-            self.table_metadata
-                .insert(table_name.clone(), table_meta);
-            Ok(())
-        }
-    }
-
-    pub fn get_backend_view(&self, _table_name: &str) -> StateStoreMap<B> {
-        self.state_stores.clone()
-    }
-
-    pub fn get_state_store_for_table(&self, table_name: &str, partition: i32) -> Option<Arc<B>> {
-        let table_meta = self
-            .table_metadata
-            .get(table_name)
-            .expect("Table not registered");
-
-        self.state_stores.get(&(table_meta.source_topic().to_owned(), partition))
-            .map(|store|store.clone())
-    }
-
-    pub fn get_state_store(&self, source_topic: String, partition: i32) -> Option<Arc<B>> {
-        self.state_stores
-            .get(&(source_topic.clone(), partition))
-            .map(|s|s.clone())
-    }
-
-    async fn create_state_store(&self, source_topic: &str, partition: i32) -> Arc<B> {
-        let new_state_store = B::with_topic_name_and_partition(source_topic, partition).await;
-
-        let store_arc = Arc::new(new_state_store);
-
-        self.state_stores.insert((source_topic.to_owned(), partition), store_arc.clone());
-
-        store_arc
-    }
-
-    pub fn create_producer(&self) -> FutureProducer {
-        let producer = FutureProducer::from_config(self.config.client_config())
-            .expect("Failed to build producer");
-
-        producer
-            .init_transactions(Duration::from_millis(2500))
-            .expect("Failed to init transactions");
-
-        producer
-    }
-
-    fn update_consumer(&self) {
-        let _consumer = self.consumer.clone();
-        unimplemented!("Create consumer")
-    }
-
-    pub async fn rebuild_state_stores(&self) -> Result<(), PeridotEngineRuntimeError> {
-        unimplemented!("Rebuild state stores")
     }
 
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
-        let pre_rebalance_waker = self.waker_context.pre_rebalance_waker();
-        let commit_waker = self.waker_context.commit_waker();
-        let rebalance_waker = self.waker_context.post_rebalance_waker();
+        let waker_context = self.client_manager.consumer_context();
 
-        self.rebuild_state_stores().await?;
+        let pre_rebalance_waker = waker_context.pre_rebalance_waker();
+        let commit_waker = waker_context.commit_waker();
+        let rebalance_waker = waker_context.post_rebalance_waker();
 
-        let queue_distributor = QueueDistributor::new(
-            self.consumer.clone(),
+        let queue_distributor = QueueManager::new(
+            self.get_engine_context(),
+            self.producer_factory.clone(),
             self.downstreams.clone(),
-            self.table_metadata.clone(),
             self.engine_state.clone(),
             pre_rebalance_waker,
         );
 
         tokio::spawn(queue_distributor);
 
-        self.start_commit_listener(commit_waker);
-        self.start_rebalance_listener(rebalance_waker);
-
         info!("Engine running...");
 
-        Ok(())                    // Transition engine state.
-
+        Ok(()) // Transition engine state.
     }
 
     pub fn from_config(config: &PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
         let context = PeridotConsumerContext::from_config(config);
 
-        let consumer = config
-            .client_config()
-            .create_with_context(context.clone())?;
-
         Ok(Self {
-            config: config.clone(),
-            consumer: Arc::new(consumer),
-            waker_context: Arc::new(context),
+            client_manager: Arc::new(ClientManager::from_config(config)?),
+            metadata_manager: Arc::new(MetadataManager::new(config.app_id())),
+            changelog_manager: Arc::new(ChangelogManager::from_config(config)?),
+            producer_factory: Arc::new(ProducerFactory::new(config.clone(), DeliverySemantics::ExactlyOnce)),
             downstreams: Default::default(),
             engine_state: Default::default(),
             state_stores: Default::default(),
-            table_metadata: Default::default(),
-            source_topic_metadata: Default::default(),
             _delivery_guarantee: PhantomData,
         })
-    }
-
-    fn start_queue_distributor(&self, mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>) {
-        let consumer = self.consumer.clone();
-        let downstreams = self.downstreams.clone();
-        let state = self.engine_state.clone();
-        let state_streams = self.table_metadata.clone();
-
-        tokio::spawn(async move {
-            loop {
-                info!("Starting consumer threads...");
-                let topic_partitions = consumer.assignment().expect("No subscription");
-
-                let _gm = consumer.group_metadata();
-
-                // If there is a problem during testing, this may be it.
-                // consumer.resume(&topic_partitions).expect("msg");
-
-                let topic_partitions: Vec<_> = topic_partitions
-                    .elements()
-                    .iter()
-                    .map(|tp| (tp.topic().to_string(), tp.partition()))
-                    .collect();
-
-                let mut count = 0;
-
-                info!("New Assigned partitions: {:?}", topic_partitions);
-
-                for (topic, partition) in topic_partitions.into_iter() {
-                    count += 1;
-
-                    info!("Topic: {} Partition: {}", topic, partition);
-
-                    if partition != PARTITION_UA {
-                        let partition_queue = consumer
-                            .split_partition_queue(topic.as_str(), partition)
-                            .expect("No partition queue");
-
-                        if state_streams.contains_key(&topic) {
-                            let mut topic_partition_list = TopicPartitionList::new();
-                            topic_partition_list.add_partition(topic.as_str(), partition);
-
-                            let group_offset = consumer
-                                .committed_offsets(topic_partition_list, Duration::from_secs(1))
-                                .expect("No group offset")
-                                .find_partition(topic.as_str(), partition)
-                                .unwrap()
-                                .offset()
-                                .to_raw()
-                                .unwrap_or(0);
-
-                            info!("Group offset: {}", group_offset);
-                        }
-
-                        let queue_sender = downstreams.get(topic.as_str());
-
-                        if let Some(queue_sender) = queue_sender {
-                            let queue_sender = queue_sender.value();
-
-                            let partition_queue = StreamPeridotPartitionQueue::new(partition_queue);
-
-                            info!(
-                                "Sending partition queue to downstream: {}, for partition: {}",
-                                topic, partition
-                            );
-
-                            queue_sender // TODO: Why is this blocking?
-                                .send((partition, partition_queue))
-                                .expect("Failed to send partition queue");
-                        } else {
-                            error!("No downstream found for topic: {}", topic);
-                        }
-                    } else {
-                        warn!("Partition not assigned for topic: {}", topic);
-                    }
-                }
-
-                if count == 0 {
-                    info!("No assigned partitions for Engine, stopping...");
-                    state.store(EngineState::Stopped);
-                } else {
-                    state.store(EngineState::NotReady);
-                }
-
-                let poll_loop = async {
-                    let _max_poll_interval = match consumer.context().main_queue_min_poll_interval()
-                    {
-                        Timeout::Never => Duration::from_secs(1),
-                        Timeout::After(duration) => duration / 2,
-                    };
-
-                    loop {
-                        // To keep the consumer alive we must poll at least
-                        // every 'max.poll.interval.ms'. We are polling with
-                        // a 0 second timeout for two reasons:
-                        //  - using any timeout will block a runtime thread
-                        //  - the blocked thread will not be cancellable by the select block
-                        if let Some(_message) = consumer.poll(Duration::from_millis(0)) {}
-
-                        // Instead we can use sleep for the interval.
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                        //tokio::time::sleep(max_poll_interval).await;
-                    }
-                };
-
-                select! {
-                    () = poll_loop => {
-                        error!("Broke consumer poll loop");
-                    },
-                    _rebalance = waker.recv() => {
-                        info!("Rebalance waker received: {:?}", _rebalance);
-                        state.store(EngineState::Stopped);
-                    },
-                };
-            }
-        });
-    }
-
-    fn start_commit_listener(&self, mut _waker: tokio::sync::broadcast::Receiver<Commit>) {
-        warn!("start_commit_listener: Currently unused");
-    }
-
-    // Currently unused
-    fn start_rebalance_listener(
-        &self,
-        mut waker: tokio::sync::broadcast::Receiver<OwnedRebalance>,
-    ) {
-        warn!("start_rebalance_listener: Currently unused");
-
-        tokio::spawn(async move {
-            while let Ok(rebalance) = waker.recv().await {
-                match rebalance {
-                    OwnedRebalance::Error(_) => {
-                        error!("{}", rebalance);
-                    }
-                    _ => {
-                        info!("{}", rebalance);
-                    }
-                }
-            }
-        });
-    }
-
-    fn start_lag_listener(&self) {
-        let lag_max = 100;
-        let interval = Duration::from_millis(1000);
-        let consumer = self.consumer.clone();
-        let consumer_state = self.engine_state.clone();
-        let state_streams = self.table_metadata.clone();
-
-        tokio::spawn(async move {
-            'outer: loop {
-                tokio::time::sleep(interval).await;
-
-                if consumer_state.load() == EngineState::Stopped {
-                    info!("Consumer stopped...");
-                    continue;
-                }
-
-                let subscription = consumer.position().expect("Failed to get subscription");
-
-                for consumer_tp in subscription.elements() {
-                    let topic = consumer_tp.topic();
-                    let partition = consumer_tp.partition();
-
-                    if !state_streams.contains_key(topic) {
-                        continue;
-                    }
-
-                    let (_, high_watermark) = consumer
-                        .client()
-                        .fetch_watermarks(topic, partition, Duration::from_secs(1))
-                        .expect("Failed to fetch watermarks");
-
-                    // TODO: currently this will only return a valid offset
-                    // if the consumer has consumed a message from the partition.
-                    // otherwise returns -1001.
-                    // This is a problem because if the saved offset is 1234
-                    // and the high watermark is 1234, the consumer will
-                    // appear as though it is lagging, when in fact it is not.
-                    let consumer_offset = consumer_tp
-                        .offset()
-                        .to_raw()
-                        .expect("Failed to convert consumer offset to i64");
-
-                    if high_watermark < 0 {
-                        info!(
-                            "Broker offset not found for topic partition: {}->{}",
-                            topic, partition
-                        );
-                    } else if consumer_offset < 0 {
-                        info!(
-                            "Consumer offset not found for topic partition: {}->{}",
-                            topic, partition
-                        );
-                    } else if consumer_offset + lag_max < high_watermark {
-                        match consumer_state.load() {
-                            EngineState::Running | EngineState::NotReady => {
-                                consumer_state.store(EngineState::Lagging);
-
-                                info!(
-                                    "Consumer topic partition {}->{} lagging: {} < {}",
-                                    topic, partition, consumer_offset, high_watermark
-                                );
-
-                                let assignment =
-                                    consumer.assignment().expect("Failed to get assignment");
-
-                                let assignment_elements = assignment.elements();
-
-                                let stream_topics = assignment_elements
-                                    .iter()
-                                    .filter(|tp| !state_streams.contains_key(tp.topic()))
-                                    .collect::<Vec<&TopicPartitionListElem>>();
-
-                                let mut tp_list = TopicPartitionList::new();
-
-                                for tp in stream_topics {
-                                    tp_list.add_partition(tp.topic(), tp.partition());
-                                }
-
-                                consumer.pause(&tp_list).expect("Failed to pause consumer");
-
-                                continue 'outer;
-                            }
-                            state => {
-                                info!("Consumer {}...", state);
-                                continue 'outer;
-                            }
-                        }
-                    }
-                }
-
-                if consumer_state.load() == EngineState::Lagging {
-                    consumer_state.store(EngineState::Running);
-                    let assignment = consumer.assignment().expect("Failed to get assignment");
-
-                    let assignment_elements = assignment.elements();
-
-                    let stream_topics = assignment_elements
-                        .iter()
-                        .filter(|tp| !state_streams.contains_key(tp.topic()))
-                        .collect::<Vec<&TopicPartitionListElem>>();
-
-                    let mut tp_list = TopicPartitionList::new();
-
-                    for tp in stream_topics {
-                        tp_list.add_partition(tp.topic(), tp.partition());
-                    }
-
-                    consumer.resume(&tp_list).expect("Failed to pause consumer");
-                    info!("Consumer caught up...");
-                } else if consumer_state.load() == EngineState::NotReady {
-                    consumer_state.store(EngineState::Running);
-                    info!("Consumer running...");
-                }
-
-                tokio::time::sleep(interval).await;
-            }
-        });
     }
 
     pub(crate) fn new_input_stream<KS, VS>(
@@ -588,106 +145,17 @@ where
         KS: PeridotDeserializer,
         VS: PeridotDeserializer,
     {
-        let mut subscription = self.consumer.get_subscribed_topics();
-
-        if subscription.contains(&topic) {
-            return Err(PeridotEngineRuntimeError::CyclicDependencyError(topic));
-        }
-
-        subscription.push(topic.clone());
-
-        self.consumer
-            .subscribe(
-                subscription
-                    .iter()
-                    .map(Deref::deref)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .expect("Failed to subscribe to topic.");
+        // TODO: there is some time that passes between subscribing to a topic and
+        // registering with the queue manager. We suspect that this may lead to a situation
+        // where if this function is called while the engine is running, then the QueueManager
+        // may recieve a partition queue before it's internal record has updated, leading to
+        // undefined behaviour.
+        let metadata = self.client_manager.create_topic_source(&topic)?;
+        self.metadata_manager.register_source_topic(&topic, &metadata)?;
 
         let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
-
         self.downstreams.insert(topic.clone(), queue_sender);
 
-        let queue_metadata_factory = QueueMetadataFactory::new(
-            self.config.clone(),
-            self.consumer.clone(),
-            self.clone(),
-            topic,
-        );
-
-        Ok(new_stream(queue_metadata_factory, queue_receiver))
-    }
-}
-
-/// Curried constructor for QueueMetadata types.
-#[derive(Clone)]
-pub struct QueueMetadataFactory<B> {
-    clients_config: PeridotConfig,
-    consumer_ref: Arc<PeridotConsumer>,
-    app_engine_ref: Arc<AppEngine<B>>,
-    source_topic: String,
-}
-
-impl<B> QueueMetadataFactory<B>
-where
-    B: StateBackendContext + Send + Sync + 'static,
-{
-    pub fn new(
-        clients_config: PeridotConfig,
-        consumer_ref: Arc<PeridotConsumer>,
-        app_engine_ref: Arc<AppEngine<B>>,
-        source_topic: String,
-    ) -> Self {
-        Self {
-            clients_config,
-            consumer_ref,
-            app_engine_ref,
-            source_topic,
-        }
-    }
-
-    pub fn create_queue_metadata(&self, partition: i32) -> QueueMetadata {
-        let producer = self.app_engine_ref.create_producer();
-
-        QueueMetadata {
-            clients_config: self.clients_config.clone(),
-            consumer_ref: self.consumer_ref.clone(),
-            producer_ref: Arc::new(producer),
-            partition,
-            source_topic: self.source_topic.clone(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct QueueMetadata {
-    clients_config: PeridotConfig,
-    consumer_ref: Arc<PeridotConsumer>,
-    producer_ref: Arc<FutureProducer>,
-    partition: i32,
-    source_topic: String,
-}
-
-impl QueueMetadata {
-    pub fn partition(&self) -> i32 {
-        self.partition
-    }
-
-    pub fn source_topic(&self) -> &str {
-        self.source_topic.as_str()
-    }
-
-    pub fn client_config(&self) -> &PeridotConfig {
-        &self.clients_config
-    }
-
-    pub fn consumer(&self) -> Arc<PeridotConsumer> {
-        self.consumer_ref.clone()
-    }
-
-    pub fn producer(&self) -> Arc<FutureProducer> {
-        self.producer_ref.clone()
+        Ok(SerialiserPipeline::new(queue_receiver))
     }
 }

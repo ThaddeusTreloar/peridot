@@ -2,10 +2,16 @@ use rdkafka::error::KafkaError;
 
 use crate::state::error::StateStoreCreationError;
 
+use super::{changelog_manager::ChangelogManagerError, client_manager::ClientManagerError, metadata_manager::MetadataManagerError};
+
 #[derive(Debug, thiserror::Error)]
 pub enum PeridotEngineCreationError {
     #[error("Failed to client: {0}")]
     ClientCreationError(String),
+    #[error(transparent)]
+    ClientManagerError(#[from] ClientManagerError),
+    #[error(transparent)]
+    ChangelogManagerError(#[from] ChangelogManagerError),
 }
 
 impl From<rdkafka::error::KafkaError> for PeridotEngineCreationError {
@@ -26,6 +32,10 @@ pub enum PeridotEngineRuntimeError {
     ProducerCreationError(#[from] KafkaError),
     #[error("Broken rebalance receiver.")]
     BrokenRebalanceReceiver,
+    #[error(transparent)]
+    ClientManagerError(#[from] ClientManagerError),
+    #[error(transparent)]
+    MetadataManagerError(#[from] MetadataManagerError),
 }
 
 #[derive(Debug, thiserror::Error)]

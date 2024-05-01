@@ -5,15 +5,12 @@ use std::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    engine::QueueMetadata,
-    message::{
+    engine::queue_manager::queue_metadata::QueueMetadata, message::{
         join::Combiner, sink::MessageSink, stream::{ChannelStream, MessageStream, PipelineStage}, types::{FromMessage, Message, PatchMessage}
-    },
-    pipeline::{
+    }, pipeline::{
         fork::PipelineFork, forward::PipelineForward, join::JoinPipeline, join_by::JoinBy,
         map::MapPipeline, sink::MessageSinkFactory,
-    },
-    state::backend::{GetView, GetViewDistributor},
+    }, state::backend::{GetView, GetViewDistributor}
 };
 
 //pub mod import;

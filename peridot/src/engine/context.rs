@@ -1,75 +1,24 @@
 use std::sync::Arc;
 
 use super::{
-    wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor},
-    AppEngine, TableMetadata,
+    changelog_manager::ChangelogManager, client_manager::{self, ClientManager}, metadata_manager::MetadataManager, wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor}, AppEngine, TableMetadata
 };
 
-pub trait EngineContext {
-    type Partitioner: PeridotPartitioner;
-    type TimestampExtractor: TimestampExtractor;
-    type Backend;
-
-    fn partitioner(&self) -> &Self::Partitioner;
-    fn timestamp_extractor(&self) -> &Self::TimestampExtractor;
-    fn state_backend(&self, source_topic: String, partition: i32) -> Arc<Self::Backend>;
-    fn get_source_topic_for_table(&self, table_name: &str) -> Option<String>;
-    fn get_table_partition_count(&self, table_name: &str) -> Option<i32>;
-    fn get_table_meta_for_topic(&self, source_topic: &str) -> Vec<String>;
-}
-
 #[derive(Clone)]
-pub struct PeridotEngineContext<P, T, B> {
-    _engine_ref: Arc<AppEngine<B>>,
-    partitioner: Arc<P>,
-    timestamp_extractor: Arc<T>,
+pub struct EngineContext {
+    pub(super) client_manager: Arc<ClientManager>,
+    pub(super) metadata_manager: Arc<MetadataManager>,
+    pub(super) changelog_manager: Arc<ChangelogManager>,
 }
 
-impl<P, T, B> PeridotEngineContext<P, T, B> {
-    pub fn new(
-        engine_ref: Arc<AppEngine<B>>,
-        partitioner: Arc<P>,
-        timestamp_extractor: Arc<T>,
-    ) -> Self {
-        PeridotEngineContext {
-            _engine_ref: engine_ref,
-            partitioner,
-            timestamp_extractor,
-        }
+impl EngineContext {
+    pub(crate) fn client_manager(&self) -> Arc<ClientManager> {
+        self.client_manager.clone()
     }
-}
-
-impl<P, T, B> EngineContext for PeridotEngineContext<P, T, B>
-where
-    P: PeridotPartitioner,
-    T: TimestampExtractor,
-    B: Send + Sync + 'static,
-{
-    type Partitioner = P;
-    type TimestampExtractor = T;
-    type Backend = B;
-
-    fn partitioner(&self) -> &Self::Partitioner {
-        &self.partitioner
+    pub(crate) fn metadata_manager(&self) -> Arc<MetadataManager> {
+        self.metadata_manager.clone()
     }
-
-    fn timestamp_extractor(&self) -> &Self::TimestampExtractor {
-        &self.timestamp_extractor
-    }
-
-    fn state_backend(&self, _source_topic: String, _partition: i32) -> Arc<Self::Backend> {
-        unimplemented!("state_backend")
-    }
-
-    fn get_source_topic_for_table(&self, _table_name: &str) -> Option<String> {
-        unimplemented!("get_source_topic_for_table")
-    }
-
-    fn get_table_partition_count(&self, _table_name: &str) -> Option<i32> {
-        unimplemented!("get_table_partition_count")
-    }
-
-    fn get_table_meta_for_topic(&self, source_topic: &str) -> Vec<String> {
-        unimplemented!("")
+    pub(crate) fn changelog_manager(&self) -> Arc<ChangelogManager> {
+        self.changelog_manager.clone()
     }
 }

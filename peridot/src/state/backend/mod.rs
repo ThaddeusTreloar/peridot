@@ -17,6 +17,31 @@ struct VersionedRecord<V> {
     pub timestamp: i64,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct Checkpoint {
+    pub table_name: String,
+    pub offset: i64,
+}
+
+impl Checkpoint {
+    pub fn new(table_name: String, offset: i64) -> Self {
+        Self {
+            table_name,
+            offset
+        }
+    }
+
+    pub fn set_offset(&mut self, new_offset: i64) {
+        self.offset = new_offset
+    }
+
+    pub fn set_offset_if_greater(&mut self, maybe_new_offset: i64) {
+        if maybe_new_offset > self.offset {
+            self.offset = maybe_new_offset
+        }
+    }
+}
+
 pub trait GetViewDistributor {
     type Error: std::error::Error;
     type KeyType;
@@ -41,17 +66,22 @@ pub trait GetView {
 }
 
 pub trait StateBackendContext {
-    fn with_topic_name_and_partition(
+    fn with_source_topic_name_and_partition(
         topic_name: &str,
         partition: i32,
     ) -> impl Future<Output = Self>;
 
-    fn get_state_store_time(&self) -> PeridotTimestamp;
 }
 
 #[trait_variant::make(Send)]
 pub trait StateBackend {
     type Error: std::error::Error;
+
+    async fn get_state_store_time(&self) -> PeridotTimestamp;
+
+    async fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint>;
+
+    async fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error>;
 
     async fn get<K, V>(
         &self,
@@ -148,28 +178,38 @@ pub trait ReadableStateView {
         self: Arc<Self>,
         key: Self::KeyType,
     ) -> Result<Option<Self::ValueType>, Self::Error>;
+
+    async fn get_checkpoint(
+        self: Arc<Self>
+    ) -> Result<Option<Checkpoint>, Self::Error>;
 }
 
+#[trait_variant::make(Send)]
 pub trait WriteableStateView {
     type Error: std::error::Error;
     type KeyType: Serialize + Send;
     type ValueType: Serialize + Send;
 
-    fn put(
+    async fn create_checkpoint(
+        self: Arc<Self>,
+        offset: i64,
+    ) -> Result<(), Self::Error>;
+
+    async fn put(
         self: Arc<Self>,
         key: Self::KeyType,
         value: Self::ValueType,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> Result<(), Self::Error>;
 
-    fn put_range(
+    async fn put_range(
         self: Arc<Self>,
         range: Vec<(Self::KeyType, Self::ValueType)>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> Result<(), Self::Error>;
 
-    fn delete(
+    async fn delete(
         self: Arc<Self>,
         key: Self::KeyType,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> Result<(), Self::Error>;
 }
 
 #[trait_variant::make(Send)]

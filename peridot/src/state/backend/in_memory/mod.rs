@@ -1,30 +1,59 @@
+use std::borrow::BorrowMut;
+
 use dashmap::DashMap;
 use serde::{de::DeserializeOwned, Serialize};
 
-use super::{StateBackend, StateBackendContext};
+use crate::message::types::PeridotTimestamp;
+
+use super::{Checkpoint, StateBackend, StateBackendContext};
 
 #[derive(Default)]
 pub struct InMemoryStateBackend {
     store: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
+    checkpoint: DashMap<String, Checkpoint>,
+    store_time: PeridotTimestamp
 }
 
 impl InMemoryStateBackend {}
 
 #[derive(Debug, thiserror::Error)]
-pub enum InMemoryStateBackendError {}
+pub enum InMemoryStateBackendError {
+}
 
 impl StateBackendContext for InMemoryStateBackend {
-    async fn with_topic_name_and_partition(_topic_name: &str, _partition: i32) -> Self {
-        Self::default()
-    }
-
-    fn get_state_store_time(&self) -> crate::message::types::PeridotTimestamp {
-        unimplemented!("Get state store time")
+    async fn with_source_topic_name_and_partition(_topic_name: &str, _partition: i32) -> Self {
+        Default::default()
     }
 }
 
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
+
+    async fn get_state_store_time(&self) -> PeridotTimestamp {
+        self.store_time.clone()
+    }
+
+    async fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint> {
+        Some(self.checkpoint.get(table_name)?.clone())
+    }
+
+    async fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error> {
+        match self.checkpoint.get_mut(table_name) {
+            None => {
+                self.checkpoint.insert(table_name.to_owned(), Checkpoint { 
+                    table_name: table_name.to_owned(),
+                    offset,
+                });
+
+                Ok(())
+            },
+            Some(mut checkpoint_ref) => {
+                checkpoint_ref.value_mut().set_offset_if_greater(offset);
+
+                Ok(())
+            }
+        }
+    }
 
     async fn get<K, V>(
         &self,

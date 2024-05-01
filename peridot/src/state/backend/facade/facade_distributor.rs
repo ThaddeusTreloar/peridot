@@ -26,8 +26,10 @@ where
     }
 
     pub fn fetch_backend(&self, partition: i32) -> Arc<B> {
-        self.app_engine.get_state_store_for_table(self.store_name(), partition)
-            .expect("Table not found while fetching store.")
+        todo!("Fetch backend")
+
+        //self.app_engine.get_state_store_for_table(self.store_name(), partition)
+        //    .expect("Table not found while fetching store.")
     }
 
     pub fn store_name(&self) -> &str {

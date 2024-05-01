@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{engine::QueueMetadata, message::sink::changelog_sink::ChangelogSink};
+use crate::{engine::queue_manager::queue_metadata::QueueMetadata, message::sink::changelog_sink::ChangelogSink};
 
 use super::MessageSinkFactory;
 

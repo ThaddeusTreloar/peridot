@@ -1,7 +1,7 @@
 use std::{
     pin::Pin,
-    sync::Arc,
-    task::{ready, Context, Poll},
+    sync::{atomic::AtomicI64, Arc},
+    task::{ready, Context, Poll}, time::Duration,
 };
 
 use futures::Future;
@@ -10,15 +10,14 @@ use rdkafka::error::KafkaError;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    engine::QueueMetadata,
-    message::{
+    app::PeridotConsumer, engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::native::NativeBytes}, message::{
         sink::{MessageSink, NonCommittingSink},
-        types::Message,
-    },
-    state::backend::{facade::StateFacade, StateBackend, WriteableStateView},
+        types::{Message, TryFromOwnedMessage},
+    }, state::backend::{facade::StateFacade, StateBackend, WriteableStateView}
 };
 
 type PendingCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>> + Send>>>;
+type PendingOffsetCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>> + Send>>>;
 
 pin_project! {
     pub struct StateSink<B, K, V>
@@ -31,6 +30,9 @@ pin_project! {
         _key_type: std::marker::PhantomData<K>,
         _value_type: std::marker::PhantomData<V>,
         pending_commit: PendingCommit<B::Error>,
+        pending_offset_commit: PendingOffsetCommit<B::Error>,
+        highest_offset: i64,
+        highest_committed_offset: i64,
     }
 }
 
@@ -46,6 +48,9 @@ where
             _key_type: Default::default(),
             _value_type: Default::default(),
             pending_commit: None,
+            pending_offset_commit: None,
+            highest_offset: Default::default(),
+            highest_committed_offset: Default::default(),
         }
     }
 }
@@ -79,33 +84,43 @@ where
     fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
 
-        match this.pending_commit {
-            Some(ref mut task) => {
-                ready!(task.as_mut().poll(cx)).expect("Failed to commit message");
+        if let Some(commit) = this.pending_offset_commit {
+            ready!(commit.as_mut().poll(cx))
+                .expect("Failed to create checkpoint.");
 
-                let _ = this.pending_commit.take();
-
-                Poll::Ready(Ok(()))
-            }
-            None => {
-                let range: Vec<(K, V)> = this.buffer.drain(..).map(|m| (m.key, m.value)).collect();
-
-                let facade = this.state_facade.clone();
-
-                let commit = Box::pin(facade.put_range(range));
-
-                let _ = this.pending_commit.replace(commit);
-
-                match this.pending_commit.as_mut() {
-                    Some(task) => ready!(task.as_mut().poll(cx)).expect("Failed to commit message"),
-                    _ => panic!("This should not be possible"),
-                }
-
-                let _ = this.pending_commit.take();
-
-                Poll::Ready(Ok(()))
-            }
+            return Poll::Ready(Ok(()))
         }
+
+        if this.pending_commit.is_none() {
+            if this.buffer.is_empty() {
+                // Nothing to commit
+                return Poll::Ready(Ok(()));
+            }
+
+            let range: Vec<(K, V)> = this.buffer.drain(..).map(|m| (m.key, m.value)).collect();
+
+            let facade = this.state_facade.clone();
+
+            let commit = Box::pin(facade.put_range(range));
+
+            let _ = this.pending_commit.replace(commit);
+        }
+
+        if let Some(ref mut task) = this.pending_commit {
+            ready!(task.as_mut().poll(cx)).expect("Failed to commit sink buffer.");
+
+            let _ = this.pending_commit.take();
+        }
+
+        let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
+
+        let offset_commit = this.state_facade.clone().create_checkpoint(*offset);
+        
+        let _ = this.pending_offset_commit.replace(Box::pin(offset_commit));
+
+        cx.waker().wake_by_ref();
+
+        Poll::Pending
     }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -117,6 +132,10 @@ where
         message: Message<K, V>,
     ) -> Result<(), Self::Error> {
         let this = self.project();
+
+        let offset = std::cmp::max(message.offset, *this.highest_offset);
+
+        *this.highest_offset = offset;
 
         this.buffer.push(message);
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    engine::{AppEngine, QueueMetadata},
+    engine::{queue_manager::queue_metadata::QueueMetadata, AppEngine},
     message::sink::state_sink::StateSink,
     state::backend::{facade::StateFacade, StateBackend, StateBackendContext},
 };
@@ -38,12 +38,14 @@ where
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
         let partition = queue_metadata.partition();
-        let state_store = self
+
+        todo!("Get state store for table")
+        /*let state_store = self
             .engine_ref
             .get_state_store_for_table(&self.store_name, partition)
             .expect("Failed to get state store");
         let facade = StateFacade::new(state_store, self.store_name.clone());
 
-        StateSink::<B, K, V>::new(queue_metadata, facade)
+        StateSink::<B, K, V>::new(queue_metadata, facade)*/
     }
 }
