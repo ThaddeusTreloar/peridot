@@ -113,7 +113,7 @@ where
         // sink commit process. Otherwise, we can continue to poll the stream.
         if let CommitState::Committing = commit_state {
             info!("Committing sink...");
-            ready!(state_sink.as_mut().poll_close(cx)).expect("Failed to close");
+            ready!(state_sink.as_mut().poll_commit(cx)).expect("Failed to close");
             *commit_state = CommitState::Committed;
         }
 
@@ -176,7 +176,7 @@ where
                                     Ordering::Greater => {
                                         panic!("Checkpoint greater than watermark after state store rebuild.")
                                     },
-                                    _ => (),
+                                    Ordering::Less => (),
                                 }
                             }
                         }
