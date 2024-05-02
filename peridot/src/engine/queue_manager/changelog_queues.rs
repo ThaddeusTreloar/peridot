@@ -25,7 +25,7 @@ impl ChangelogQueues {
         }
     }
 
-    fn get_queue(&self, store: &str) -> Option<StreamPeridotPartitionQueue> {
+    pub(crate) fn take(&self, store: &str) -> Option<StreamPeridotPartitionQueue> {
         self.inner.remove(store).map(|(k, v)|v)
     }
 }

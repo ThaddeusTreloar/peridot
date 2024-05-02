@@ -13,7 +13,7 @@ use crate::{
     app::PeridotConsumer, engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::native::NativeBytes}, message::{
         sink::{MessageSink, NonCommittingSink},
         types::{Message, TryFromOwnedMessage},
-    }, state::backend::{facade::StateFacade, StateBackend, WriteableStateView}
+    }, state::backend::{facade::StateFacade, ReadableStateView, StateBackend, WriteableStateView}
 };
 
 type PendingCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>> + Send>>>;
@@ -30,7 +30,6 @@ pin_project! {
         _key_type: std::marker::PhantomData<K>,
         _value_type: std::marker::PhantomData<V>,
         pending_commit: PendingCommit<B::Error>,
-        pending_offset_commit: PendingOffsetCommit<B::Error>,
         highest_offset: i64,
         highest_committed_offset: i64,
     }
@@ -38,7 +37,9 @@ pin_project! {
 
 impl<B, K, V> StateSink<B, K, V>
 where
-    B: StateBackend,
+    B: StateBackend + Send + Sync,
+    K: Serialize + Send + Sync,
+    V: DeserializeOwned + Send + Sync,
 {
     pub fn new(queue_metadata: QueueMetadata, state_facade: StateFacade<K, V, B>) -> Self {
         Self {
@@ -48,10 +49,16 @@ where
             _key_type: Default::default(),
             _value_type: Default::default(),
             pending_commit: None,
-            pending_offset_commit: None,
             highest_offset: Default::default(),
             highest_committed_offset: Default::default(),
         }
+    }
+
+    pub fn get_checkpoint(&self) -> Result<Option<i64>, B::Error> {
+        self.state_facade.get_checkpoint()
+            .map(
+                |r| r.map(|c|c.offset)
+            )
     }
 }
 
@@ -84,13 +91,6 @@ where
     fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
 
-        if let Some(commit) = this.pending_offset_commit {
-            ready!(commit.as_mut().poll(cx))
-                .expect("Failed to create checkpoint.");
-
-            return Poll::Ready(Ok(()))
-        }
-
         if this.pending_commit.is_none() {
             if this.buffer.is_empty() {
                 // Nothing to commit
@@ -114,13 +114,9 @@ where
 
         let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
 
-        let offset_commit = this.state_facade.clone().create_checkpoint(*offset);
-        
-        let _ = this.pending_offset_commit.replace(Box::pin(offset_commit));
+        let offset_commit = this.state_facade.create_checkpoint(*offset);
 
-        cx.waker().wake_by_ref();
-
-        Poll::Pending
+        Poll::Ready(Ok(()))
     }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

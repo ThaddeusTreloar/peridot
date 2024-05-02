@@ -52,8 +52,8 @@ where
         self.backend.get(key, self.store_name()).await
     }
 
-    async fn get_checkpoint(self:Arc<Self>) -> Result<Option<Checkpoint> ,Self::Error> {
-        let checkpoint = self.backend.get_state_store_checkpoint(self.store_name()).await;
+    fn get_checkpoint(&self) -> Result<Option<Checkpoint> ,Self::Error> {
+        let checkpoint = self.backend.get_state_store_checkpoint(self.store_name());
 
         Ok(checkpoint)
     }    
@@ -70,8 +70,8 @@ where
     type KeyType = K;
     type ValueType = V;
 
-    async fn create_checkpoint(self:Arc<Self> ,offset:i64,) -> Result<() ,Self::Error> {
-        self.backend.create_checkpoint(self.store_name(), offset).await;
+    fn create_checkpoint(&self, offset:i64,) -> Result<() ,Self::Error> {
+        self.backend.create_checkpoint(self.store_name(), offset);
 
         Ok(())
     }

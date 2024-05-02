@@ -1,10 +1,22 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use rdkafka::consumer::Consumer;
+use rdkafka::{consumer::Consumer, TopicPartitionList};
 
 use crate::app::{config::PeridotConfig, extensions::PeridotConsumerContext};
 
 use super::{queue_manager::partition_queue::StreamPeridotPartitionQueue, PeridotConsumer};
+
+pub struct Watermarks(i64, i64);
+
+impl Watermarks {
+    pub(crate) fn low(&self) -> i64 {
+        self.0
+    }
+
+    pub(crate) fn high(&self) -> i64 {
+        self.1
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChangelogManagerError {
@@ -25,6 +37,18 @@ pub enum ChangelogManagerError {
     ConsumerPartitionQueue {
         topic: String,
         partition: i32,
+    },
+    #[error("ChangelogManagerError::FetchWaterMarkError, failed to fetch watermark for {}:{} caused by {}", topic, partition, err)]
+    FetchWaterMarkError {
+        topic: String,
+        partition: i32,
+        err: rdkafka::error::KafkaError,
+    },
+    #[error("ChangelogManagerError::CloseChangelogError, failed to close changelog partition for {}:{} caused by {}", topic, partition, err)]
+    CloseChangelogError {
+        topic: String,
+        partition: i32,
+        err: rdkafka::error::KafkaError,
     },
 }
 
@@ -73,7 +97,20 @@ impl ChangelogManager {
         }
     }
 
-    pub(crate) fn close_changelog_stream(&self) {
+    pub(crate) fn close_changelog_stream(&self, changelog_topic: &str, partition: i32) -> Result<(), ChangelogManagerError> {
+        let mut tpl = TopicPartitionList::new();
 
+        tpl.add_partition(changelog_topic, partition);
+
+        self.consumer.incremental_unassign(&tpl)
+            .map_err(|err| ChangelogManagerError::CloseChangelogError { topic: changelog_topic.to_owned(), partition, err })
+    }
+
+    pub(super) fn get_watermark_for_changelog(&self, changelog_topic: &str, partition: i32) -> Result<Watermarks, ChangelogManagerError> {
+        let (low, high) = self.consumer.client()
+            .fetch_watermarks(changelog_topic, partition, Duration::from_millis(1000))
+            .map_err(|err| ChangelogManagerError::FetchWaterMarkError { topic: changelog_topic.to_owned(), partition, err })?;
+
+        Ok(Watermarks(low, high))
     }
 }

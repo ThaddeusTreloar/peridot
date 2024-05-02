@@ -16,32 +16,44 @@ use crate::{
 use super::{sink::MessageSinkFactory, stream::PipelineStream};
 
 pin_project! {
-    #[project = PipelineForkProjection]
-    pub struct PipelineFork<S, SF, G = ExactlyOnce>
+    #[project = StateForkProjection]
+    pub struct StateFork<S, SF, G = ExactlyOnce>
     where
         S: PipelineStream,
     {
         #[pin]
         queue_stream: S,
         sink_factory: SF,
+        state_name: String,
+        has_changelog: bool,
         _delivery_guarantee: PhantomData<G>
     }
 }
 
-impl<S, SF, G> PipelineFork<S, SF, G>
+impl<S, SF, G> StateFork<S, SF, G>
 where
     S: PipelineStream,
 {
-    pub fn new(queue_stream: S, sink_factory: SF) -> Self {
+    pub fn new(queue_stream: S, sink_factory: SF, state_name: String) -> Self {
         Self {
             queue_stream,
             sink_factory,
+            state_name,
+            has_changelog: false,
             _delivery_guarantee: PhantomData,
         }
     }
+
+    pub fn new_with_changelog(queue_stream: S, sink_factory: SF, state_name: String) -> Self {
+        let mut state_fork = Self::new(queue_stream, sink_factory, state_name);
+
+        state_fork.has_changelog = true;
+
+        state_fork
+    }
 }
 
-impl<S, SF, G> PipelineStream for PipelineFork<S, SF, G>
+impl<S, SF, G> PipelineStream for StateFork<S, SF, G>
 where
     S: PipelineStream + Send + 'static,
     S::MStream: MessageStream,
@@ -61,9 +73,11 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<PipelineStage<Self::MStream>>> {
-        let PipelineForkProjection {
+        let StateForkProjection {
             mut queue_stream,
             sink_factory,
+            state_name,
+            has_changelog,
             ..
         } = self.project();
 
@@ -71,11 +85,19 @@ where
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(PipelineStage(metadata, message_stream))) => {
+                if *has_changelog {
+                    let changelog_stream = metadata.take_changelog_queue(state_name)
+                        .expect("Failed to get changelog queue for changelog backed state store!");
+
+                } else {
+                    unimplemented!("Create changelog Fork")
+                }
+                
                 let message_sink = sink_factory.new_sink(metadata.clone());
 
                 // request changelog from appengine
 
-                //let forwarder = ChangelogFork::new(message_stream, message_sink);
+                //let forwarder = StateFork::new(message_stream, message_sink);
 
                 //let pipeline_stage = PipelineStage::new(metadata, forwarder);
 

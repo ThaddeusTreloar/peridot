@@ -31,4 +31,8 @@ impl QueueMetadata {
     pub fn producer(&self) -> Arc<FutureProducer> {
         self.producer_ref.clone()
     }
+
+    pub fn take_changelog_queue(&self, state_name: &str) -> Option<StreamPeridotPartitionQueue> {
+        self.changelog_queues.take(state_name)
+    }
 }

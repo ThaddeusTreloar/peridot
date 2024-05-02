@@ -32,9 +32,13 @@ impl ProducerFactory {
     }
 
     pub fn create_producer(&self) -> Result<FutureProducer, ProducerFactoryError> {
+        todo!("Set transaction id.");
+
         let producer = FutureProducer::from_config(self.config.client_config())
             .map_err(|err| ProducerFactoryError::ProducerCreationError { err })?;
-    
+
+        todo!("Ensure init_transactions will fence previous generation producers.");
+
         if let DeliverySemantics::ExactlyOnce = self.delivery_semantics {
             producer
                 .init_transactions(Duration::from_millis(2500))

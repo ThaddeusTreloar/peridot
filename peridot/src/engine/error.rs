@@ -2,12 +2,14 @@ use rdkafka::error::KafkaError;
 
 use crate::state::error::StateStoreCreationError;
 
-use super::{changelog_manager::ChangelogManagerError, client_manager::ClientManagerError, metadata_manager::MetadataManagerError};
+use super::{admin_manager::AdminManagerError, changelog_manager::ChangelogManagerError, client_manager::ClientManagerError, metadata_manager::MetadataManagerError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PeridotEngineCreationError {
     #[error("Failed to client: {0}")]
     ClientCreationError(String),
+    #[error(transparent)]
+    AdminManagerError(#[from] AdminManagerError),
     #[error(transparent)]
     ClientManagerError(#[from] ClientManagerError),
     #[error(transparent)]

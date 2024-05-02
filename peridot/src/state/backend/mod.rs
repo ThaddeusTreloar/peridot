@@ -77,11 +77,11 @@ pub trait StateBackendContext {
 pub trait StateBackend {
     type Error: std::error::Error;
 
-    async fn get_state_store_time(&self) -> PeridotTimestamp;
+    fn get_state_store_time(&self) -> PeridotTimestamp;
 
-    async fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint>;
+    fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint>;
 
-    async fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error>;
+    fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error>;
 
     async fn get<K, V>(
         &self,
@@ -179,8 +179,8 @@ pub trait ReadableStateView {
         key: Self::KeyType,
     ) -> Result<Option<Self::ValueType>, Self::Error>;
 
-    async fn get_checkpoint(
-        self: Arc<Self>
+    fn get_checkpoint(
+        &self,
     ) -> Result<Option<Checkpoint>, Self::Error>;
 }
 
@@ -190,8 +190,8 @@ pub trait WriteableStateView {
     type KeyType: Serialize + Send;
     type ValueType: Serialize + Send;
 
-    async fn create_checkpoint(
-        self: Arc<Self>,
+    fn create_checkpoint(
+        &self,
         offset: i64,
     ) -> Result<(), Self::Error>;
 

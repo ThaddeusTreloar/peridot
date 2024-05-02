@@ -80,6 +80,7 @@ impl Future for QueueManager {
             let _ = this.sleep.take();
         }
 
+        todo!("Enqueue downstream PipelineStage instances and only release on post rebalance waker.");
         // TODO: Check for failed queues and reassign them before the next poll.
 
         debug!("Polling distributor...");

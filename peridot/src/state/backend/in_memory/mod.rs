@@ -29,15 +29,15 @@ impl StateBackendContext for InMemoryStateBackend {
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
 
-    async fn get_state_store_time(&self) -> PeridotTimestamp {
+    fn get_state_store_time(&self) -> PeridotTimestamp {
         self.store_time.clone()
     }
 
-    async fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint> {
+    fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint> {
         Some(self.checkpoint.get(table_name)?.clone())
     }
 
-    async fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error> {
+    fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error> {
         match self.checkpoint.get_mut(table_name) {
             None => {
                 self.checkpoint.insert(table_name.to_owned(), Checkpoint { 

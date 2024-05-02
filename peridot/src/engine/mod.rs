@@ -28,6 +28,7 @@ use crate::{
     engine::wrapper::serde::PeridotDeserializer, pipeline::stream::serialiser::SerialiserPipeline,
 };
 
+use self::admin_manager::AdminManager;
 use self::changelog_manager::ChangelogManager;
 use self::client_manager::ClientManager;
 use self::context::EngineContext;
@@ -49,6 +50,7 @@ use crate::app::{
     extensions::{Commit, OwnedRebalance, PeridotConsumerContext},
 };
 
+pub mod admin_manager;
 pub mod changelog_manager;
 pub mod circuit_breaker;
 pub mod client_manager;
@@ -78,6 +80,7 @@ pub enum StateType {
 }
 
 pub struct AppEngine<B, G = ExactlyOnce> {
+    admin_manager: Arc<AdminManager>,
     client_manager: Arc<ClientManager>,
     metadata_manager: Arc<MetadataManager>,
     changelog_manager: Arc<ChangelogManager>,
@@ -93,7 +96,9 @@ where
     B: StateBackendContext + Send + Sync + 'static,
 {
     pub fn get_engine_context(&self) -> EngineContext {
-        EngineContext { 
+        EngineContext {
+            config: self.producer_factory.config().clone(),
+            admin_manager: self.admin_manager.clone(),
             client_manager: self.client_manager.clone(), 
             metadata_manager: self.metadata_manager.clone(), 
             changelog_manager: self.changelog_manager.clone(), 
@@ -126,6 +131,7 @@ where
         let context = PeridotConsumerContext::from_config(config);
 
         Ok(Self {
+            admin_manager: Arc::new(AdminManager::new(config)?),
             client_manager: Arc::new(ClientManager::from_config(config)?),
             metadata_manager: Arc::new(MetadataManager::new(config.app_id())),
             changelog_manager: Arc::new(ChangelogManager::from_config(config)?),
