@@ -8,26 +8,39 @@ It is currently in early development and is not yet feature complete.
 This library aims to provide a simple and elegant API, similar to those provided by the likes of Axum, SurrealDb, and other excellent Rust libraries.
 Currently, the Rust ecosystem is lacking solid, easy to use Kafka Libraries.
 
-To be considered an MVP this library should provide the following features:
+Below is a list of the features currently being architected:
 
 - ✅ Streams DSL architecture
-- 🚧 State store architecture
-- 🚧 Tables
-- 🚧 Exactly once semantics (Streams)
-- ❌ Exactly once semantics (Tables)
+- ✅ State store architecture
+- ✅ Tables
+- ✅ Exactly once semantics (Streams)
+- ✅ Exactly once semantics (Tables)
+- 🚧 Joins
 - 🚧 Changelogs
+- 🚧 Timestamp extraction
+- 🚧 Unified Service layer API 
+- 🚧 Import/Export integration API for any types that implement futures::Stream 
 - ❌ Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
-- ❌ Windowed operations
+- ❌ Windowed operations (Stream-Stream Joins)
 - ❌ Result 'style' dead letter support (impl FromResidual)
 - ❌ Schema Registry Integration
-- ❌ Preprocess service layers
 
 Peridot Adjacent Features:
 - ❌ Schema registry build dependency for codegen
 
-Stretch Goals:
-- ❌ Lazy pipeline initialisation
-- ❌ Lazy message deserialisation
+The architecture for these features are unstable and subject to change.
+
+## Limitations
+
+This section details the forseen limitations of the Rust implementation. These can be due to language restrictions or upstream library limitations.  
+
+### Standby Replicas
+
+Currently, the upstream C++ library, librdkafka, does not expose the consumer assignment API in the same way the Java based Kafka Clients library does. As such, neither do the Rust bindings in rdkafka. Because of this it would be incredibly difficult, if not impossible to implement standby replicas assignment without escaping the Kafka ecosystem. There are currently pull requests to expose this API in the original C++ library but they have not been accepted yet.
+
+### Mixing State Backend Implementations
+
+This library uses static dispatch when dealing with state store implementations, and therefore the engine can only store a collection of exact typed state backend. What this means is that when the app is initially configured to utilise a particular type that Implements StateBackend, all state store instances are created with that type. Due to the way the StateBackend trait is designed, StateBackend implementations are not object safe and cannot be stored with dynamic dispatch, eg: Vec<Arc<dyn StateBackend>>. It will be evaluated later in development if there is a use case for dynamic state backend types, but for the moment, this is not being considered.
 
 ## Example
 
