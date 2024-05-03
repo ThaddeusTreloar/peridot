@@ -19,7 +19,7 @@ pub struct StateSinkFactory<B, K, V> {
 }
 
 impl<B, K, V> StateSinkFactory<B, K, V> {
-    pub fn from_state_store_manager(
+    pub(crate) fn from_state_store_manager(
         state_store_manager: Arc<StateStoreManager<B>>, 
         store_name: &str, 
         source_topic: &str,
@@ -45,10 +45,12 @@ where
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
         let partition = queue_metadata.partition();
 
-        let state_store = self.state_store_manager.get_state_store(&self.source_topic, partition)
+        let state_store = self.state_store_manager
+            .get_state_store(&self.source_topic, partition)
             .expect("No state store for partition.");
 
-        let facade = StateFacade::new(state_store, self.store_name.clone());
+        let facade = StateFacade
+            ::new(state_store, self.store_name.clone());
 
         StateSink::<B, K, V>::new(queue_metadata, facade)
     }

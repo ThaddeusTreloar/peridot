@@ -18,7 +18,7 @@ use rdkafka::{producer::PARTITION_UA, Message, TopicPartitionList};
 use tokio::sync::{broadcast::{error::TryRecvError, Receiver}, mpsc::{UnboundedReceiver, UnboundedSender}};
 use tracing::{debug, error, info};
 
-use crate::{app::{extensions::OwnedRebalance, PeridotConsumer}, engine::{context::EngineContext, queue_manager::changelog_queues::ChangelogQueues}};
+use crate::{app::{extensions::OwnedRebalance, PeridotConsumer}, engine::{context::EngineContext, queue_manager::changelog_queues::ChangelogQueues}, state::backend::StateBackend};
 
 use self::{
     queue_metadata::QueueMetadata,
@@ -26,7 +26,7 @@ use self::{
 };
 
 use super::{
-    changelog_manager::{self, ChangelogManager}, client_manager::ClientManager, engine_state::EngineState, error::PeridotEngineRuntimeError, metadata_manager::{self, MetadataManager}, producer_factory::ProducerFactory, TableMetadata
+    changelog_manager::{self, ChangelogManager}, client_manager::ClientManager, engine_state::EngineState, error::PeridotEngineRuntimeError, metadata_manager::{self, MetadataManager}, producer_factory::ProducerFactory, state_store_manager::StateStoreManager, TableMetadata
 };
 
 pub mod changelog_queues;
@@ -35,8 +35,9 @@ pub mod queue_metadata;
 
 pin_project! {
     #[derive()]
-    pub struct QueueManager {
-        engine_context: EngineContext,
+    pub struct QueueManager<B> {
+        engine_context: Arc<EngineContext>,
+        state_store_manager: Arc<StateStoreManager<B>>,
         producer_factory: Arc<ProducerFactory>,
         downstreams: Arc<DashMap<String, QueueSender>>,
         engine_state: Arc<AtomicCell<EngineState>>,
@@ -46,9 +47,10 @@ pin_project! {
     }
 }
 
-impl QueueManager {
+impl<B> QueueManager<B> {
     pub(crate) fn new(
-        engine_context: EngineContext,
+        engine_context: Arc<EngineContext>,
+        state_store_manager: Arc<StateStoreManager<B>>,
         producer_factory: Arc<ProducerFactory>,
         downstreams: Arc<DashMap<String, QueueSender>>,
         engine_state: Arc<AtomicCell<EngineState>>,
@@ -56,6 +58,7 @@ impl QueueManager {
     ) -> Self {
         Self {
             engine_context,
+            state_store_manager,
             producer_factory,
             downstreams,
             engine_state,
@@ -69,7 +72,10 @@ impl QueueManager {
     }
 }
 
-impl Future for QueueManager {
+impl<B> Future for QueueManager<B> 
+where 
+    B: StateBackend
+{
     type Output = Result<(), PeridotEngineRuntimeError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -148,6 +154,10 @@ impl Future for QueueManager {
                 "Attempting to send partition queue to downstream: {}, for partition: {}",
                 topic, partition
             );
+
+            this.state_store_manager
+                .create_state_store_if_not_exists(&topic, partition)
+                .expect("Failed to create state store.");
 
             let changelog_queues: Vec<(String, StreamPeridotPartitionQueue)> = this
                 .engine_context

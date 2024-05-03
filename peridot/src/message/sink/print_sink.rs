@@ -89,12 +89,14 @@ where
             )
             .expect("Failed to add partition offset");
 
-        self.queue_metadata
-            .engine_context()
-            .client_manager()
-            .consumer_ref()
-            .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)
-            .expect("Failed to make async commit in state store");
+        todo!("PrintSink commit");
+
+        //self.queue_metadata
+        //    .engine_context()
+        //    .client_manager()
+        //    .consumer_ref()
+        //    .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)
+        //    .expect("Failed to make async commit in state store");
 
         Ok(())
     }

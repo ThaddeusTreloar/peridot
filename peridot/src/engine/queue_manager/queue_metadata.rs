@@ -8,7 +8,7 @@ use super::{changelog_queues::ChangelogQueues, partition_queue::StreamPeridotPar
 
 #[derive(Clone)]
 pub struct QueueMetadata {
-    pub(super) engine_context: EngineContext,
+    pub(super) engine_context: Arc<EngineContext>,
     pub(super) producer_ref: Arc<FutureProducer>,
     pub(super) changelog_queues: ChangelogQueues,
     pub(super) partition: i32,

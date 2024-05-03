@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use rdkafka::consumer::{Consumer, ConsumerGroupMetadata};
+
 use crate::app::config::PeridotConfig;
 
 use super::{
-    admin_manager::AdminManager, changelog_manager::{ChangelogManager, ChangelogManagerError, Watermarks}, client_manager::{self, ClientManager}, metadata_manager::MetadataManager, wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor}, AppEngine, TableMetadata
+    admin_manager::AdminManager, changelog_manager::{ChangelogManager, ChangelogManagerError, Watermarks}, client_manager::{self, ClientManager}, metadata_manager::{table_metadata, MetadataManager}, wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor}, AppEngine, TableMetadata
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -16,22 +18,21 @@ pub enum EngineContextError {
     },
 }
 
-#[derive(Clone)]
 pub struct EngineContext {
     pub(super) config: PeridotConfig,
-    pub(super) admin_manager: Arc<AdminManager>,
-    pub(super) client_manager: Arc<ClientManager>,
-    pub(super) metadata_manager: Arc<MetadataManager>,
-    pub(super) changelog_manager: Arc<ChangelogManager>,
+    pub(super) admin_manager: AdminManager,
+    pub(super) client_manager: ClientManager,
+    pub(super) metadata_manager: MetadataManager,
+    pub(super) changelog_manager: ChangelogManager,
 }
 
 impl EngineContext {
     pub(super) fn new(
         config: PeridotConfig,
-        admin_manager: Arc<AdminManager>,
-        client_manager: Arc<ClientManager>,
-        metadata_manager: Arc<MetadataManager>,
-        changelog_manager: Arc<ChangelogManager>,        
+        admin_manager: AdminManager,
+        client_manager: ClientManager,
+        metadata_manager: MetadataManager,
+        changelog_manager: ChangelogManager,       
     ) -> Self {
         Self {
             config,
@@ -42,21 +43,19 @@ impl EngineContext {
         }
     }
 
-    // TODO: change the visibilty of these so that components cannot
-    // directly access engine component managers.
-    pub(crate) fn client_manager(&self) -> Arc<ClientManager> {
-        self.client_manager.clone()
+    pub(crate) fn store_metadata(&self, store_name: &str) -> TableMetadata {
+        self.metadata_manager
+            .get_table_metadata(store_name)
+            .expect("Unable to get store for facade distributor")
     }
 
-    pub(crate) fn metadata_manager(&self) -> Arc<MetadataManager> {
-        self.metadata_manager.clone()
+    pub(crate) fn group_metadata(&self) -> ConsumerGroupMetadata {
+        self.client_manager.consumer_ref()
+            .group_metadata()
+            .expect("Failed to get consumer group metadata.")
     }
-
-    pub(crate) fn changelog_manager(&self) -> Arc<ChangelogManager> {
-        self.changelog_manager.clone()
-    }
-
-    pub(crate) fn get_watermark_for_changelog(&self, table_name: &str, partition: i32) -> Watermarks {
+    
+    pub(crate) fn watermark_for_changelog(&self, table_name: &str, partition: i32) -> Watermarks {
         let changelog_topic = self.metadata_manager.derive_changelog_topic(table_name);
 
         self.changelog_manager
@@ -83,7 +82,9 @@ impl EngineContext {
         Ok(())
     }
 
-    pub(crate) fn register_state_store(&self, source_topic: &str, state_name: &str) -> Result<(), EngineContextError> {
-            
+    pub(crate) fn register_state_store(&self, source_topic: &str, state_name: &str) -> Result<TableMetadata, EngineContextError> {
+        Ok(self.metadata_manager
+            .register_table_with_changelog(state_name, source_topic)
+            .expect("Failed to register table."))
     }
 }

@@ -54,7 +54,7 @@ where
         VS: PeridotDeserializer,
     {
         info!("Creating stream for topic: {}", topic);
-        Ok(self.engine.clone().new_input_stream(topic.to_string())?)
+        Ok(self.engine.clone().input_stream(topic.to_string())?)
     }
 
     pub fn table<'a, KS, VS>(
@@ -111,7 +111,11 @@ where
         jobs.push(Box::new(job));
     }
 
-    pub(crate) fn engine_ref(&self) -> Arc<AppEngine<B, ExactlyOnce>> {
+    pub(crate) fn engine(&self) -> &AppEngine<B, ExactlyOnce> {
+        &self.engine
+    }
+
+    pub(crate) fn engine_arc(&self) -> Arc<AppEngine<B, ExactlyOnce>> {
         self.engine.clone()
     }
 

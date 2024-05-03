@@ -55,10 +55,7 @@ impl<K, V> MessageSink<K, V> for NoopSink<K, V>
             offsets, 
             &queue_metadata
                 .engine_context()
-                .client_manager()
-                .consumer_ref()
-                .group_metadata()
-                .expect("Failed to get consumer group metadata."), 
+                .group_metadata(), 
             Duration::from_millis(1000)
         ).expect("Failed to send offsets to transaction.");
 

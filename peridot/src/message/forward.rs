@@ -104,10 +104,7 @@ where
 
                     let cgm = queue_metadata
                         .engine_context()
-                        .client_manager()
-                        .consumer_ref()
-                        .group_metadata()
-                        .expect("No consumer group metadata present while committing transaction.");
+                        .group_metadata();
 
                     let mut offsets = TopicPartitionList::new();
 

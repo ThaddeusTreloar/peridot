@@ -81,14 +81,11 @@ pub enum StateType {
 }
 
 pub struct AppEngine<B, G = ExactlyOnce> {
-    admin_manager: Arc<AdminManager>,
-    client_manager: Arc<ClientManager>,
-    metadata_manager: Arc<MetadataManager>,
-    changelog_manager: Arc<ChangelogManager>,
+    engine_context: Arc<EngineContext>,
+    state_store_manager: Arc<StateStoreManager<B>>,
     producer_factory: Arc<ProducerFactory>,
     downstreams: Arc<DashMap<String, QueueSender>>,
     engine_state: Arc<AtomicCell<EngineState>>,
-    state_store_manager: Arc<StateStoreManager<B>>,
     _delivery_guarantee: PhantomData<G>,
 }
 
@@ -96,29 +93,24 @@ impl<B> AppEngine<B>
 where
     B: StateBackend + Send + Sync + 'static,
 {
-    pub(crate) fn get_state_store_context(&self) -> Arc<StateStoreManager<B>> {
+    pub(crate) fn state_store_context(&self) -> Arc<StateStoreManager<B>> {
         self.state_store_manager.clone()
     }
 
-    pub fn get_engine_context(&self) -> EngineContext {
-        EngineContext {
-            config: self.producer_factory.config().clone(),
-            admin_manager: self.admin_manager.clone(),
-            client_manager: self.client_manager.clone(), 
-            metadata_manager: self.metadata_manager.clone(), 
-            changelog_manager: self.changelog_manager.clone(), 
-        }
+    pub fn engine_context(&self) -> Arc<EngineContext> {
+        self.engine_context.clone()
     }
 
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
-        let waker_context = self.client_manager.consumer_context();
+        let waker_context = self.engine_context.client_manager.consumer_context();
 
         let pre_rebalance_waker = waker_context.pre_rebalance_waker();
         let commit_waker = waker_context.commit_waker();
         let rebalance_waker = waker_context.post_rebalance_waker();
 
-        let queue_distributor = QueueManager::new(
-            self.get_engine_context(),
+        let queue_distributor = QueueManager::<B>::new(
+            self.engine_context(),
+            self.state_store_manager.clone(),
             self.producer_factory.clone(),
             self.downstreams.clone(),
             self.engine_state.clone(),
@@ -135,11 +127,16 @@ where
     pub fn from_config(config: &PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
         let context = PeridotConsumerContext::from_config(config);
 
+        let engine_context = EngineContext {
+            config: config.clone(),
+            admin_manager: AdminManager::new(config)?,
+            client_manager: ClientManager::from_config(config)?, 
+            metadata_manager: MetadataManager::new(config.app_id()), 
+            changelog_manager: ChangelogManager::from_config(config)?, 
+        };
+
         Ok(Self {
-            admin_manager: Arc::new(AdminManager::new(config)?),
-            client_manager: Arc::new(ClientManager::from_config(config)?),
-            metadata_manager: Arc::new(MetadataManager::new(config.app_id())),
-            changelog_manager: Arc::new(ChangelogManager::from_config(config)?),
+            engine_context: Arc::new(engine_context),
             producer_factory: Arc::new(ProducerFactory::new(config.clone(), DeliverySemantics::ExactlyOnce)),
             downstreams: Default::default(),
             engine_state: Default::default(),
@@ -148,7 +145,7 @@ where
         })
     }
 
-    pub(crate) fn new_input_stream<KS, VS>(
+    pub(crate) fn input_stream<KS, VS>(
         self: Arc<AppEngine<B>>,
         topic: String,
     ) -> Result<SerialiserPipeline<KS, VS>, PeridotEngineRuntimeError>
@@ -161,8 +158,8 @@ where
         // where if this function is called while the engine is running, then the QueueManager
         // may recieve a partition queue before it's internal record has updated, leading to
         // undefined behaviour.
-        let metadata = self.client_manager.create_topic_source(&topic)?;
-        self.metadata_manager.register_source_topic(&topic, &metadata)?;
+        let metadata = self.engine_context.client_manager.create_topic_source(&topic)?;
+        self.engine_context.metadata_manager.register_source_topic(&topic, &metadata)?;
 
         let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
         self.downstreams.insert(topic.clone(), queue_sender);

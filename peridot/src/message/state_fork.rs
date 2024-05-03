@@ -133,7 +133,7 @@ where
                 .expect("Failed to get checkpoint")
                 .unwrap_or(0);
 
-            let watermarks = engine_context.get_watermark_for_changelog(table_name, *partition);
+            let watermarks = engine_context.watermark_for_changelog(table_name, *partition);
 
             let mut beginning_offset = 0;
 

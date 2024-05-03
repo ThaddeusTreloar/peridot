@@ -59,4 +59,12 @@ where
 
         Ok(())
     }
+
+    pub(crate) fn create_state_store_if_not_exists(&self, source_topic: &str, partition: i32) -> Result<(), StateStoreManagerError> {
+        match self.create_state_store(source_topic, partition) {
+            Ok(_) |
+            Err(StateStoreManagerError::StateStoreExists{..}) => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
 }

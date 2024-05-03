@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    app::PeridotApp, engine::{engine_state::EngineState, util::{DeliveryGuaranteeType, ExactlyOnce}}, pipeline::{
+    app::PeridotApp, engine::{engine_state::EngineState, metadata_manager::table_metadata, util::{DeliveryGuaranteeType, ExactlyOnce}}, pipeline::{
         fork::PipelineFork,
         sink::{changelog_sink::ChangelogSinkFactory, state_sink::StateSinkFactory},
         stream::{PipelineStream, PipelineStreamExt},
@@ -42,17 +42,20 @@ where
     P::KeyType: Clone + Serialize + Send + 'static,
     P::ValueType: Clone + Serialize + Send + 'static,
 {
-    pub fn new(app: &'a PeridotApp<B, G>, source_topic: String, name: String, stream_queue: P) -> Self {
-        app.engine_ref().get_engine_context()
+    pub fn new(app: &'a PeridotApp<B, G>, source_topic: String, table_name: String, stream_queue: P) -> Self {
+        let table_metadata = app.engine()
+            .engine_context()
+            .register_state_store(&source_topic, &table_name)
+            .expect("Failed to register table.");
         
-        let changelog_sink_factory = ChangelogSinkFactory::new(format!("{}-changelog", name));
+        let changelog_sink_factory = ChangelogSinkFactory::new(format!("{}-changelog", table_name));
 
         let changelog_output = stream_queue.fork::<_, ExactlyOnce>(changelog_sink_factory);
 
         let backend_sink_factory =
             StateSinkFactory::<B, P::KeyType, P::ValueType>::from_state_store_manager(
-                app.engine_ref().get_state_store_context(),
-                &name,
+                app.engine_arc().state_store_context(),
+                &table_name,
                 &source_topic,
             );
 
@@ -61,7 +64,7 @@ where
         Self {
             app,
             source_topic,
-            name,
+            name: table_name,
             backend_output,
             state: Default::default(),
             _delivery_guarantee: Default::default(),
@@ -125,7 +128,7 @@ where
     fn get_view_distributor(
             &self,
         ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
-        let engine = self.app.engine_ref().clone();
+        let engine = self.app.engine_arc().clone();
 
         FacadeDistributor::new(engine, self.name.clone())
     }

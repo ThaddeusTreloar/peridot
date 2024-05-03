@@ -6,7 +6,7 @@ use super::StateFacade;
 
 pub struct FacadeDistributor<K, V, B> 
 {
-    engine_context: EngineContext,
+    engine_context: Arc<EngineContext>,
     state_store_manager: Arc<StateStoreManager<B>>,
     store_name: String,
     _key_type: std::marker::PhantomData<K>,
@@ -19,8 +19,8 @@ where
 {
     pub fn new(backend: Arc<AppEngine<B>>, store_name: String) -> Self {
         Self {
-            engine_context: backend.get_engine_context(),
-            state_store_manager: backend.get_state_store_context(),
+            engine_context: backend.engine_context(),
+            state_store_manager: backend.state_store_context(),
             store_name,
             _key_type: Default::default(),
             _value_type: Default::default(),
@@ -28,9 +28,7 @@ where
     }
 
     pub fn fetch_backend(&self, partition: i32) -> Arc<B> {
-        let table_metadata = self.engine_context.metadata_manager()
-            .get_table_metadata(&self.store_name)
-            .expect("Unable to get store for facade distributor");
+        let table_metadata = self.engine_context.store_metadata(&self.store_name);
 
         self.state_store_manager.get_state_store(table_metadata.source_topic(), partition)
             .expect("Failed to get state store for facade distributor.")

@@ -126,8 +126,12 @@ impl ClientManager {
         }
     }
 
-    pub(crate) fn consumer_ref(&self) -> Arc<PeridotConsumer> {
+    pub(crate) fn consumer_arc(&self) -> Arc<PeridotConsumer> {
         self.consumer.clone()
+    }
+
+    pub(crate) fn consumer_ref(&self) -> &PeridotConsumer {
+        &self.consumer
     }
 
     pub(crate) fn consumer_context(&self) -> Arc<PeridotConsumerContext> {
