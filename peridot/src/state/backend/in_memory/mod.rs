@@ -5,7 +5,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::message::types::PeridotTimestamp;
 
-use super::{Checkpoint, StateBackend, StateBackendContext};
+use super::{Checkpoint, StateBackend};
 
 #[derive(Default)]
 pub struct InMemoryStateBackend {
@@ -20,14 +20,12 @@ impl InMemoryStateBackend {}
 pub enum InMemoryStateBackendError {
 }
 
-impl StateBackendContext for InMemoryStateBackend {
-    async fn with_source_topic_name_and_partition(_topic_name: &str, _partition: i32) -> Self {
-        Default::default()
-    }
-}
-
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
+
+    fn with_source_topic_name_and_partition(_topic_name: &str, _partition: i32) -> Result<Self, Self::Error> {
+        Ok(Default::default())
+    }
 
     fn get_state_store_time(&self) -> PeridotTimestamp {
         self.store_time.clone()

@@ -23,7 +23,7 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::engine::queue_manager::QueueManager;
-use crate::state::backend::StateBackendContext;
+use crate::state::backend::StateBackend;
 use crate::{
     engine::wrapper::serde::PeridotDeserializer, pipeline::stream::serialiser::SerialiserPipeline,
 };
@@ -40,6 +40,7 @@ use self::metadata_manager::MetadataManager;
 use self::producer_factory::ProducerFactory;
 use self::queue_manager::partition_queue::StreamPeridotPartitionQueue;
 use self::queue_manager::QueueSender;
+use self::state_store_manager::StateStoreManager;
 use self::{
     error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
     util::{ConsumerUtils, ExactlyOnce},
@@ -87,14 +88,18 @@ pub struct AppEngine<B, G = ExactlyOnce> {
     producer_factory: Arc<ProducerFactory>,
     downstreams: Arc<DashMap<String, QueueSender>>,
     engine_state: Arc<AtomicCell<EngineState>>,
-    state_stores: StateStoreMap<B>,
+    state_store_manager: Arc<StateStoreManager<B>>,
     _delivery_guarantee: PhantomData<G>,
 }
 
 impl<B> AppEngine<B>
 where
-    B: StateBackendContext + Send + Sync + 'static,
+    B: StateBackend + Send + Sync + 'static,
 {
+    pub(crate) fn get_state_store_context(&self) -> Arc<StateStoreManager<B>> {
+        self.state_store_manager.clone()
+    }
+
     pub fn get_engine_context(&self) -> EngineContext {
         EngineContext {
             config: self.producer_factory.config().clone(),
@@ -138,7 +143,7 @@ where
             producer_factory: Arc::new(ProducerFactory::new(config.clone(), DeliverySemantics::ExactlyOnce)),
             downstreams: Default::default(),
             engine_state: Default::default(),
-            state_stores: Default::default(),
+            state_store_manager: Default::default(),
             _delivery_guarantee: PhantomData,
         })
     }

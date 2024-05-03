@@ -70,14 +70,12 @@ impl MetadataManager {
         }
     }
 
-    pub(crate) fn get_table_metadata(&self, topic: &str) -> Option<TableMetadata> {
-        todo!("")
-
+    pub(crate) fn get_table_metadata(&self, table: &str) -> Option<TableMetadata> {
+        self.table_metadata.get(table).map(|m|m.clone())
     }
 
     pub(crate) fn get_topic_metadata(&self, topic: &str) -> Option<TopicMetadata> {
-        todo!("")
-
+        self.source_topic_metadata.get(topic).map(|m|m.clone())
     }
 
     pub(crate) fn get_tables_for_topic(&self, topic: &str) -> Vec<String> {

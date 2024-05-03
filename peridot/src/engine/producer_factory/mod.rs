@@ -31,12 +31,21 @@ impl ProducerFactory {
         }
     }
 
-    pub fn create_producer(&self) -> Result<FutureProducer, ProducerFactoryError> {
-        todo!("Set transaction id.");
+    pub fn create_producer(&self, source_topic: &str, partition: i32) -> Result<FutureProducer, ProducerFactoryError> {
+        let transaction_id = format!("peridot-{}-{}", source_topic, partition);
 
-        let producer = FutureProducer::from_config(self.config.client_config())
+        // TODO: we are cloning the config as it is uncertain whether the created producer references
+        // the config or clones it internally. Currently the rdkafka library creates a new CString
+        // for each entry, but we may not want to rely on this behaviour. 
+        //
+        // At a later date we can review this approach.
+        let mut config = self.config.new_client_config();
+
+        config.set("transaction.id", transaction_id);
+        
+        let producer = FutureProducer::from_config(&config)
             .map_err(|err| ProducerFactoryError::ProducerCreationError { err })?;
-
+    
         todo!("Ensure init_transactions will fence previous generation producers.");
 
         if let DeliverySemantics::ExactlyOnce = self.delivery_semantics {

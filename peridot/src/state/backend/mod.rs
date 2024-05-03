@@ -65,17 +65,17 @@ pub trait GetView {
     ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend>;
 }
 
-pub trait StateBackendContext {
+#[trait_variant::make(Send)]
+pub trait StateBackend 
+where
+    Self: Sized,
+{
+    type Error: std::error::Error;
+
     fn with_source_topic_name_and_partition(
         topic_name: &str,
         partition: i32,
-    ) -> impl Future<Output = Self>;
-
-}
-
-#[trait_variant::make(Send)]
-pub trait StateBackend {
-    type Error: std::error::Error;
+    ) -> Result<Self, Self::Error>;
 
     fn get_state_store_time(&self) -> PeridotTimestamp;
 

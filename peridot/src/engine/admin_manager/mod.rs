@@ -14,7 +14,7 @@ pub struct AdminManager {
 
 impl AdminManager {
     pub(super) fn new(config: &PeridotConfig) -> Result<Self, AdminManagerError> {
-        let client = AdminClient::from_config(config.client_config())
+        let client = AdminClient::from_config(config.client_config_ref())
             .map_err(AdminManagerError::CreateClientError)?;
 
         Ok(Self {

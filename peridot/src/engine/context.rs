@@ -47,9 +47,11 @@ impl EngineContext {
     pub(crate) fn client_manager(&self) -> Arc<ClientManager> {
         self.client_manager.clone()
     }
+
     pub(crate) fn metadata_manager(&self) -> Arc<MetadataManager> {
         self.metadata_manager.clone()
     }
+
     pub(crate) fn changelog_manager(&self) -> Arc<ChangelogManager> {
         self.changelog_manager.clone()
     }
@@ -79,5 +81,9 @@ impl EngineContext {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn register_state_store(&self, source_topic: &str, state_name: &str) -> Result<(), EngineContextError> {
+            
     }
 }

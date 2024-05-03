@@ -24,12 +24,16 @@ impl From<PeridotConfigBuilder> for PeridotConfig {
 }
 
 impl PeridotConfig {
-    pub fn client_config(&self) -> &ClientConfig {
+    pub fn new_client_config(&self) -> ClientConfig {
+        self.client_config.clone()
+    }
+
+    pub fn client_config_ref(&self) -> &ClientConfig {
         &self.client_config
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.client_config().get(key)
+        self.client_config_ref().get(key)
     }
 
     pub fn app_id(&self) -> &str {

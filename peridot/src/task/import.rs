@@ -1,4 +1,4 @@
-use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, message::types::{KeyValue, Message, PatchMessage}, pipeline::stream::PipelineStream, state::backend::{StateBackend, StateBackendContext}};
+use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, message::types::{KeyValue, Message, PatchMessage}, pipeline::stream::PipelineStream, state::backend::StateBackend};
 
 use super::Task;
 

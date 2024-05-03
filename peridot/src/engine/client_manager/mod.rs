@@ -53,7 +53,7 @@ impl ClientManager {
         let context = PeridotConsumerContext::from_config(config);
 
         let consumer = config
-            .client_config()
+            .client_config_ref()
             .create_with_context(context.clone())
             .map_err(ClientManagerError::CreateConsumerError)?;
 

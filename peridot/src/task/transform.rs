@@ -1,6 +1,6 @@
-use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream, state::backend::{StateBackend, StateBackendContext}};
+use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream, state::backend::StateBackend};
 
-use super::Task;
+use super::{PipelineParts, Task};
 
 #[must_use = "pipelines do nothing unless patched to a topic"]
 pub struct TransformTask<'a, F, I, R, B, G>
@@ -11,6 +11,7 @@ where
     G: DeliveryGuaranteeType,
 {
     app: &'a PeridotApp<B, G>,
+    source_topic: String,
     handler: F,
     input: I,
 }
@@ -23,9 +24,10 @@ where
     R::MStream: Send + 'static,
     G: DeliveryGuaranteeType,
 {
-    pub fn new(app: &'a PeridotApp<B, G>, handler: F, input: I) -> Self {
+    pub fn new(app: &'a PeridotApp<B, G>, source_topic: String, handler: F, input: I) -> Self {
         Self {
             app,
+            source_topic,
             handler,
             input,
         }
@@ -38,7 +40,7 @@ where
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
     G: DeliveryGuaranteeType,
-    B: StateBackendContext + StateBackend + Send + Sync + 'static,
+    B: StateBackend + Send + Sync + 'static,
 {
     type G = G;
     type R = R;
@@ -48,14 +50,15 @@ where
         (self.handler)(self.input)
     }
 
-    fn into_parts(self) -> (&'a PeridotApp<Self::B, Self::G>, Self::R) {
+    fn into_parts(self) -> PipelineParts<'a, Self::B, Self::G, Self::R> {
         let Self {
             app,
+            source_topic,
             handler,
             input,
             ..
         } = self;
 
-        (app, handler(input))
+        PipelineParts(app, source_topic, handler(input))
     }
 }

@@ -10,7 +10,7 @@ use crate::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         wrapper::serde::PeridotDeserializer,
         AppEngine,
-    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend, StateBackendContext}, task::{table::TableTask, transparent::TransparentTask, Task}
+    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend}, task::{table::TableTask, transparent::TransparentTask, Task}
 };
 
 use self::{
@@ -43,7 +43,7 @@ where
 impl<B, G> PeridotApp<B, G> 
 where
     G: DeliveryGuaranteeType,
-    B: StateBackendContext + StateBackend + Send + Sync + 'static,
+    B: StateBackend + Send + Sync + 'static,
 {
     pub fn stream<KS, VS>(
         &self,
@@ -72,7 +72,7 @@ where
             .stream(topic)
             .expect("Failed to create topic");
 
-        TransparentTask::new(self, input).into_table(table_name)
+        TransparentTask::new(self, topic,input).into_table(table_name)
     }
 
     pub fn task<'a, KS, VS>(
@@ -87,7 +87,7 @@ where
             .stream(topic)
             .expect("Failed to create topic");
 
-        TransparentTask::new(self, input)
+        TransparentTask::new(self, topic, input)
     }
 
     pub fn from_config(mut config: PeridotConfig) -> Result<Self, PeridotAppCreationError> {

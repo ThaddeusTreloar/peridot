@@ -8,7 +8,7 @@ use crate::{
     message::{join::Combiner, types::{FromMessage, PatchMessage}},
     pipeline::{
         join::JoinPipeline, map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
-    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend, StateBackendContext},
+    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend},
 };
 
 use self::{table::TableTask, transform::TransformTask};
@@ -18,10 +18,28 @@ pub mod table;
 pub mod transform;
 pub mod transparent;
 
+pub struct PipelineParts<'a, B, G, R>(&'a PeridotApp<B, G>, String, R)
+where G: DeliveryGuaranteeType;
+
+impl <'a, B, G, R> PipelineParts<'a, B, G, R> 
+where G: DeliveryGuaranteeType
+{
+    pub fn app(&self) -> &'a PeridotApp<B, G> {
+        self.0
+    }
+
+    pub fn source_topic(&self) -> String {
+        self.1.clone()
+    }
+
+    pub fn output(self) -> R {
+        self.2
+    }
+}
 
 pub trait Task<'a> {
     type G: DeliveryGuaranteeType;
-    type B: StateBackendContext + StateBackend + Send + Sync + 'static;
+    type B: StateBackend + Send + Sync + 'static;
     type R: PipelineStream + Send + 'static;
 
     fn and_then<F1, R1>(self, next: F1) -> TransformTask<'a, F1, Self::R, R1, Self::B, Self::G>
@@ -31,9 +49,9 @@ pub trait Task<'a> {
         R1::MStream: Send + 'static,
         Self: Sized,
     {
-        let (app, output) = self.into_parts();
+        let parts = self.into_parts();
 
-        TransformTask::<'a>::new(app, next, output)
+        TransformTask::<'a>::new(parts.app(), parts.source_topic(), next, parts.output())
     }
 
     fn join<T, C>(self, table: T, combiner: C) -> TransformTask<
@@ -48,7 +66,7 @@ pub trait Task<'a> {
         T: GetViewDistributor + Send + 'a,
         T::KeyType: Send + Sync + 'static,
         T::ValueType: Send + Sync + 'static,
-        T::Backend: StateBackendContext + StateBackend + Sync + 'static,
+        T::Backend: StateBackend + Sync + 'static,
         C: Combiner<
             <Self::R as PipelineStream>::ValueType,
             T::ValueType,
@@ -57,13 +75,13 @@ pub trait Task<'a> {
         <Self::R as PipelineStream>::KeyType: PartialEq<T::KeyType> + Send,
         Self: Sized,
     {
-        let (app, output) = self.into_parts();
+        let parts = self.into_parts();
 
         let view = table.get_view_distributor();
 
         let transform = move |input: Self::R| input.join(view, combiner);
 
-        TransformTask::<'a>::new(app, transform, output)
+        TransformTask::<'a>::new(parts.app(), parts.source_topic(), transform, parts.output())
     }
 
     fn map<MF, ME, MR>(
@@ -92,9 +110,9 @@ pub trait Task<'a> {
         Self: Sized,
         Self::R: PipelineStreamExt,
     {
-        let (app, output) = self.into_parts();
+        let parts = self.into_parts();
 
-        TransformTask::<'a>::new(app, move |input| input.map(next), output)
+        TransformTask::<'a>::new(parts.app(), parts.source_topic(), move |input| input.map(next), parts.output())
     }
 
     fn into_table(self, table_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
@@ -103,20 +121,14 @@ pub trait Task<'a> {
         <Self::R as PipelineStream>::ValueType: Clone + Serialize + Send + 'static,
         Self: Sized + 'a,
     {
-        let (app, output) = self.into_parts();
+        let parts = self.into_parts();
 
-        unimplemented!("");
-
-        //app.engine_ref()
-        //    .register_table(table_name, "")
-        //    .expect("Table already registered.");
-
-        TableTask::new(app, table_name.to_owned(), output)
+        TableTask::new(parts.app(), parts.source_topic(), table_name.to_owned(), parts.output())
     }
 
     fn into_pipeline(self) -> Self::R;
 
-    fn into_parts(self) -> (&'a PeridotApp<Self::B, Self::G>, Self::R);
+    fn into_parts(self) -> PipelineParts<'a, Self::B, Self::G, Self::R>;
 
     fn into_topic<KS, VS>(self, _topic: &str)
     where
@@ -128,7 +140,7 @@ pub trait Task<'a> {
         Self::R: PipelineStreamExt,
     {
         let sink_factory = PrintSinkFactory::<KS, VS>::new();
-        let (app, output) = self.into_parts();
+        let PipelineParts(app, _, output) = self.into_parts();
         let job = output.forward(sink_factory);
         app.job(Box::pin(job));
     }

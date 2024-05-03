@@ -1,6 +1,6 @@
 use rdkafka::ClientConfig;
 
-use crate::{engine::util::{DeliveryGuaranteeType, ExactlyOnce}, state::backend::{in_memory::InMemoryStateBackend, StateBackend, StateBackendContext}};
+use crate::{engine::util::{DeliveryGuaranteeType, ExactlyOnce}, state::backend::{in_memory::InMemoryStateBackend, StateBackend}};
 
 use super::{config::PeridotConfig, error::PeridotAppCreationError, PeridotApp};
 
@@ -68,7 +68,7 @@ impl AppBuilder<PeridotConfig, (), ()>
 
 impl<B> AppBuilder<PeridotConfig, B, ()> 
 where
-    B: StateBackendContext + StateBackend + Send + Sync + 'static,
+    B: StateBackend + Send + Sync + 'static,
 {
     pub fn build(self) -> Result<PeridotApp<B, ExactlyOnce>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;
@@ -89,7 +89,7 @@ where
 impl<B, G> AppBuilder<PeridotConfig, B, G> 
 where
     G: DeliveryGuaranteeType,
-    B: StateBackendContext + StateBackend + Send + Sync + 'static,
+    B: StateBackend + Send + Sync + 'static,
 {
     pub fn build(self) -> Result<PeridotApp<B, G>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;

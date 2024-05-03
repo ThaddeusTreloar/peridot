@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use crate::{engine::AppEngine, state::backend::{GetView, StateBackend, StateBackendContext, VersionedStateBackend}};
+use crate::{engine::{context::EngineContext, metadata_manager::table_metadata, state_store_manager::StateStoreManager, AppEngine}, state::backend::{GetView, StateBackend, VersionedStateBackend}};
 
 use super::StateFacade;
 
 pub struct FacadeDistributor<K, V, B> 
 {
-    app_engine: Arc<AppEngine<B>>,
+    engine_context: EngineContext,
+    state_store_manager: Arc<StateStoreManager<B>>,
     store_name: String,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
@@ -14,11 +15,12 @@ pub struct FacadeDistributor<K, V, B>
 
 impl<K, V, B> FacadeDistributor<K, V, B> 
 where
-    B: StateBackendContext + Send + Sync + 'static,
+    B: StateBackend + Send + Sync + 'static,
 {
     pub fn new(backend: Arc<AppEngine<B>>, store_name: String) -> Self {
         Self {
-            app_engine: backend,
+            engine_context: backend.get_engine_context(),
+            state_store_manager: backend.get_state_store_context(),
             store_name,
             _key_type: Default::default(),
             _value_type: Default::default(),
@@ -26,10 +28,12 @@ where
     }
 
     pub fn fetch_backend(&self, partition: i32) -> Arc<B> {
-        todo!("Fetch backend")
+        let table_metadata = self.engine_context.metadata_manager()
+            .get_table_metadata(&self.store_name)
+            .expect("Unable to get store for facade distributor");
 
-        //self.app_engine.get_state_store_for_table(self.store_name(), partition)
-        //    .expect("Table not found while fetching store.")
+        self.state_store_manager.get_state_store(table_metadata.source_topic(), partition)
+            .expect("Failed to get state store for facade distributor.")
     }
 
     pub fn store_name(&self) -> &str {
@@ -39,7 +43,7 @@ where
 
 impl<K, V, B> GetView for FacadeDistributor<K, V, B> 
 where
-    B: StateBackendContext + StateBackend + Send + Sync + 'static,
+    B: StateBackend + Send + Sync + 'static,
 {
     type Error = B::Error;
     type KeyType = K;

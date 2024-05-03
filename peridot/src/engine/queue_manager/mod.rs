@@ -179,7 +179,7 @@ impl Future for QueueManager {
 
             let queue_metadata =  QueueMetadata {
                 engine_context: this.engine_context.clone(),
-                producer_ref: Arc::new(this.producer_factory.create_producer().expect("Fail")),
+                producer_ref: Arc::new(this.producer_factory.create_producer(&topic, partition).expect("Fail")),
                 changelog_queues: ChangelogQueues::new(changelog_queues),
                 partition,
                 source_topic: topic.clone(),
