@@ -17,18 +17,24 @@ pub (super) const PERSISTENT_CONFIG_DIR: &str = "persistent.config.dir";
 pub (super) const PERSISTENT_CONFIG_FILENAME: &str = "peridot.persistent.config";
 pub (super) const STATE_DIR: &str = "state.dir";
 
-const REQUIRED_FIELDS: [&str; 3] = [
+pub(super) const REQUIRED_FIELDS: [&str; 3] = [
     BOOTSTRAP_SERVERS,
     APPLICATION_ID,
     STATE_DIR,
 ];
 
-const DEFAULT_FIELDS: [(&str, &str); 2] = [
+pub(super) const APP_FIELDS: [&str; 3] = [
+    APPLICATION_ID,
+    STATE_DIR,
+    PERSISTENT_CONFIG_DIR,
+];
+
+pub(super) const DEFAULT_FIELDS: [(&str, &str); 2] = [
     (STATE_DIR, "/var/lib/peridot"),
     (PERSISTENT_CONFIG_DIR, "./"),
 ];
 
-const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [
+pub(super) const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [
     (GROUP_ID, "'application.id' is used to derive 'group.id' in streams applications"),
     (GROUP_INSTANCE_ID, "'application.id' is used to derive 'group.instance.id' in streams applications"),
     (CLIENT_ID, "'application.id' is used to derive 'client.id' in streams applications"),
@@ -37,6 +43,7 @@ const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [
 #[derive(Debug, Clone, Default, derive_more::From)]
 pub struct PeridotConfigBuilder {
     pub(crate) client_config: ClientConfig,
+    pub(crate) app_config: HashMap<String, String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -66,27 +73,68 @@ impl PeridotConfigBuilder {
         self.client_config.config_map().contains_key(key.into())
     }
 
+    fn get_app_var(&self, key: &str) -> Option<&str> {
+        self.app_config.get(key).map(|s|s.as_str())
+    }
+
+    fn get_client_var(&self, key: &str) -> Option<&str> {
+        self.client_config.get(key)
+    }
+    
     pub fn get<'a, K: Into<&'a str>>(&self, key: K) -> Option<&str> {
-        self.client_config.get(key.into())
+        let key: &str = key.into();
+        
+        if APP_FIELDS.contains(&key) {
+            self.get_app_var(key)
+        } else {
+            self.get_client_var(key)
+        }
+    }
+
+    fn set_app_var(&mut self, key: String, value: String) {
+        let _ = self.app_config.insert(key, value);
+    }
+
+    fn set_client_var(&mut self, key: String, value: String) {
+        self.client_config.set(key, value);
     }
     
     pub fn set<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) -> &mut Self {
-        self.client_config.set(key, value);
+        let key: String = key.into();
+        let value: String = value.into();
+
+        if APP_FIELDS.contains(&key.as_str()) {
+            self.set_app_var(key, value)
+        } else {
+            self.set_client_var(key, value)
+        }
 
         self
     }
 
     pub fn remove<'a, K: Into<&'a str>>(&mut self, key: K) -> &mut Self {
-        self.client_config.remove(key.into());
+        let key: &str = key.into();
+        
+        if APP_FIELDS.contains(&key) {
+            self.app_config.remove(key);
+        } else {
+            self.client_config.remove(key);
+        }
 
         self
+    }
+
+    pub fn extend(&mut self, other: &[(String, String)]) {
+        for (k, v) in other {
+            let _ = self.set(k, v);
+        }
     }
 
     fn overwrite_with_persisted_config(mut self) -> Result<Self, PeridotConfigError> {
         let mut persistent_config_stub = Path::new(PERSISTENT_CONFIG_FILENAME);
 
         let mut persistent_config_path = Path::new(
-            self.client_config.get(PERSISTENT_CONFIG_DIR)
+            self.get(PERSISTENT_CONFIG_DIR)
                 .unwrap_or_else(|| {
                     tracing::error!("{} not set in config. This should not be possible.", PERSISTENT_CONFIG_DIR);
                     panic!("{} not set in config. This should not be possible.", PERSISTENT_CONFIG_DIR)
@@ -105,7 +153,7 @@ impl PeridotConfigBuilder {
             let mut file = File::open(filepath)?;
             let persistent_config = PersistentConfig::try_from(file)?;
 
-            self.client_config.extend(Vec::from(persistent_config));
+            self.extend(Vec::from(persistent_config).as_slice());
 
             Ok(self)
         }
@@ -113,7 +161,7 @@ impl PeridotConfigBuilder {
 
     fn check_missing_required(mut self) -> Result<Self, PeridotConfigError> {
         let missing_fields: Vec<_> = REQUIRED_FIELDS.into_iter()
-            .filter(|field|self.client_config.get(field).is_none())
+            .filter(|field|self.get(*field).is_none())
             .collect();
 
         if !missing_fields.is_empty() {
@@ -124,35 +172,36 @@ impl PeridotConfigBuilder {
     }
 
     fn derive_internal_fields(mut self) -> Result<Self, PeridotConfigError> {
-        let app_id = self.client_config.get("application.id").unwrap().to_owned();
+        let app_id = self.get("application.id").unwrap().to_owned();
 
         // Check if instance-id is written out to persistent storage.
         // If not generate and store.
         let instance_suffix = Uuid::new_v4();
         let instance_id = format!("{}-{}", app_id, instance_suffix);
 
-        let _ = self.client_config.set("group.id", app_id);
-        let _ = self.client_config.set("group.instance.id", instance_id.clone());
-        let _ = self.client_config.set("client.id", instance_id);
+        self
+            .set("group.id", app_id)
+            .set("group.instance.id", instance_id.clone())
+            .set("client.id", instance_id);
         
         Ok(self)
     }
 
     fn resolve_config_conflict(&mut self, key: &str, reason: &str) {
-        if let Some(value) = self.client_config.get(key) {
+        if let Some(value) = self.get(key) {
             warn!("'group.id' set as '{}' in client config. Disabling becaus: {}", key, reason);
     
-            self.client_config.remove(key);
+            self.remove(key);
         }
     }
 
     fn set_missing_defaults(mut self) -> Self {
         let missing_defaults = DEFAULT_FIELDS.into_iter()
-            .filter(|(name, _)| self.client_config.get(name).is_none())
+            .filter(|(name, _)| self.get(*name).is_none())
             .map(|(k , v)|(k.to_owned(), v.to_owned()))
             .collect::<Vec<_>>();
 
-        self.client_config.extend(missing_defaults);
+        self.extend(&missing_defaults);
 
         self
     }
@@ -179,24 +228,24 @@ impl PeridotConfigBuilder {
 
 impl From<&ClientConfig> for PeridotConfigBuilder {
     fn from(client_config: &ClientConfig) -> Self {
-        Self {
-            client_config: client_config.clone(),
-        }
+        client_config.config_map().into()
     }
 }
 
 impl From<&HashMap<String, String>> for PeridotConfigBuilder {
     fn from(config_map: &HashMap<String, String>) -> Self {
-        let mut client_config: ClientConfig = Default::default();
+        let mut pconfig = Self {
+            client_config: Default::default(),
+            app_config: Default::default(),
+        };
 
-        config_map.iter().for_each(
-            |(key, value)| {
-                client_config.set(key, value);
-            }
-        );
+        config_map.iter()
+            .for_each(
+                |(key, value)| {
+                    pconfig.set(key, value);
+                }
+            );
 
-        Self {
-            client_config,
-        }
+        pconfig
     }
 }

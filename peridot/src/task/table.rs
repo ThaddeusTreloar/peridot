@@ -4,9 +4,9 @@ use crossbeam::atomic::AtomicCell;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    app::PeridotApp, engine::{engine_state::EngineState, metadata_manager::table_metadata, util::{DeliveryGuaranteeType, ExactlyOnce}}, pipeline::{
+    app::PeridotApp, engine::{engine_state::EngineState, metadata_manager::table_metadata, util::{DeliveryGuaranteeType, ExactlyOnce}, wrapper::serde::json::Json}, pipeline::{
         fork::PipelineFork,
-        sink::{changelog_sink::ChangelogSinkFactory, state_sink::StateSinkFactory},
+        sink::{changelog_sink::ChangelogSinkFactory, noop_sink::NoopSinkFactory, state_sink::StateSinkFactory},
         stream::{PipelineStream, PipelineStreamExt},
     }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend}
 };
@@ -18,6 +18,7 @@ pub type TableOutput<K, V, P, B> = PipelineFork<PipelineFork<P, ChangelogSinkFac
 type TableDownstream<P, B, K, V> =
     PipelineFork<PipelineFork<P, ChangelogSinkFactory<K, V>>, StateSinkFactory<B, K, V>>;
 
+#[must_use="Tables do not run unless they are finished or they have downsream tasks."]
 pub struct TableTask<'a, P, B, G>
 where
     G: DeliveryGuaranteeType,
@@ -73,6 +74,23 @@ where
 
     pub fn get_table_state(&self) -> Arc<AtomicCell<EngineState>> {
         self.state.clone()
+    }
+}
+
+impl<'a, P, B, G> TableTask<'a, P, B, G>
+where
+    P: PipelineStream + Send + 'static,
+    B: StateBackend + Send + Sync + 'static,
+    B::Error: Send,
+    P::KeyType: Serialize + Clone + Send + Sync + 'static,
+    P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
+    G: DeliveryGuaranteeType,
+{
+    pub fn finish(self) {
+        let sink_factory = NoopSinkFactory::<Json<P::KeyType>, Json<P::ValueType>>::new();
+        let PipelineParts(app, _, output) = self.into_parts();
+        let job = output.forward(sink_factory);
+        app.job(Box::pin(job));
     }
 }
 

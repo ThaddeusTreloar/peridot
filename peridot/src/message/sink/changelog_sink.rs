@@ -75,7 +75,7 @@ where
 
         let _delivery_future = self
             .queue_metadata
-            .producer()
+            .producer_arc()
             .send_result(record)
             .expect("Failed to queue record.");
 

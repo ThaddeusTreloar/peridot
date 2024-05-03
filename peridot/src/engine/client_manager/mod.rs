@@ -1,6 +1,7 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use rdkafka::{consumer::{BaseConsumer, Consumer}, message::OwnedMessage};
+use tracing::info;
 
 use crate::{app::{config::PeridotConfig, extensions::PeridotConsumerContext}, engine::metadata_manager::topic_metadata};
 
@@ -53,7 +54,7 @@ impl ClientManager {
         let context = PeridotConsumerContext::from_config(config);
 
         let consumer = config
-            .client_config_ref()
+            .client_config()
             .create_with_context(context.clone())
             .map_err(ClientManagerError::CreateConsumerError)?;
 
@@ -106,6 +107,11 @@ impl ClientManager {
     pub(crate) fn get_partition_queue(&self, topic: &str, partition: i32) 
         -> Result<StreamPeridotPartitionQueue, ClientManagerError> 
     {
+        info!("Getting partition queue for topic: {} partition: {}", topic, partition);
+
+        let waker = self.consumer.context()
+            .pre_rebalance_waker();
+
         match self.consumer.split_partition_queue(topic, partition) {
             None => Err(
                 ClientManagerError::GetPartitionQueueError { 
@@ -113,7 +119,7 @@ impl ClientManager {
                     partition 
                 }
             ),
-            Some(queue) => Ok(StreamPeridotPartitionQueue::new(queue))
+            Some(queue) => Ok(StreamPeridotPartitionQueue::new(queue, waker, topic.to_owned(), partition))
         }
     }
 

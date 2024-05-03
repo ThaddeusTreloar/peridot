@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use tracing::info;
 
 use self::{table_metadata::TableMetadata, topic_metadata::TopicMetadata};
 
@@ -35,7 +36,7 @@ impl MetadataManager {
     }
 
     pub(crate) fn register_source_topic(&self, topic: &str, metadata: &TopicMetadata) -> Result<(), MetadataManagerError> {
-        if !self.source_topic_metadata.contains_key(topic) {
+        if self.source_topic_metadata.contains_key(topic) {
             Err(MetadataManagerError::TopicAlreadyRegistered { topic: topic.to_owned() })
         } else {
             self.source_topic_metadata.insert(topic.to_owned(), metadata.clone());
@@ -45,7 +46,7 @@ impl MetadataManager {
     }
 
     pub(crate) fn register_table(&self, table_name: &str, source_topic: &str) -> Result<TableMetadata, MetadataManagerError> {
-        if !self.table_metadata.contains_key(table_name) {
+        if self.table_metadata.contains_key(table_name) {
             Err(MetadataManagerError::TableAlreadyRegistered { table: table_name.to_owned() })
         } else {
             let new_metadata = TableMetadata::new(source_topic);
@@ -57,7 +58,7 @@ impl MetadataManager {
     }
 
     pub(crate) fn register_table_with_changelog(&self, table_name: &str, source_topic: &str) -> Result<TableMetadata, MetadataManagerError> {
-        if !self.table_metadata.contains_key(table_name) {
+        if self.table_metadata.contains_key(table_name) {
             Err(MetadataManagerError::TableAlreadyRegistered { table: table_name.to_owned() })
         } else {
             let changelog_topic = self.derive_changelog_topic(table_name);

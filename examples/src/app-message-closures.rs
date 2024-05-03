@@ -12,14 +12,6 @@ use rdkafka::ClientConfig;
 use rdkafka::config::RDKafkaLogLevel;
 use tracing::level_filters::LevelFilter;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct Topic {
-    topic_name: String,
-    scope: Vec<String>,
-    consent_required: bool,
-    consent_owner_type: String,
-}
-
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct ConsentGrant {
     owner_type: String,
@@ -68,6 +60,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
+        .set("application.id", "app-message-closures3")
         .set("group.id", group)
         .set("group.instance.id", group_instance)
         .set("auto.offset.reset", "earliest")
@@ -77,6 +70,9 @@ async fn main() -> Result<(), anyhow::Error> {
         .with_config(PeridotConfigBuilder::from(&client_config).build().expect("Failed to build config."))
         .build()
         .expect("Failed to build app.");
+
+    app.table::<String, Json<ConsentGrant>>("consent.Client", "consent_table")
+        .finish();
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .map(|kv: KeyValue<String, ChangeOfAddress>| KeyValue(kv.0, kv.1.address))

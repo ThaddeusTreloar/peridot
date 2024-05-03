@@ -5,7 +5,7 @@ use tracing::warn;
 
 use crate::help;
 
-use self::builder::{PeridotConfigBuilder, PeridotConfigError};
+use self::builder::{PeridotConfigBuilder, PeridotConfigError, APP_FIELDS, GROUP_ID, GROUP_INSTANCE_ID};
 
 pub mod builder;
 mod persistent_config;
@@ -13,32 +13,49 @@ mod persistent_config;
 #[derive(Default, Debug, Clone)]
 pub struct PeridotConfig {
     client_config: ClientConfig,
+    app_config: HashMap<String, String>,
 }
 
 impl From<PeridotConfigBuilder> for PeridotConfig {
     fn from(value: PeridotConfigBuilder) -> Self {
-        let PeridotConfigBuilder { client_config } = value;
+        let PeridotConfigBuilder { client_config, app_config } = value;
 
-        Self { client_config }
+        Self { 
+            client_config,
+            app_config,
+        }
     }
 }
 
 impl PeridotConfig {
+    pub(crate) fn without_group_id(&self) -> PeridotConfig {
+        let mut new_config = self.clone();
+
+        new_config.client_config.remove(GROUP_ID);
+        new_config.client_config.remove(GROUP_INSTANCE_ID);
+
+        new_config
+    }
+
     pub fn new_client_config(&self) -> ClientConfig {
         self.client_config.clone()
     }
 
-    pub fn client_config_ref(&self) -> &ClientConfig {
+    pub fn client_config(&self) -> &ClientConfig {
         &self.client_config
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.client_config_ref().get(key)
+        if APP_FIELDS.contains(&key) {
+            self.app_config.get(key).map(|s|s.as_str())
+        } else {
+            self.client_config.get(key)
+        }
     }
 
     pub fn app_id(&self) -> &str {
-        self.client_config.get("app.id")
-            .expect("Failed to get 'app.id' from PeridotConfig. This should not be possible")
+        self.get("application.id")
+            .expect("Failed to get 'application.id' from PeridotConfig. This should not be possible")
     }
 }
 

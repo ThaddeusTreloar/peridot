@@ -6,6 +6,8 @@ use crate::app::config::PeridotConfig;
 
 use super::{util::ExactlyOnce, DeliverySemantics};
 
+const TRANSACTIONAL_ID: &str = "transactional.id";
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProducerFactoryError {
     #[error("ProducerFactoryError::ProducerCreationError, failed to create producer, caused by: {}", err)]
@@ -41,17 +43,20 @@ impl ProducerFactory {
         // At a later date we can review this approach.
         let mut config = self.config.new_client_config();
 
-        config.set("transaction.id", transaction_id);
+        config.set(TRANSACTIONAL_ID, transaction_id);
         
         let producer = FutureProducer::from_config(&config)
             .map_err(|err| ProducerFactoryError::ProducerCreationError { err })?;
     
-        todo!("Ensure init_transactions will fence previous generation producers.");
-
         if let DeliverySemantics::ExactlyOnce = self.delivery_semantics {
             producer
                 .init_transactions(Duration::from_millis(2500))
                 .map_err(|err| ProducerFactoryError::InitTransactionsError { err })?;
+
+            producer
+                .begin_transaction()
+                .expect("Failed to begin initial transaction.");
+                //.map_err(|err| ProducerFactoryError::InitTransactionsError { err })?;
         }
     
         Ok(producer)

@@ -114,7 +114,7 @@ where
             self.producer_factory.clone(),
             self.downstreams.clone(),
             self.engine_state.clone(),
-            pre_rebalance_waker,
+            rebalance_waker,
         );
 
         tokio::spawn(queue_distributor);

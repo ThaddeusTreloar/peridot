@@ -8,9 +8,10 @@ use futures::Future;
 use pin_project_lite::pin_project;
 use rdkafka::error::KafkaError;
 use serde::{de::DeserializeOwned, Serialize};
+use tracing::info;
 
 use crate::{
-    app::PeridotConsumer, engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::native::NativeBytes}, message::{
+    app::PeridotConsumer, engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{json::Json, native::NativeBytes, PeridotSerializer}}, message::{
         sink::{MessageSink, NonCommittingSink},
         types::{Message, TryFromOwnedMessage},
     }, state::backend::{facade::StateFacade, ReadableStateView, StateBackend, WriteableStateView}
@@ -128,6 +129,13 @@ where
         message: Message<K, V>,
     ) -> Result<(), Self::Error> {
         let this = self.project();
+
+        let raw_key = Json::serialize(message.key()).unwrap();
+        let ser_key = String::from_utf8_lossy(&raw_key);
+        let raw_value = Json::serialize(message.value()).unwrap();
+        let ser_value = String::from_utf8_lossy(&raw_value);
+
+        info!("Sinking state message: key: {}, value: {}", ser_key, ser_value);
 
         let offset = std::cmp::max(message.offset, *this.highest_offset);
 

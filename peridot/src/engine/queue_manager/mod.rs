@@ -15,10 +15,11 @@ use dashmap::{DashMap, DashSet};
 use futures::{ready, Future, FutureExt};
 use pin_project_lite::pin_project;
 use rdkafka::{producer::PARTITION_UA, Message, TopicPartitionList};
+use serde::Deserialize;
 use tokio::sync::{broadcast::{error::TryRecvError, Receiver}, mpsc::{UnboundedReceiver, UnboundedSender}};
 use tracing::{debug, error, info};
 
-use crate::{app::{extensions::OwnedRebalance, PeridotConsumer}, engine::{context::EngineContext, queue_manager::changelog_queues::ChangelogQueues}, state::backend::StateBackend};
+use crate::{app::{extensions::{OwnedRebalance, RebalanceReceiver}, PeridotConsumer}, engine::{context::EngineContext, queue_manager::changelog_queues::ChangelogQueues, wrapper::serde::{PeridotDeserializer, PeridotSerializer}}, state::backend::StateBackend};
 
 use self::{
     queue_metadata::QueueMetadata,
@@ -42,7 +43,7 @@ pin_project! {
         downstreams: Arc<DashMap<String, QueueSender>>,
         engine_state: Arc<AtomicCell<EngineState>>,
         #[pin]
-        rebalance_waker: Receiver<OwnedRebalance>,
+        rebalance_waker: RebalanceReceiver,
         sleep: Option<Pin<Box<tokio::time::Sleep>>>,
     }
 }
@@ -54,7 +55,7 @@ impl<B> QueueManager<B> {
         producer_factory: Arc<ProducerFactory>,
         downstreams: Arc<DashMap<String, QueueSender>>,
         engine_state: Arc<AtomicCell<EngineState>>,
-        rebalance_waker: Receiver<OwnedRebalance>,
+        rebalance_waker: RebalanceReceiver,
     ) -> Self {
         Self {
             engine_context,
@@ -74,7 +75,8 @@ impl<B> QueueManager<B> {
 
 impl<B> Future for QueueManager<B> 
 where 
-    B: StateBackend
+    B: StateBackend,
+    B::Error: 'static,
 {
     type Output = Result<(), PeridotEngineRuntimeError>;
 
@@ -86,24 +88,31 @@ where
             let _ = this.sleep.take();
         }
 
-        todo!("Enqueue downstream PipelineStage instances and only release on post rebalance waker.");
+        //todo!("Enqueue downstream PipelineStage instances and only release on post rebalance waker.");
         // TODO: Check for failed queues and reassign them before the next poll.
 
         debug!("Polling distributor...");
 
         if let Some(message) = this.engine_context.client_manager.poll_consumer()? {
+            let key = <String as PeridotDeserializer>::deserialize(message.key().unwrap()).unwrap();
+            let value = <String as PeridotDeserializer>::deserialize(message.payload().unwrap()).unwrap();
+
             error!(
-                "Unexpected consumer message: topic: {}, partition: {}, offset: {}",
+                "Unexpected consumer message: topic: {}, partition: {}, offset: {}, key: {}, value: {}",
                 message.topic(),
                 message.partition(),
-                message.offset()
+                message.offset(),
+                key,
+                value,
             );
 
             panic!(
-                "Unexpected consumer message: topic: {}, partition: {}, offset: {}",
+                "Unexpected consumer message: topic: {}, partition: {}, offset: {}, key: {}, value: {}",
                 message.topic(),
                 message.partition(),
-                message.offset()
+                message.offset(),
+                key,
+                value,
             );
         }
 

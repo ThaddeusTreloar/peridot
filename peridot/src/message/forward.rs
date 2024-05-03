@@ -1,12 +1,10 @@
 use std::{
-    pin::Pin,
-    task::{Context, Poll},
-    time::Duration,
+    pin::Pin, sync::Arc, task::{Context, Poll}, time::Duration
 };
 
 use futures::{ready, Future};
 use pin_project_lite::pin_project;
-use rdkafka::{consumer::Consumer, producer::Producer, Offset, TopicPartitionList};
+use rdkafka::{consumer::Consumer, producer::{FutureProducer, Producer}, Offset, TopicPartitionList};
 use tracing::info;
 
 use crate::engine::queue_manager::queue_metadata::QueueMetadata;
@@ -61,15 +59,20 @@ where
             is_committing,
         } = self.project();
 
-        info!("Forwarding messages from stream to sink...");
-
         // If we have entered a commit state, we need to commit the transaction before continuing.
         if *is_committing {
-            // If the sink has not completed it's commit, we need to wait.
+            // If the sink has not completed it's committing, we need to wait.
             ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit transaction.");
+
+            queue_metadata.producer()
+                .commit_transaction(Duration::from_millis(2500))
+                .expect("Failed to commit transaction.");
 
             // Otherwise, we can transition our commit state.
             *is_committing = false;
+            queue_metadata.producer()
+                .begin_transaction()
+                .expect("Failed to begin transaction.");
         }
 
         for _ in 0..BATCH_SIZE {
@@ -77,14 +80,14 @@ where
 
             match message_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => {
-                    info!("No Messages left for stream, finishing...");
+                    info!("No Messages left for stream topic: {}, partition: {}, finishing...", queue_metadata.source_topic(), queue_metadata.partition());
 
                     ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close.");
 
                     return Poll::Ready(());
                 }
                 Poll::Pending => {
-                    info!("No messages available, waiting...");
+                    info!("No messages available for topic: {} partition: {}, waiting...", queue_metadata.source_topic(), queue_metadata.partition());
 
                     // No messages available, we can transition to a commit state.
                     *is_committing = true;
@@ -113,7 +116,7 @@ where
                         .expect("Failed to add partition offset.");
 
                     queue_metadata
-                        .producer()
+                        .producer_arc()
                         .send_offsets_to_transaction(&offsets, &cgm, Duration::from_millis(1000))
                         .expect("Failed to send offsets to transaction.");
                 }

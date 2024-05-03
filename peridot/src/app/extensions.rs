@@ -1,3 +1,6 @@
+pub(crate) type RebalanceSender = Sender<OwnedRebalance>;
+pub(crate) type RebalanceReceiver = Receiver<OwnedRebalance>;
+
 use std::{fmt::Display, time::Duration};
 
 use rdkafka::{
@@ -66,15 +69,15 @@ impl<'a> From<TopicPartitionListElem<'a>> for Commit {
 
 #[derive(Debug)]
 pub struct ContextWakers {
-    pub pre_rebalance_waker: Receiver<OwnedRebalance>,
-    pub post_rebalance_waker: Receiver<OwnedRebalance>,
+    pub pre_rebalance_waker: RebalanceReceiver,
+    pub post_rebalance_waker: RebalanceReceiver,
     pub commit_waker: Receiver<Commit>,
 }
 
 impl ContextWakers {
     pub fn new(
-        pre_rebalance_waker: Receiver<OwnedRebalance>,
-        post_rebalance_waker: Receiver<OwnedRebalance>,
+        pre_rebalance_waker: RebalanceReceiver,
+        post_rebalance_waker: RebalanceReceiver,
         commit_waker: Receiver<Commit>,
     ) -> Self {
         ContextWakers {
@@ -87,8 +90,8 @@ impl ContextWakers {
 
 #[derive(Debug)]
 pub struct PeridotConsumerContext {
-    pre_rebalance_waker: Sender<OwnedRebalance>,
-    post_rebalance_waker: Sender<OwnedRebalance>,
+    pre_rebalance_waker: RebalanceSender,
+    post_rebalance_waker: RebalanceSender,
     commit_waker: Sender<Commit>,
     max_poll_interval: Timeout,
 }
@@ -142,11 +145,11 @@ impl PeridotConsumerContext {
         }
     }
 
-    pub fn pre_rebalance_waker(&self) -> Receiver<OwnedRebalance> {
+    pub fn pre_rebalance_waker(&self) -> RebalanceReceiver {
         self.pre_rebalance_waker.subscribe()
     }
 
-    pub fn post_rebalance_waker(&self) -> Receiver<OwnedRebalance> {
+    pub fn post_rebalance_waker(&self) -> RebalanceReceiver {
         self.post_rebalance_waker.subscribe()
     }
 
@@ -154,11 +157,11 @@ impl PeridotConsumerContext {
         self.commit_waker.subscribe()
     }
 
-    pub fn pre_rebalance_sender(&self) -> Sender<OwnedRebalance> {
+    pub fn pre_rebalance_sender(&self) -> RebalanceSender {
         self.pre_rebalance_waker.clone()
     }
 
-    pub fn post_rebalance_sender(&self) -> Sender<OwnedRebalance> {
+    pub fn post_rebalance_sender(&self) -> RebalanceSender {
         self.post_rebalance_waker.clone()
     }
 
@@ -202,17 +205,20 @@ impl ConsumerContext for PeridotConsumerContext {
     fn pre_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
         let owned_rebalance: OwnedRebalance = rebalance.into();
 
-        self.pre_rebalance_waker
-            .send(owned_rebalance)
-            .expect("Failed to send rebalance");
+        dbg!("Context: pre rebalance, {}", &owned_rebalance);
+
+        let _ = self.pre_rebalance_waker
+            .send(owned_rebalance);
     }
 
     fn post_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
         let owned_rebalance: OwnedRebalance = rebalance.into();
 
+        dbg!("Context: post rebalance, {}", &owned_rebalance);
+
         self.post_rebalance_waker
             .send(owned_rebalance)
-            .expect("Failed to send rebalance");
+            .expect("Failed to send post rebalance");
     }
 
     fn commit_callback(

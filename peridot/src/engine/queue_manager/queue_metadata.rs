@@ -28,7 +28,11 @@ impl QueueMetadata {
         &self.engine_context
     }
 
-    pub fn producer(&self) -> Arc<FutureProducer> {
+    pub fn producer(&self) -> &FutureProducer {
+        &self.producer_ref
+    }
+
+    pub fn producer_arc(&self) -> Arc<FutureProducer> {
         self.producer_ref.clone()
     }
 

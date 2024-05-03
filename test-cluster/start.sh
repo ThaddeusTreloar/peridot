@@ -10,6 +10,6 @@ done
 echo "Kafka is now ready!"
 
 echo "Building out topics..."
-kafka-topics --bootstrap-server=kafka1:9092 --create --topic consent.Client
-kafka-topics --bootstrap-server=kafka1:9092 --create --topic changeOfAddress
-kafka-topics --bootstrap-server=kafka1:9092 --create --topic genericTopic
+kafka-topics.sh --bootstrap-server=kafka1:9092 --create --topic consent.Client --partitions 2
+kafka-topics.sh --bootstrap-server=kafka1:9092 --create --topic changeOfAddress --partitions 2
+kafka-topics.sh --bootstrap-server=kafka1:9092 --create --topic genericTopic --partitions 2

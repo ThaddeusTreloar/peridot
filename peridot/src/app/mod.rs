@@ -25,6 +25,21 @@ pub mod extensions;
 
 pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
 
+#[derive(Debug, Clone)]
+pub(crate) struct CompletedQueueMetadata {
+    source_topic: String,
+    partition: i32,
+}
+
+impl CompletedQueueMetadata {
+    fn new(source_topic: &str, partition: i32) -> Self {
+        Self {
+            source_topic: source_topic.to_owned(),
+            partition,
+        }
+    }
+}
+
 type Job = Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Send>>;
 type JobList = Box<Job>;
 type DirectTableTask<'a, KS, VS, B, G> = TableTask<'a, SerialiserPipeline<KS, VS>, B, G>;
@@ -85,7 +100,7 @@ where
     {
         let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
             .stream(topic)
-            .expect("Failed to create topic");
+            .expect("Failed to create input stream from source topic");
 
         TransparentTask::new(self, topic, input)
     }

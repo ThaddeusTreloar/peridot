@@ -61,7 +61,7 @@ impl ChangelogManager {
         let context = PeridotConsumerContext::from_config(config);
 
         let consumer = config
-            .client_config_ref()
+            .client_config()
             .create_with_context(context.clone())
             .map_err(ChangelogManagerError::CreateConsumerError)?;
 
@@ -87,12 +87,14 @@ impl ChangelogManager {
                 }
             )
         } else {
+            let waker = self.consumer.context().pre_rebalance_waker();
+
             match self.consumer.split_partition_queue(changelog_topic, partition) {
                 None => Err(ChangelogManagerError::ConsumerPartitionQueue { 
                     topic: changelog_topic.to_owned(), 
                     partition
                 }),
-                Some(queue) => Ok(StreamPeridotPartitionQueue::new(queue))
+                Some(queue) => Ok(StreamPeridotPartitionQueue::new(queue, waker, changelog_topic.to_owned(), partition))
             }
         }
     }
