@@ -39,7 +39,7 @@ Currently, the upstream C++ library, librdkafka, does not expose the consumer as
 
 ### Mixing State Backend Implementations
 
-This library uses static dispatch when dealing with state store implementations, and therefore the engine can only store a collection of exact typed state backend. What this means is that when the app is initially configured to utilise a particular type that Implements StateBackend, all state store instances are created with that type. Due to the way the StateBackend trait is designed, StateBackend implementations are not object safe and cannot be stored with dynamic dispatch, eg: Vec<Arc<dyn StateBackend>>. It will be evaluated later in development if there is a use case for dynamic state backend types, but for the moment, this is not being considered.
+This library uses static dispatch when dealing with state store implementations, and therefore the engine can only store a collection of exact typed state backend. What this means is that when the app is initially configured to utilise a particular type that Implements StateBackend, all state store instances are created with that type. Due to the way the StateBackend trait is designed, StateBackend implementations are not object safe and cannot be stored with dynamic dispatch, eg: Vec< Arc< dyn StateBackend >>. It will be evaluated later in development if there is a use case for dynamic state backend types, but for the moment, this is not being considered.
 
 ## Example
 
