@@ -12,11 +12,10 @@ Below is a list of the features currently being architected:
 
 - ✅ Streams DSL architecture
 - ✅ State store architecture
-- ✅ Tables
 - ✅ Exactly once semantics (Streams)
 - ✅ Exactly once semantics (Tables)
+- ✅ Changelogs
 - 🚧 Joins
-- 🚧 Changelogs
 - 🚧 Timestamp extraction
 - 🚧 Unified Service layer API 
 - 🚧 Import/Export integration API for any types that implement futures::Stream 

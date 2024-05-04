@@ -69,7 +69,15 @@ where
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");
 
-        tracing::debug!("Debug Sink: Sending message: {}", message);
+        tracing::info!(
+            "Debug Sink: topic: {}, partition: {}, offset: {}, headers: {:?}, key: {:?}, value: {:?}", 
+            message.topic(),
+            message.partition(),
+            message.offset(),
+            message.headers(),
+            String::from_utf8(ser_key).unwrap(),
+            String::from_utf8(ser_value).unwrap(),
+        );
 
         Ok(())
     }
