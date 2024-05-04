@@ -73,3 +73,7 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+**.log
+
+peridot.persistent.config
