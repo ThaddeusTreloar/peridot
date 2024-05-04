@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use dashmap::DashMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -33,6 +35,15 @@ pub struct TableMetadata {
     source_topic: String,
     changelog_topic: Option<String>,
     table_state: TableStateAggregate,
+}
+
+impl Display for TableMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.changelog_topic {
+            None => f.write_str(&format!("{{ source_topic: {}, changelog_topic: None }}", self.source_topic)),
+            Some(c_topic) => f.write_str(&format!("{{ source_topic: {}, changelog_topic: {} }}", self.source_topic, c_topic)),
+        }
+    }
 }
 
 impl TableMetadata {

@@ -4,6 +4,7 @@ use rdkafka::message::{
     BorrowedHeaders, BorrowedMessage, Header, Headers as KafkaHeaders, Message as KafkaMessage,
     OwnedHeaders, OwnedMessage,
 };
+use tracing::debug;
 
 use crate::engine::wrapper::serde::PeridotDeserializer;
 
@@ -109,10 +110,14 @@ where
     fn try_from_owned_message(msg: OwnedMessage) -> Result<Self, TryFromKafkaMessageError> {
         let raw_key = msg.key().unwrap();
 
+        tracing::trace!("Raw input key bytes for topic: {}, partition: {}, offset: {}, key: {:?}", msg.topic(), msg.partition(), msg.offset(), raw_key);
+        
         let key = KS::deserialize(raw_key)
             .map_err(|e| TryFromKafkaMessageError::DeserializationError(e.to_string()))?;
 
         let raw_value = msg.payload().unwrap();
+
+        tracing::trace!("Raw input value bytes for topic: {}, partition: {}, offset: {}, value: {:?}", msg.topic(), msg.partition(), msg.offset(), raw_value);
 
         let value = VS::deserialize(raw_value)
             .map_err(|e| TryFromKafkaMessageError::DeserializationError(e.to_string()))?;

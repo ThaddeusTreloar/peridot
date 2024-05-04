@@ -79,14 +79,15 @@ where
 
     fn get_state_store_time(&self) -> PeridotTimestamp;
 
-    fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint>;
+    fn get_state_store_checkpoint(&self, state_name: &str, partition: i32) -> Option<Checkpoint>;
 
-    fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error>;
+    fn create_checkpoint(&self, state_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error>;
 
     async fn get<K, V>(
         &self,
         key: K,
         store: &str,
+        partition: i32,
     ) -> Result<Option<V>, Self::Error>
     where
         K: Serialize + Send,
@@ -97,6 +98,7 @@ where
         key: K,
         value: V,
         store: &str,
+        partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
@@ -106,6 +108,7 @@ where
         &self,
         range: Vec<(K, V)>,
         store: &str,
+        partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
@@ -115,6 +118,15 @@ where
         &self,
         key: K,
         store: &str,
+        partition: i32,
+    ) -> Result<(), Self::Error>
+    where
+        K: Serialize + Send;
+
+    async fn clear<K>(
+        &self,
+        store: &str,
+        partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send;

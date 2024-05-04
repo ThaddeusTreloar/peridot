@@ -28,13 +28,17 @@ impl From<PeridotConfigBuilder> for PeridotConfig {
 }
 
 impl PeridotConfig {
-    pub(crate) fn without_group_id(&self) -> PeridotConfig {
-        let mut new_config = self.clone();
+    pub(crate) fn without_group_id(mut self) -> PeridotConfig {
+        self.client_config.remove(GROUP_ID);
+        self.client_config.remove(GROUP_INSTANCE_ID);
 
-        new_config.client_config.remove(GROUP_ID);
-        new_config.client_config.remove(GROUP_INSTANCE_ID);
+        self
+    }
 
-        new_config
+    pub(crate) fn with_earliest_offset_reset(mut self) -> PeridotConfig {
+        self.client_config.set("auto.offset.reset", "earliest");
+
+        self
     }
 
     pub fn new_client_config(&self) -> ClientConfig {

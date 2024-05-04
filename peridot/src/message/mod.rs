@@ -6,3 +6,17 @@ pub mod map;
 pub mod sink;
 pub mod stream;
 pub mod types;
+
+#[derive(Debug, Default, PartialEq, Eq)]
+enum CommitState {
+    #[default]
+    Uncommitted,
+    Committing,
+    Committed,
+}
+
+impl CommitState {
+    fn is_committing(&self) -> bool {
+        *self == CommitState::Committing
+    }
+}

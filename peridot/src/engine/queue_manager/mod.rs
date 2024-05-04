@@ -4,26 +4,22 @@ pub type QueueSender = UnboundedSender<Queue>;
 pub type QueueReceiver = UnboundedReceiver<Queue>;
 
 use std::{
-    pin::Pin,
-    sync::{Arc, Mutex},
-    task::{Context, Poll},
-    time::Duration,
+    collections::HashMap, pin::Pin, sync::{Arc, Mutex}, task::{Context, Poll}, time::Duration
 };
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
-use futures::{ready, Future, FutureExt};
+use futures::{ready, Future, FutureExt, SinkExt};
 use pin_project_lite::pin_project;
 use rdkafka::{producer::PARTITION_UA, Message, TopicPartitionList};
 use serde::Deserialize;
-use tokio::sync::{broadcast::{error::TryRecvError, Receiver}, mpsc::{UnboundedReceiver, UnboundedSender}};
+use tokio::{sync::{broadcast::{error::TryRecvError, Receiver}, mpsc::{UnboundedReceiver, UnboundedSender}}, time::Sleep};
 use tracing::{debug, error, info};
 
 use crate::{app::{extensions::{OwnedRebalance, RebalanceReceiver}, PeridotConsumer}, engine::{context::EngineContext, queue_manager::changelog_queues::ChangelogQueues, wrapper::serde::{PeridotDeserializer, PeridotSerializer}}, state::backend::StateBackend};
 
 use self::{
-    queue_metadata::QueueMetadata,
-    partition_queue::StreamPeridotPartitionQueue
+    partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue}, queue_metadata::QueueMetadata
 };
 
 use super::{
@@ -40,6 +36,8 @@ pin_project! {
         engine_context: Arc<EngineContext>,
         state_store_manager: Arc<StateStoreManager<B>>,
         producer_factory: Arc<ProducerFactory>,
+        partition_queues: HashMap<(String, i32), StreamPeridotPartitionQueue>,
+        //changelog_queues: HashMap<(String, i32), StreamPeridotPartitionQueue>,
         downstreams: Arc<DashMap<String, QueueSender>>,
         engine_state: Arc<AtomicCell<EngineState>>,
         #[pin]
@@ -57,10 +55,27 @@ impl<B> QueueManager<B> {
         engine_state: Arc<AtomicCell<EngineState>>,
         rebalance_waker: RebalanceReceiver,
     ) -> Self {
+        let partition_queues = engine_context.metadata_manager
+            .list_source_topics()
+            .into_iter()
+            .flat_map(|(topic, md)|{
+                (0..md.partition_count())
+                    .map(move |p: i32|(topic.clone(), p))
+            })
+            .map(|(topic, partition)| {
+                let partition_queue = engine_context
+                .client_manager
+                .get_partition_queue(&topic, partition)
+                .expect("Failed to get partition queue.");
+
+                ((topic, partition), partition_queue)
+            }).collect();
+
         Self {
             engine_context,
             state_store_manager,
             producer_factory,
+            partition_queues,
             downstreams,
             engine_state,
             rebalance_waker,
@@ -91,7 +106,9 @@ where
         //todo!("Enqueue downstream PipelineStage instances and only release on post rebalance waker.");
         // TODO: Check for failed queues and reassign them before the next poll.
 
-        debug!("Polling distributor...");
+        tracing::trace!("Polling distributor...");
+
+        this.engine_context.changelog_manager.poll_consumer();
 
         if let Some(message) = this.engine_context.client_manager.poll_consumer()? {
             let key = <String as PeridotDeserializer>::deserialize(message.key().unwrap()).unwrap();
@@ -116,15 +133,18 @@ where
             );
         }
 
-        debug!("Checking for rebalances");
+        tracing::trace!("Checking for rebalances");
 
         let rebalance = match this.rebalance_waker.try_recv() {
             Ok(rebalance) => rebalance,
-            Err(TryRecvError::Closed) => return Poll::Ready(Ok(())),
+            Err(TryRecvError::Closed) => {
+                tracing::debug!("Wakers closed...");
+                return Poll::Ready(Ok(()))
+            },
             Err(TryRecvError::Empty) => {
-                let sleep = tokio::time::sleep(Duration::from_millis(100));
+                let sleep = tokio::time::sleep(Duration::from_millis(1));
 
-                this.sleep.replace(Box::pin(sleep));
+                let _ = this.sleep.replace(Box::pin(sleep));
 
                 if let Some(sleep) = this.sleep.as_mut() {
                     sleep.as_mut().poll(cx);
@@ -146,20 +166,22 @@ where
             },
         };
 
-        info!("Handling rebalance");
+        tracing::debug!("Handling rebalance");
 
         let for_downstream: Vec<_> = partitions
             .elements()
             .into_iter()
             .map(|tp| (tp.topic().to_string(), tp.partition()))
             .filter(|(_, p)| *p != PARTITION_UA)
+            .filter(|(t, p)| this.partition_queues.contains_key(&(t.clone(), *p)))
+            .rev()
             .collect();
 
         for (topic, partition) in for_downstream.into_iter() {
             let queue_sender = this.downstreams.get(&topic)
                 .expect("Failed to get queue sender for topic.");
 
-            info!(
+            tracing::debug!(
                 "Attempting to send partition queue to downstream: {}, for partition: {}",
                 topic, partition
             );
@@ -178,7 +200,7 @@ where
                         let changelog_topic = this
                             .engine_context
                             .metadata_manager
-                            .derive_changelog_topic(&table);
+                            .get_changelog_topic_for_store(&table);
 
                         let partition = this
                             .engine_context
@@ -191,9 +213,8 @@ where
                 ).collect();
 
             let partition_queue = this
-                .engine_context
-                .client_manager
-                .get_partition_queue(&topic, partition)
+                .partition_queues
+                .remove(&(topic.clone(), partition))
                 .expect("Failed to get partition queue.");
 
             let queue_metadata =  QueueMetadata {
@@ -204,7 +225,7 @@ where
                 source_topic: topic.clone(),
             };
 
-            info!(
+            tracing::debug!(
                 "Sending partition queue to downstream: {}, for partition: {}",
                 topic, partition
             );

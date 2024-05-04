@@ -49,7 +49,7 @@ struct Client {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    init_tracing(LevelFilter::INFO);
+    init_tracing(LevelFilter::DEBUG);
 
     let mut client_config = ClientConfig::new();
 
@@ -57,14 +57,15 @@ async fn main() -> Result<(), anyhow::Error> {
     let group_instance = "peridot-instance-1";
 
     client_config
-        .set("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092")
+        .set("bootstrap.servers", "kafka1:9092,kafka2:9093,kafka3:9094")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
-        .set("application.id", "app-message-closures3")
+        .set("application.id", "app-message-closures")
         .set("group.id", group)
         .set("group.instance.id", group_instance)
         .set("auto.offset.reset", "earliest")
-        .set_log_level(RDKafkaLogLevel::Debug);
+        //.set("statistics.interval.ms", "1")
+        .set_log_level(RDKafkaLogLevel::Error);
 
     let app = AppBuilder::new()
         .with_config(PeridotConfigBuilder::from(&client_config).build().expect("Failed to build config."))

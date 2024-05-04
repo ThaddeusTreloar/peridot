@@ -107,10 +107,10 @@ impl ClientManager {
     pub(crate) fn get_partition_queue(&self, topic: &str, partition: i32) 
         -> Result<StreamPeridotPartitionQueue, ClientManagerError> 
     {
-        info!("Getting partition queue for topic: {} partition: {}", topic, partition);
+        tracing::debug!("Getting partition queue for topic: {} partition: {}", topic, partition);
 
-        let waker = self.consumer.context()
-            .pre_rebalance_waker();
+        //let waker = self.consumer.context()
+        //    .pre_rebalance_waker();
 
         match self.consumer.split_partition_queue(topic, partition) {
             None => Err(
@@ -119,7 +119,10 @@ impl ClientManager {
                     partition 
                 }
             ),
-            Some(queue) => Ok(StreamPeridotPartitionQueue::new(queue, waker, topic.to_owned(), partition))
+            Some(queue) => {
+                tracing::debug!("Successfully split partition queue for topic: {}, partition: {}", topic, partition);
+                Ok(StreamPeridotPartitionQueue::new(queue, topic.to_owned(), partition))
+            }
         }
     }
 

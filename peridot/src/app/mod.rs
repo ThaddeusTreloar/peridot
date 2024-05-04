@@ -68,7 +68,7 @@ where
         KS: PeridotDeserializer,
         VS: PeridotDeserializer,
     {
-        info!("Creating stream for topic: {}", topic);
+        tracing::debug!("Creating stream for topic: {}", topic);
         Ok(self.engine.clone().input_stream(topic.to_string())?)
     }
 
@@ -135,7 +135,7 @@ where
     }
 
     pub async fn run(self) -> Result<(), PeridotAppRuntimeError> {
-        info!("Running PeridotApp");
+        tracing::debug!("Running PeridotApp");
 
         let jobs = self.jobs.lock();
 

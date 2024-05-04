@@ -52,7 +52,7 @@ where
             Poll::Ready(Some(val)) => val,
         };
 
-        info!(
+        tracing::debug!(
             "Received new queue for topic: {}, parition: {}",
             metadata.source_topic(),
             metadata.partition()

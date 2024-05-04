@@ -8,7 +8,7 @@ use futures::Future;
 use pin_project_lite::pin_project;
 use rdkafka::error::KafkaError;
 use serde::{de::DeserializeOwned, Serialize};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     app::PeridotConsumer, engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{json::Json, native::NativeBytes, PeridotSerializer}}, message::{
@@ -50,8 +50,8 @@ where
             _key_type: Default::default(),
             _value_type: Default::default(),
             pending_commit: None,
-            highest_offset: Default::default(),
-            highest_committed_offset: Default::default(),
+            highest_offset: -1,
+            highest_committed_offset: -1,
         }
     }
 
@@ -92,9 +92,19 @@ where
     fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
 
+        tracing::debug!("Committing state sink.");
+
         if this.pending_commit.is_none() {
             if this.buffer.is_empty() {
-                // Nothing to commit
+                debug!("Nothing to commit...");
+
+                if this.state_facade.get_checkpoint().expect("Error while checking checkpoint.").is_none() {
+                    let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
+    
+                    this.state_facade.create_checkpoint(*offset + 1)
+                        .expect("Failed to store commit.");
+                }
+
                 return Poll::Ready(Ok(()));
             }
 
@@ -110,12 +120,17 @@ where
         if let Some(ref mut task) = this.pending_commit {
             ready!(task.as_mut().poll(cx)).expect("Failed to commit sink buffer.");
 
+            tracing::debug!("Sink committed.");
+
             let _ = this.pending_commit.take();
         }
 
         let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
 
-        let offset_commit = this.state_facade.create_checkpoint(*offset);
+        tracing::debug!("Checkpointing state store.");
+
+        this.state_facade.create_checkpoint(*offset + 1)
+            .expect("Failed to store commit.");
 
         Poll::Ready(Ok(()))
     }
@@ -135,7 +150,7 @@ where
         let raw_value = Json::serialize(message.value()).unwrap();
         let ser_value = String::from_utf8_lossy(&raw_value);
 
-        info!("Sinking state message: key: {}, value: {}", ser_key, ser_value);
+        tracing::debug!("Buffering state sink message: topic: {}, partition: {}, offset: {}, key: {}, value: {}", message.topic(), message.partition(), message.offset(), ser_key, ser_value);
 
         let offset = std::cmp::max(message.offset, *this.highest_offset);
 

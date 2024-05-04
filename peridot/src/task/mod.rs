@@ -7,7 +7,7 @@ use crate::{
     engine::{util::DeliveryGuaranteeType, wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer}},
     message::{join::Combiner, types::{FromMessage, PatchMessage}},
     pipeline::{
-        join::JoinPipeline, map::MapPipeline, sink::print_sink::PrintSinkFactory, stream::{PipelineStream, PipelineStreamExt}
+        join::JoinPipeline, map::MapPipeline, sink::{print_sink::PrintSinkFactory, topic_sink::TopicSinkFactory}, stream::{PipelineStream, PipelineStreamExt}
     }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend},
 };
 
@@ -130,7 +130,22 @@ pub trait Task<'a> {
 
     fn into_parts(self) -> PipelineParts<'a, Self::B, Self::G, Self::R>;
 
-    fn into_topic<KS, VS>(self, _topic: &str)
+    fn into_topic<KS, VS>(self, topic: &str)
+    where
+        KS: PeridotSerializer<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
+        VS: PeridotSerializer<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        KS::Input: Send + Serialize + 'static,
+        VS::Input: Send + Serialize + 'static,
+        Self: Sized + 'a,
+        Self::R: PipelineStreamExt,
+    {
+        let PipelineParts(app, _, output) = self.into_parts();
+        let sink_factory = TopicSinkFactory::<KS, VS>::new(topic, app.engine().engine_context());
+        let job = output.forward(sink_factory);
+        app.job(Box::pin(job));
+    }
+
+    fn debug<KS, VS>(self)
     where
         KS: PeridotSerializer<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
         VS: PeridotSerializer<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,

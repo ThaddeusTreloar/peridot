@@ -26,10 +26,6 @@ pin-project-lite = "*"
 serde = { workspace = true }
 serde_json = { workspace = true }
 slab = "0.4.9"
-surrealdb = { version = "1.1.1", default-features = false, features = [
-    "protocol-ws",
-    "kv-rocksdb",
-] }
 thiserror = "*"
 tokio = { version = "*", features = ["sync"] }
 tokio-stream = { version = "0.1.14", features = ["sync"] }
@@ -39,4 +35,4 @@ trait-variant = "0.1.2"
 apache-avro = "0.16.0"
 prost = "0.12.4"
 derive_more = "0.99.17"
-uuid = { version = "1.8.0", features = ["v3", "v8"] }
+uuid = { version = "1.8.0", features = ["v3", "v4", "v8"] }

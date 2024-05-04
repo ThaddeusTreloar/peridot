@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use tracing::info;
 
 use crate::state::backend::StateBackend;
 
@@ -48,6 +49,8 @@ where
     }
 
     pub(crate) fn create_state_store(&self, source_topic: &str, partition: i32) -> Result<(), StateStoreManagerError> {
+        tracing::debug!("Created state store for source: {}, partition: {}", source_topic, partition);
+
         if self.state_stores.contains_key(&(source_topic.to_owned(), partition)) {
             Err(StateStoreManagerError::StateStoreExists { topic: source_topic.to_owned(), partition })?
         }

@@ -5,18 +5,15 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     app::PeridotApp, engine::{engine_state::EngineState, metadata_manager::table_metadata, util::{DeliveryGuaranteeType, ExactlyOnce}, wrapper::serde::json::Json}, pipeline::{
-        fork::PipelineFork,
-        sink::{changelog_sink::ChangelogSinkFactory, noop_sink::NoopSinkFactory, state_sink::StateSinkFactory},
-        stream::{PipelineStream, PipelineStreamExt},
+        fork::PipelineFork, sink::{changelog_sink::ChangelogSinkFactory, noop_sink::NoopSinkFactory, state_sink::StateSinkFactory}, state_fork::StateForkPipeline, stream::{PipelineStream, PipelineStreamExt}
     }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend}
 };
 
 use super::{PipelineParts, Task};
 
-pub type TableOutput<K, V, P, B> = PipelineFork<PipelineFork<P, ChangelogSinkFactory<K, V>>, StateSinkFactory<B, K, V>>;
+pub type TableOutput<K, V, P, B> = StateForkPipeline<PipelineFork<P, ChangelogSinkFactory<K, V>, ExactlyOnce>, B>;
 
-type TableDownstream<P, B, K, V> =
-    PipelineFork<PipelineFork<P, ChangelogSinkFactory<K, V>>, StateSinkFactory<B, K, V>>;
+type TableDownstream<P, B, K, V> = StateForkPipeline<PipelineFork<P, ChangelogSinkFactory<K, V>, ExactlyOnce>, B>;
 
 #[must_use="Tables do not run unless they are finished or they have downsream tasks."]
 pub struct TableTask<'a, P, B, G>
@@ -49,7 +46,7 @@ where
             .register_state_store(&source_topic, &table_name)
             .expect("Failed to register table.");
         
-        let changelog_sink_factory = ChangelogSinkFactory::new(format!("{}-changelog", table_name));
+        let changelog_sink_factory = ChangelogSinkFactory::new(&table_name, app.engine().engine_context());
 
         let changelog_output = stream_queue.fork::<_, ExactlyOnce>(changelog_sink_factory);
 
@@ -60,7 +57,12 @@ where
                 &source_topic,
             );
 
-        let backend_output = changelog_output.fork::<_, ExactlyOnce>(backend_sink_factory);
+        let backend_output = StateForkPipeline::new_with_changelog(
+            changelog_output, 
+            backend_sink_factory, 
+            table_name.clone(), 
+            app.engine().engine_context(),
+        );
 
         Self {
             app,
@@ -82,7 +84,7 @@ where
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
     B::Error: Send,
-    P::KeyType: Serialize + Clone + Send + Sync + 'static,
+    P::KeyType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     G: DeliveryGuaranteeType,
 {
@@ -100,7 +102,7 @@ where
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
     B::Error: Send,
-    P::KeyType: Serialize + Clone + Send + Sync + 'static,
+    P::KeyType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     G: DeliveryGuaranteeType,
 {
@@ -134,7 +136,7 @@ where
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
     B::Error: Send,
-    P::KeyType: Serialize + Clone + Send + Sync + 'static,
+    P::KeyType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     G: DeliveryGuaranteeType,
 {

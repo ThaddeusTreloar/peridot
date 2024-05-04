@@ -50,7 +50,7 @@ where
             .expect("No state store for partition.");
 
         let facade = StateFacade
-            ::new(state_store, self.store_name.clone());
+            ::new(state_store, self.store_name.clone(), queue_metadata.partition());
 
         StateSink::<B, K, V>::new(queue_metadata, facade)
     }

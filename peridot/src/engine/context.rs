@@ -56,7 +56,7 @@ impl EngineContext {
     }
     
     pub(crate) fn watermark_for_changelog(&self, table_name: &str, partition: i32) -> Watermarks {
-        let changelog_topic = self.metadata_manager.derive_changelog_topic(table_name);
+        let changelog_topic = self.metadata_manager.get_changelog_topic_for_store(table_name);
 
         self.changelog_manager
             .get_watermark_for_changelog(&changelog_topic, partition)
@@ -64,11 +64,11 @@ impl EngineContext {
     }
 
     pub(crate) fn close_changelog_stream(&self, table_name: &str, partition: i32) -> Result<(), EngineContextError> {
-        let changelog_topic = self.metadata_manager.derive_changelog_topic(table_name);
+        let changelog_topic = self.metadata_manager.get_changelog_topic_for_store(table_name);
 
         if let Err(err) = self.changelog_manager.close_changelog_stream(&changelog_topic, partition) {
             match err {
-                ChangelogManagerError::CloseChangelogError { 
+                ChangelogManagerError::CloseChangelog { 
                     topic, 
                     partition, 
                     err 
@@ -82,9 +82,25 @@ impl EngineContext {
         Ok(())
     }
 
+    pub(crate) fn get_changelog_topic_name(&self, state_name: &str) -> String {
+        self.metadata_manager.get_changelog_topic_for_store(state_name)
+    }
+
     pub(crate) fn register_state_store(&self, source_topic: &str, state_name: &str) -> Result<TableMetadata, EngineContextError> {
         Ok(self.metadata_manager
             .register_table_with_changelog(state_name, source_topic)
             .expect("Failed to register table."))
+    }
+
+    pub(crate) fn seek_changlog_consumer(&self, state_store: &str, partition: i32, offset: i64) -> Result<(), ChangelogManagerError> {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager.seek_consumer(&changelog_topic, partition, offset)        
+    }
+
+    pub(crate) fn get_changelog_partition_offset(&self, state_store: &str, partition: i32) -> i64 {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager.get_topic_offset(&changelog_topic, partition)
     }
 }

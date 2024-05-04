@@ -11,7 +11,7 @@ use rdkafka::{
     ClientContext,
 };
 use tokio::sync::broadcast::{channel, Receiver, Sender};
-use tracing::error;
+use tracing::{debug, error};
 
 use super::config::PeridotConfig;
 
@@ -205,7 +205,7 @@ impl ConsumerContext for PeridotConsumerContext {
     fn pre_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
         let owned_rebalance: OwnedRebalance = rebalance.into();
 
-        dbg!("Context: pre rebalance, {}", &owned_rebalance);
+        debug!("Context: pre rebalance, {}", &owned_rebalance);
 
         let _ = self.pre_rebalance_waker
             .send(owned_rebalance);
@@ -214,11 +214,10 @@ impl ConsumerContext for PeridotConsumerContext {
     fn post_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
         let owned_rebalance: OwnedRebalance = rebalance.into();
 
-        dbg!("Context: post rebalance, {}", &owned_rebalance);
+        debug!("Context: post rebalance, {}", &owned_rebalance);
 
-        self.post_rebalance_waker
-            .send(owned_rebalance)
-            .expect("Failed to send post rebalance");
+        let _ = self.post_rebalance_waker
+            .send(owned_rebalance);
     }
 
     fn commit_callback(

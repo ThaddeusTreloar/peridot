@@ -1,7 +1,8 @@
-use std::borrow::BorrowMut;
+use std::borrow::{Borrow, BorrowMut};
 
-use dashmap::DashMap;
+use dashmap::{mapref::one::Ref, DashMap};
 use serde::{de::DeserializeOwned, Serialize};
+use tracing::info;
 
 use crate::message::types::PeridotTimestamp;
 
@@ -14,7 +15,24 @@ pub struct InMemoryStateBackend {
     store_time: PeridotTimestamp
 }
 
-impl InMemoryStateBackend {}
+impl InMemoryStateBackend {
+    fn derive_state_key(state_name: &str, partition: i32) -> String {
+        format!("{}-{}", state_name, partition)
+    }
+
+    fn get_state_store(&self, state_key: &str) -> Ref<String, DashMap<Vec<u8>, Vec<u8>>> {
+        match self.store.get(state_key) {
+            None => {
+                self.store.insert(state_key.to_owned(), Default::default());
+
+                self.store.get(state_key).expect("THIS SHOULD BE IMPOSSIBLE.")
+            },
+            Some(state) => {
+                state
+            }
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum InMemoryStateBackendError {
@@ -31,15 +49,19 @@ impl StateBackend for InMemoryStateBackend {
         self.store_time.clone()
     }
 
-    fn get_state_store_checkpoint(&self, table_name: &str) -> Option<Checkpoint> {
-        Some(self.checkpoint.get(table_name)?.clone())
+    fn get_state_store_checkpoint(&self, state_name: &str, partition: i32) -> Option<Checkpoint> {
+        let checkpoint_name = format!("{}-{}", state_name, partition);
+
+        Some(self.checkpoint.get(&checkpoint_name)?.clone())
     }
 
-    fn create_checkpoint(&self, table_name: &str, offset: i64) -> Result<(), Self::Error> {
-        match self.checkpoint.get_mut(table_name) {
+    fn create_checkpoint(&self, state_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error> {
+        let checkpoint_name = format!("{}-{}", state_name, partition);
+
+        match self.checkpoint.get_mut(&checkpoint_name) {
             None => {
-                self.checkpoint.insert(table_name.to_owned(), Checkpoint { 
-                    table_name: table_name.to_owned(),
+                self.checkpoint.insert(checkpoint_name.clone(), Checkpoint { 
+                    table_name: checkpoint_name,
                     offset,
                 });
 
@@ -56,13 +78,16 @@ impl StateBackend for InMemoryStateBackend {
     async fn get<K, V>(
         &self,
         key: K,
-        store: &str,
+        state_name: &str,
+        partition: i32,
     ) -> Result<Option<V>, Self::Error>
     where
         K: Serialize + Send,
         V: DeserializeOwned,
     {
-        let store = self.store.get(store).expect("Failed to get store");
+        let state_key = Self::derive_state_key(state_name, partition);
+
+        let store = self.get_state_store(&state_key);
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
@@ -79,13 +104,16 @@ impl StateBackend for InMemoryStateBackend {
         &self,
         key: K,
         value: V,
-        store: &str,
+        state_name: &str,
+        partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send,
     {
-        let store = self.store.get(store).expect("Failed to get store");
+        let state_key = Self::derive_state_key(state_name, partition);
+
+        let store = self.get_state_store(&state_key);
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
         let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
@@ -98,14 +126,21 @@ impl StateBackend for InMemoryStateBackend {
     async fn put_range<K, V>(
         &self,
         range: Vec<(K, V)>,
-        store: &str,
+        state_name: &str,
+        partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send,
     {
+        let state_key = Self::derive_state_key(state_name, partition);
+
+        self.store.iter().for_each(|e| {
+            tracing::debug!("Key in stores: {}", e.key())
+        });
+
         for (key, value) in range {
-            let store = self.store.get(store).expect("Failed to get store");
+            let store = self.get_state_store(&state_key);
 
             let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
             let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
@@ -119,16 +154,36 @@ impl StateBackend for InMemoryStateBackend {
     async fn delete<K>(
         &self,
         key: K,
-        store: &str,
+        state_name: &str,
+        partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
     {
-        let store = self.store.get(store).expect("Failed to get store");
+        let state_key = Self::derive_state_key(state_name, partition);
+
+        let store = self.get_state_store(&state_key);
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
         store.remove(&key_bytes);
+
+        Ok(())
+    }
+
+    async fn clear<K>(
+        &self,
+        state_name: &str,
+        partition: i32,
+    ) -> Result<(), Self::Error>
+    where
+        K: Serialize + Send,
+    {
+        let state_key = Self::derive_state_key(state_name, partition);
+
+        if let Some(store) = self.store.get(&state_key) {
+            store.clear()
+        }
 
         Ok(())
     }

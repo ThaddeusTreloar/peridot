@@ -11,7 +11,7 @@ use tracing::info;
 
 use crate::app::extensions::{OwnedRebalance, PeridotConsumerContext, RebalanceReceiver};
 
-type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
+pub(super) type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
 
 pin_project! {
     #[project = QueueProjection]
@@ -20,14 +20,24 @@ pin_project! {
         partition_queue: PeridotPartitionQueue,
         source_topic: String, 
         partition: i32,
-        pre_rebalance_waker: RebalanceReceiver,
+        // TODO: maybe remove rebalance waker as due to consumer behaviour when splitting
+        // partition queues, we have to split partition queues before our first call to Consumer::poll.
+        // Therefore, if we drop a partition queue, there is a possibility that the consumer may buffer
+        // messages for this partition before a replacement partition queue.
+        // Maybe there is a way to return this queue to the queue manager, but considering there
+        // that would make a circular reference, it might be more hassle than it is worth.
+        // Another approach would be to have the queue manager create and store a new PeridotPartitionQueue on partition
+        // revoke, then this stream would destroy it's own, before closing the pipeline. However, we still have the possibility
+        // of some time span where the queue manager has not yet created a new split partition, and this struct 
+        // has been dropped, in which the BaseConsumer may buffer a message from this partition.
+        //pre_rebalance_waker: RebalanceReceiver, 
     }
 }
 
 impl StreamPeridotPartitionQueue {
     pub fn new(
         mut partition_queue: PeridotPartitionQueue, 
-        pre_rebalance_waker: RebalanceReceiver,
+        //pre_rebalance_waker: RebalanceReceiver,
         source_topic: String, 
         partition: i32,
     ) -> Self {
@@ -48,7 +58,7 @@ impl StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
-            pre_rebalance_waker,
+            //pre_rebalance_waker,
         }
     }
 }
@@ -67,25 +77,25 @@ impl Stream for StreamPeridotPartitionQueue {
         let QueueProjection { 
             waker, 
             partition_queue, 
-            mut pre_rebalance_waker, 
+            //mut pre_rebalance_waker, 
             source_topic,
             partition, 
         } = self.project();
 
-        info!("Checking rebalances for topic: {} partition: {}", source_topic, partition);
-        match pre_rebalance_waker.try_recv() {
-            Err(TryRecvError::Empty) => info!("No rebalance for topic: {} partition: {}", source_topic, partition),
-            Err(e) => panic!("{}", e),
-            Ok(OwnedRebalance::Revoke(tpl)) => {
-                if tpl.find_partition(source_topic, *partition).is_some() {
-                    info!("Partition revoked for topic: {} partition: {}", source_topic, partition);
-                    return Poll::Ready(None)
-                }
-            }
-            Ok(_) => info!("No rebalance for topic: {} partition: {}", source_topic, partition),
-        }
+        //tracing::debug!("Checking rebalances for topic: {} partition: {}", source_topic, partition);
+        //match pre_rebalance_waker.try_recv() {
+        //    Err(TryRecvError::Empty) => tracing::debug!("No rebalance for topic: {} partition: {}", source_topic, partition),
+        //    Err(e) => panic!("{}", e),
+        //    Ok(OwnedRebalance::Revoke(tpl)) => {
+        //        if tpl.find_partition(source_topic, *partition).is_some() {
+        //            tracing::debug!("Partition revoked for topic: {} partition: {}", source_topic, partition);
+        //            return Poll::Ready(None)
+        //        }
+        //    }
+        //    Ok(_) => tracing::debug!("No rebalance for topic: {} partition: {}", source_topic, partition),
+        //}
 
-        info!("Checking consumer messages for topic: {} partition: {}", source_topic, partition);
+        tracing::debug!("Checking consumer messages for topic: {} partition: {}", source_topic, partition);
         
         match partition_queue.poll(Duration::from_millis(0)) {
             Some(Ok(message)) => Poll::Ready(Option::Some(message.detach())),

@@ -1,10 +1,6 @@
 use std::{path::Path, sync::Arc};
 
 use futures::Future;
-use surrealdb::{
-    engine::local::{Db, File},
-    Surreal,
-};
 
 use super::{error::BackendCreationError, StateBackend, StateBackendContext};
 

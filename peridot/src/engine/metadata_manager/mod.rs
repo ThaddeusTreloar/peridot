@@ -92,7 +92,23 @@ impl MetadataManager {
 
     }
 
-    pub(crate) fn derive_changelog_topic(&self, table_name: &str) -> String {
+    pub(crate) fn list_source_topics(&self) -> Vec<(String, TopicMetadata)>{
+        self.source_topic_metadata.iter()
+            .map(|e|(e.key().clone(), e.value().clone()))
+            .collect()
+    }
+
+    pub(super) fn get_changelog_topic_for_store(&self, store_name: &str) -> String {
+        self.table_metadata.get(store_name)
+            .map(|md|md.changelog_topic().unwrap().clone())
+            .unwrap()
+    }
+
+    fn derive_changelog_topic(&self, table_name: &str) -> String {
         format!("{}-{}-Changelog", &self.app_id, table_name)
+    }
+
+    pub(crate) fn app_id(&self) -> &str {
+        &self.app_id
     }
 }

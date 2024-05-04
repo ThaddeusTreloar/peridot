@@ -94,7 +94,7 @@ pub const HELP_URL: &str = "https://github.com/ThaddeusTreloar/peridot/blob/mast
 pub fn help(help_topic: &str) -> String {
     let resource = format!("{}/{}.md", HELP_URL, help_topic);
 
-    info!("More information can be found at {}", resource);
+    tracing::debug!("More information can be found at {}", resource);
 
     resource
 }

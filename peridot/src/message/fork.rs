@@ -7,15 +7,7 @@ use futures::ready;
 use pin_project_lite::pin_project;
 use tracing::info;
 
-use super::{sink::MessageSink, stream::MessageStream};
-
-#[derive(Debug, Default)]
-pub (super) enum CommitState {
-    #[default]
-    NotCommitting,
-    Committing,
-    Committed,
-}
+use super::{sink::MessageSink, stream::MessageStream, CommitState};
 
 pin_project! {
     #[project = ForkProjection]
@@ -66,13 +58,13 @@ where
             commit_state,
         } = self.project();
 
-        info!("ForkedSinking messages from stream to sink...");
+        tracing::debug!("ForkedSinking messages from stream to sink...");
 
         // If we have transitioned to a committing state, we can start our
         // sink commit process. Otherwise, we can continue to poll the stream.
         if let CommitState::Committing = commit_state {
-            info!("Committing sink...");
-            ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
+            tracing::debug!("Notifying fork sink of commit: {}", std::any::type_name::<Si>());
+            ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commut");
             *commit_state = CommitState::Committed;
         }
 
@@ -82,24 +74,24 @@ where
         // at which point we know that they have either committed or aborted.
         match message_stream.as_mut().poll_next(cx) {
             Poll::Ready(None) => {
-                info!("No Messages left for stream, finishing...");
+                tracing::debug!("No Messages left for stream, finishing...");
                 ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
                 Poll::Ready(None)
             }
             Poll::Pending => {
-                info!("No messages available, waiting...");
+                tracing::debug!("No messages available, waiting...");
 
                 // We have recieved no messages from upstream, they will have
                 // transitioned to a commit state.
                 // We can transition to a commit state if we haven't already.
-                if let CommitState::NotCommitting = commit_state {
+                if let CommitState::Uncommitted = commit_state {
                     *commit_state = CommitState::Committing;
-                    cx.waker().wake_by_ref();
                 }
 
                 Poll::Pending
             }
             Poll::Ready(Some(message)) => {
+                tracing::debug!("Message received in Fork, sending to sink.");
                 // If we were waiting for upstream nodes to commit, we can transition
                 // to our default state.
                 if let CommitState::Committed = commit_state {

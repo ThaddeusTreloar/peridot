@@ -54,6 +54,6 @@ where
         ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend> {
         let backend = self.fetch_backend(partition);
 
-        StateFacade::new(backend, self.store_name().to_owned())
+        StateFacade::new(backend, self.store_name().to_owned(), partition)
     }
 }

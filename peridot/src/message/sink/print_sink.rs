@@ -69,34 +69,7 @@ where
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");
 
-        info!("Debug Sink: Sending message: {}", message);
-        info!(
-            "Debug Sink: Serialised message: {{ key: {:?}, value: {:?} }}",
-            ser_key, ser_value
-        );
-        info!(
-            "Debug Sink: Queue metadata: {{ partition: {}, source_topic: {} }}",
-            self.queue_metadata.partition(),
-            self.queue_metadata.source_topic()
-        );
-
-        let mut topic_partition_list = TopicPartitionList::default();
-        topic_partition_list
-            .add_partition_offset(
-                self.queue_metadata.source_topic(),
-                message.partition(),
-                rdkafka::Offset::Offset(message.offset() + 1),
-            )
-            .expect("Failed to add partition offset");
-
-        //todo!("PrintSink commit");
-
-        //self.queue_metadata
-        //    .engine_context()
-        //    .client_manager()
-        //    .consumer_ref()
-        //    .commit(&topic_partition_list, rdkafka::consumer::CommitMode::Async)
-        //    .expect("Failed to make async commit in state store");
+        tracing::debug!("Debug Sink: Sending message: {}", message);
 
         Ok(())
     }

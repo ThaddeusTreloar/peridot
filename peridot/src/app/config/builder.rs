@@ -8,19 +8,25 @@ use crate::help;
 
 use super::{persistent_config::{self, PersistentConfig, PersistentConfigConversionError, PersistentConfigParseError, PersistentConfigWriteError}, PeridotConfig};
 
+// Config keys
 pub (super) const APPLICATION_ID: &str = "application.id";
 pub (super) const BOOTSTRAP_SERVERS: &str = "bootstrap.servers";
 pub (super) const CLIENT_ID: &str = "client.id";
 pub (super) const GROUP_ID: &str = "group.id";
 pub (super) const GROUP_INSTANCE_ID: &str = "group.instance.id";
+pub (super) const PARTITIONER: &str = "partitioner";
 pub (super) const PERSISTENT_CONFIG_DIR: &str = "persistent.config.dir";
 pub (super) const PERSISTENT_CONFIG_FILENAME: &str = "peridot.persistent.config";
 pub (super) const STATE_DIR: &str = "state.dir";
 
-pub(super) const REQUIRED_FIELDS: [&str; 3] = [
+// Config values
+pub (super) const PARTITIONER_MURMUR_2_RANDOM: &str = "murmur2_random";
+
+pub(super) const REQUIRED_FIELDS: [&str; 4] = [
     BOOTSTRAP_SERVERS,
     APPLICATION_ID,
     STATE_DIR,
+    PARTITIONER,
 ];
 
 pub(super) const APP_FIELDS: [&str; 3] = [
@@ -29,9 +35,10 @@ pub(super) const APP_FIELDS: [&str; 3] = [
     PERSISTENT_CONFIG_DIR,
 ];
 
-pub(super) const DEFAULT_FIELDS: [(&str, &str); 2] = [
+pub(super) const DEFAULT_FIELDS: [(&str, &str); 3] = [
     (STATE_DIR, "/var/lib/peridot"),
     (PERSISTENT_CONFIG_DIR, "./"),
+    (PARTITIONER, PARTITIONER_MURMUR_2_RANDOM),
 ];
 
 pub(super) const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [
@@ -189,7 +196,7 @@ impl PeridotConfigBuilder {
 
     fn resolve_config_conflict(&mut self, key: &str, reason: &str) {
         if let Some(value) = self.get(key) {
-            warn!("'group.id' set as '{}' in client config. Disabling becaus: {}", key, reason);
+            warn!("'{}' set as '{}' in client config. Disabling becaus: {}", key, value, reason);
     
             self.remove(key);
         }

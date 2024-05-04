@@ -106,7 +106,8 @@ where
 
         let pre_rebalance_waker = waker_context.pre_rebalance_waker();
         let commit_waker = waker_context.commit_waker();
-        let rebalance_waker = waker_context.post_rebalance_waker();
+        let rebalance_waker = waker_context.pre_rebalance_waker();
+        //let rebalance_waker = waker_context.post_rebalance_waker();
 
         let queue_distributor = QueueManager::<B>::new(
             self.engine_context(),
@@ -119,7 +120,7 @@ where
 
         tokio::spawn(queue_distributor);
 
-        info!("Engine running...");
+        tracing::debug!("Engine running...");
 
         Ok(()) // Transition engine state.
     }
