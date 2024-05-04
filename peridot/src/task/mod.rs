@@ -145,7 +145,7 @@ pub trait Task<'a> {
         app.job(Box::pin(job));
     }
 
-    fn debug<KS, VS>(self)
+    fn into_debug<KS, VS>(self)
     where
         KS: PeridotSerializer<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
         VS: PeridotSerializer<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,

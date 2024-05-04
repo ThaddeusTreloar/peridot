@@ -64,6 +64,7 @@ where
     }
 
     fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // TODO: move this logic to poll_ready.
         tracing::debug!("Checking topic delivery futures.");
 
         let this = self.project();
@@ -108,6 +109,9 @@ where
     }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // TODO: the logic from poll_commit will go here.
+        // we will check the buffered message requests, then if the buffer is full,
+        // check all of the producer send requests.
         Poll::Ready(Ok(()))
     }
 

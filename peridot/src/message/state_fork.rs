@@ -194,6 +194,11 @@ where
                     },
                     Poll::Pending => {
                         tracing::debug!("No records for changelog.");
+                        
+                        let consumer_position = engine_context.get_changelog_consumer_position(table_name, *partition);
+                        
+                        tracing::debug!("Checkpointing consumer position offset: {} for store: {}, partition: {}", consumer_position, table_name, partition);
+                        state_sink.checkpoint_changelog_position(consumer_position);
 
                         match state_sink.as_mut().poll_commit(cx) {
                             Poll::Pending => {

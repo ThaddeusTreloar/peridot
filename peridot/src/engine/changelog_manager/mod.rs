@@ -256,4 +256,33 @@ impl ChangelogManager {
             }
         }
     }
+
+    pub(super) fn get_topic_consumer_position(&self, changelog_topic: &str, partition: i32) -> i64 {
+        match self.consumer.position()
+            .expect("Failed to get assignment")
+            .elements_for_topic(changelog_topic)
+            .into_iter()
+            .find(|elem|elem.partition()==partition)
+            .map(|elem|elem.offset())
+            .expect("Unable to find topic offset.")
+        {
+            Offset::Offset(offset) => offset,
+            Offset::Beginning => {
+                panic!("Offset::Beginning")
+            },
+            Offset::End => {
+                panic!("Offset::End")
+            },
+            Offset::OffsetTail(o) => {
+                panic!("Offset::OffsetTail({})", o)
+            },
+            Offset::Stored => {
+                panic!("Offset::Stored")
+            },
+            Offset::Invalid => {
+                warn!("Current offset invalid...");
+                -1
+            }
+        }
+    }
 }

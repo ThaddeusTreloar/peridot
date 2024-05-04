@@ -103,4 +103,10 @@ impl EngineContext {
 
         self.changelog_manager.get_topic_offset(&changelog_topic, partition)
     }
+
+    pub(crate) fn get_changelog_consumer_position(&self, state_store: &str, partition: i32) -> i64 {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager.get_topic_consumer_position(&changelog_topic, partition)
+    }
 }

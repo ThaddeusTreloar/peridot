@@ -12,21 +12,27 @@ use super::{persistent_config::{self, PersistentConfig, PersistentConfigConversi
 pub (super) const APPLICATION_ID: &str = "application.id";
 pub (super) const BOOTSTRAP_SERVERS: &str = "bootstrap.servers";
 pub (super) const CLIENT_ID: &str = "client.id";
+pub (super) const ENABLE_IDEMPOTENCE: &str = "enable.idempotence";
 pub (super) const GROUP_ID: &str = "group.id";
 pub (super) const GROUP_INSTANCE_ID: &str = "group.instance.id";
+pub (super) const ISOLATION_LEVEL: &str = "isolation.level";
 pub (super) const PARTITIONER: &str = "partitioner";
 pub (super) const PERSISTENT_CONFIG_DIR: &str = "persistent.config.dir";
 pub (super) const PERSISTENT_CONFIG_FILENAME: &str = "peridot.persistent.config";
 pub (super) const STATE_DIR: &str = "state.dir";
 
 // Config values
+pub (super) const ENABLE_IDEMPOTENCE_TRUE: &str = "TRUE";
+pub (super) const ISOLATION_LEVEL_READ_COMMITTED: &str = "read_committed";
 pub (super) const PARTITIONER_MURMUR_2_RANDOM: &str = "murmur2_random";
 
-pub(super) const REQUIRED_FIELDS: [&str; 4] = [
-    BOOTSTRAP_SERVERS,
+pub(super) const REQUIRED_FIELDS: [&str; 6] = [
     APPLICATION_ID,
-    STATE_DIR,
+    BOOTSTRAP_SERVERS,
+    ENABLE_IDEMPOTENCE,
+    ISOLATION_LEVEL,
     PARTITIONER,
+    STATE_DIR,
 ];
 
 pub(super) const APP_FIELDS: [&str; 3] = [
@@ -35,10 +41,12 @@ pub(super) const APP_FIELDS: [&str; 3] = [
     PERSISTENT_CONFIG_DIR,
 ];
 
-pub(super) const DEFAULT_FIELDS: [(&str, &str); 3] = [
-    (STATE_DIR, "/var/lib/peridot"),
+pub(super) const DEFAULT_FIELDS: [(&str, &str); 5] = [
+    (ENABLE_IDEMPOTENCE, ENABLE_IDEMPOTENCE_TRUE),
+    (ISOLATION_LEVEL, ISOLATION_LEVEL_READ_COMMITTED),// TODO: Make setting this dependent on delivery semantics arg
+    (PARTITIONER, PARTITIONER_MURMUR_2_RANDOM),// TODO: Make setting this dependent on delivery semantics arg
     (PERSISTENT_CONFIG_DIR, "./"),
-    (PARTITIONER, PARTITIONER_MURMUR_2_RANDOM),
+    (STATE_DIR, "/var/lib/peridot"),
 ];
 
 pub(super) const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [

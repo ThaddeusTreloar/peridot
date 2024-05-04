@@ -50,8 +50,8 @@ where
             _key_type: Default::default(),
             _value_type: Default::default(),
             pending_commit: None,
-            highest_offset: -1,
-            highest_committed_offset: -1,
+            highest_offset: 0,
+            highest_committed_offset: 0,
         }
     }
 
@@ -60,6 +60,16 @@ where
             .map(
                 |r| r.map(|c|c.offset)
             )
+    }
+}
+impl<B, K, V> StateSink<B, K, V>
+where
+    B: StateBackend + Send + Sync,
+    K: Serialize + Send + Sync,
+    V: Serialize + DeserializeOwned + Send + Sync,
+{
+    pub fn checkpoint_changelog_position(&mut self, offset: i64) {
+        self.highest_offset = std::cmp::max(self.highest_offset, offset);
     }
 }
 
@@ -101,7 +111,9 @@ where
                 if this.state_facade.get_checkpoint().expect("Error while checking checkpoint.").is_none() {
                     let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
     
-                    this.state_facade.create_checkpoint(*offset + 1)
+                    debug!("Checkpointing state store: {}-{} with offset: {}", this.state_facade.state_name(), this.state_facade.partition(), offset);
+
+                    this.state_facade.create_checkpoint(*offset)
                         .expect("Failed to store commit.");
                 }
 
@@ -129,7 +141,7 @@ where
 
         tracing::debug!("Checkpointing state store.");
 
-        this.state_facade.create_checkpoint(*offset + 1)
+        this.state_facade.create_checkpoint(*offset)
             .expect("Failed to store commit.");
 
         Poll::Ready(Ok(()))
@@ -152,7 +164,7 @@ where
 
         tracing::debug!("Buffering state sink message: topic: {}, partition: {}, offset: {}, key: {}, value: {}", message.topic(), message.partition(), message.offset(), ser_key, ser_value);
 
-        let offset = std::cmp::max(message.offset, *this.highest_offset);
+        let offset = std::cmp::max(message.offset+1, *this.highest_offset);
 
         *this.highest_offset = offset;
 
