@@ -62,6 +62,14 @@ pub trait GetView {
     ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend>;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum StateBackendError {
+    #[error(transparent)]
+    Fatal(Box<dyn std::error::Error + Send>),
+    #[error(transparent)]
+    Recoverable(Box<dyn std::error::Error + Send>),
+}
+
 #[trait_variant::make(Send)]
 pub trait StateBackend
 where
