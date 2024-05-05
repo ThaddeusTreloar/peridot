@@ -17,9 +17,7 @@ use tracing::info;
 
 use crate::engine::queue_manager::queue_metadata::QueueMetadata;
 
-use super::{sink::MessageSink, stream::MessageStream, CommitState};
-
-const BATCH_SIZE: usize = 1024;
+use super::{sink::MessageSink, stream::MessageStream, CommitState, BATCH_SIZE};
 
 pin_project! {
     #[project = ForwardProjection]

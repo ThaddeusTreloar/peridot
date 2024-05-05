@@ -13,6 +13,7 @@ use crate::{
         types::{FromMessage, PatchMessage},
     },
     pipeline::{
+        filter::FilterPipeline,
         join::JoinPipeline,
         map::MapPipeline,
         sink::{print_sink::PrintSinkFactory, topic_sink::TopicSinkFactory},
@@ -136,6 +137,39 @@ pub trait Task<'a> {
             parts.app(),
             parts.source_topic(),
             move |input| input.map(next),
+            parts.output(),
+        )
+    }
+
+    fn filter<F>(
+        self,
+        callback: F,
+    ) -> TransformTask<
+        'a,
+        impl FnOnce(Self::R) -> FilterPipeline<Self::R, F>,
+        Self::R,
+        FilterPipeline<Self::R, F>,
+        Self::B,
+        Self::G,
+    >
+    where
+        F: Fn(
+                &<Self::R as PipelineStream>::KeyType,
+                &<Self::R as PipelineStream>::ValueType,
+            ) -> bool
+            + Send
+            + Sync
+            + Clone
+            + 'static,
+        Self: Sized,
+        Self::R: PipelineStreamExt,
+    {
+        let parts = self.into_parts();
+
+        TransformTask::<'a>::new(
+            parts.app(),
+            parts.source_topic(),
+            move |inner| FilterPipeline::new(inner, callback),
             parts.output(),
         )
     }
