@@ -1,4 +1,10 @@
-use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, message::types::{KeyValue, Message, PatchMessage}, pipeline::stream::PipelineStream, state::backend::StateBackend};
+use crate::{
+    app::PeridotApp,
+    engine::util::DeliveryGuaranteeType,
+    message::types::{KeyValue, Message, PatchMessage},
+    pipeline::stream::PipelineStream,
+    state::backend::StateBackend,
+};
 
 use super::Task;
 
@@ -19,10 +25,7 @@ where
     G: DeliveryGuaranteeType,
 {
     pub fn new(app: &'a PeridotApp<B, G>, imports: Vec<S>) -> Self {
-        Self {
-            app,
-            imports,
-        }
+        Self { app, imports }
     }
 
     pub fn new_single(app: &'a PeridotApp<B, G>, import: S) -> Self {
@@ -32,20 +35,15 @@ where
         }
     }
 
-    pub fn filter<F>(&self, callback: F) {
+    pub fn filter<F>(&self, callback: F) {}
 
-    }
+    pub fn map<F>(&self, callback: F) {}
 
-    pub fn map<F>(&self, callback: F) {
-
-    }
-
-    pub fn integrate<F, RM>(&self, callback: F) 
+    pub fn integrate<F, RM>(&self, callback: F)
     where
         F: Fn(S::Item) -> RM,
-        RM: PatchMessage<(), ()>
+        RM: PatchMessage<(), ()>,
     {
-
     }
 }
 
@@ -65,10 +63,7 @@ where
     G: DeliveryGuaranteeType,
 {
     pub fn new(app: &'a PeridotApp<B, G>, imports: Vec<S>) -> Self {
-        Self {
-            app,
-            imports,
-        }
+        Self { app, imports }
     }
 
     pub fn new_single(app: &'a PeridotApp<B, G>, import: S) -> Self {

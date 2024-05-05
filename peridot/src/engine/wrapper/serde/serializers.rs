@@ -4,7 +4,7 @@ pub struct Serializers<KS, VS> {
     value_serialiser: Option<VS>,
 }
 
-impl <KS, VS> Default for Serializers<KS, VS> {
+impl<KS, VS> Default for Serializers<KS, VS> {
     fn default() -> Self {
         Self {
             key_serialiser: None,

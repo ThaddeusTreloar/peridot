@@ -17,8 +17,6 @@ impl AdminManager {
         let client = AdminClient::from_config(config.client_config())
             .map_err(AdminManagerError::CreateClientError)?;
 
-        Ok(Self {
-            client
-        })
+        Ok(Self { client })
     }
 }

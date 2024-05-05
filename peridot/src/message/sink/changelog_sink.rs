@@ -5,17 +5,21 @@ use std::{
 
 use futures::FutureExt;
 use pin_project_lite::pin_project;
-use rdkafka::{error::KafkaError, producer::{DeliveryFuture, FutureRecord}, Message};
+use rdkafka::{
+    error::KafkaError,
+    producer::{DeliveryFuture, FutureRecord},
+    Message,
+};
 use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::{
     engine::{
-        queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{native::NativeBytes, PeridotSerializer}
+        queue_manager::queue_metadata::QueueMetadata,
+        wrapper::serde::{native::NativeBytes, PeridotSerializer},
     },
     message::sink::{MessageSink, NonCommittingSink},
 };
-
 
 pin_project! {
     pub struct ChangelogSink<K, V> {
@@ -41,13 +45,19 @@ impl<K, V> ChangelogSink<K, V> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChangelogSinkError {
-    #[error("Failed to send message for topic: {}, partition: {}, offset: {}, caused by: {}", topic, partition, offset, err)]
-    FailedToSendMessageError{
+    #[error(
+        "Failed to send message for topic: {}, partition: {}, offset: {}, caused by: {}",
+        topic,
+        partition,
+        offset,
+        err
+    )]
+    FailedToSendMessageError {
         topic: String,
         partition: i32,
         offset: i64,
-        err: KafkaError
-    }
+        err: KafkaError,
+    },
 }
 
 impl<K, V> NonCommittingSink for ChangelogSink<K, V> {}
@@ -75,13 +85,13 @@ where
                 Poll::Ready(Ok(result)) => match result {
                     Ok((partition, offset)) => {
                         tracing::debug!("Successfully sent changelog record with offset: {}, for topic: {}, partition: {}", offset, this.changelog_topic, partition);
-                    },
+                    }
                     Err((err, msg)) => {
-                        let ret_err = ChangelogSinkError::FailedToSendMessageError { 
-                            topic: this.changelog_topic.to_owned(), 
-                            partition: msg.partition(), 
-                            offset: msg.offset(), 
-                            err 
+                        let ret_err = ChangelogSinkError::FailedToSendMessageError {
+                            topic: this.changelog_topic.to_owned(),
+                            partition: msg.partition(),
+                            offset: msg.offset(),
+                            err,
                         };
 
                         tracing::error!("{}", ret_err);
@@ -104,7 +114,6 @@ where
         } else {
             Poll::Pending
         }
-
     }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -139,7 +148,11 @@ where
 
         this.delivery_futures.push(delivery_future);
 
-        tracing::debug!("Queued record for changelog topic: {}, partition: {}", this.changelog_topic, message.partition());
+        tracing::debug!(
+            "Queued record for changelog topic: {}, partition: {}",
+            this.changelog_topic,
+            message.partition()
+        );
 
         Ok(())
     }

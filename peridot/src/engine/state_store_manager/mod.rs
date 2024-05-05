@@ -10,15 +10,17 @@ pub type StateStoreMap<B> = Arc<DashMap<(String, i32), Arc<B>>>;
 #[derive(Debug, thiserror::Error)]
 pub enum StateStoreManagerError {
     #[error("State store exists for {}:{}", topic, partition)]
-    StateStoreExists {
-        topic: String,
-        partition: i32,
-    },
-    #[error("Failed to create state store for {}:{} caused by {}", topic, partition, err)]
+    StateStoreExists { topic: String, partition: i32 },
+    #[error(
+        "Failed to create state store for {}:{} caused by {}",
+        topic,
+        partition,
+        err
+    )]
     StateStoreCreation {
         topic: String,
         partition: i32,
-        err: Box<dyn std::error::Error>
+        err: Box<dyn std::error::Error>,
     },
 }
 
@@ -27,7 +29,7 @@ pub(crate) struct StateStoreManager<B> {
     state_stores: StateStoreMap<B>,
 }
 
-impl <B> Default for StateStoreManager<B> {
+impl<B> Default for StateStoreManager<B> {
     fn default() -> Self {
         Self {
             state_stores: Default::default(),
@@ -35,7 +37,7 @@ impl <B> Default for StateStoreManager<B> {
     }
 }
 
-impl <B> StateStoreManager<B> 
+impl<B> StateStoreManager<B>
 where
     B: StateBackend,
     B::Error: 'static,
@@ -45,28 +47,54 @@ where
     }
 
     pub(crate) fn get_state_store(&self, source_topic: &str, partition: i32) -> Option<Arc<B>> {
-        self.state_stores.get(&(source_topic.to_owned(), partition)).map(|s|s.clone())
+        self.state_stores
+            .get(&(source_topic.to_owned(), partition))
+            .map(|s| s.clone())
     }
 
-    pub(crate) fn create_state_store(&self, source_topic: &str, partition: i32) -> Result<(), StateStoreManagerError> {
-        tracing::debug!("Created state store for source: {}, partition: {}", source_topic, partition);
+    pub(crate) fn create_state_store(
+        &self,
+        source_topic: &str,
+        partition: i32,
+    ) -> Result<(), StateStoreManagerError> {
+        tracing::debug!(
+            "Created state store for source: {}, partition: {}",
+            source_topic,
+            partition
+        );
 
-        if self.state_stores.contains_key(&(source_topic.to_owned(), partition)) {
-            Err(StateStoreManagerError::StateStoreExists { topic: source_topic.to_owned(), partition })?
+        if self
+            .state_stores
+            .contains_key(&(source_topic.to_owned(), partition))
+        {
+            Err(StateStoreManagerError::StateStoreExists {
+                topic: source_topic.to_owned(),
+                partition,
+            })?
         }
 
-        let backend = B::with_source_topic_name_and_partition(source_topic, partition)
-            .map_err(|err| StateStoreManagerError::StateStoreCreation { topic: source_topic.to_owned(), partition, err: Box::new(err) })?;
+        let backend =
+            B::with_source_topic_name_and_partition(source_topic, partition).map_err(|err| {
+                StateStoreManagerError::StateStoreCreation {
+                    topic: source_topic.to_owned(),
+                    partition,
+                    err: Box::new(err),
+                }
+            })?;
 
-        self.state_stores.insert((source_topic.to_owned(), partition), Arc::new(backend));
+        self.state_stores
+            .insert((source_topic.to_owned(), partition), Arc::new(backend));
 
         Ok(())
     }
 
-    pub(crate) fn create_state_store_if_not_exists(&self, source_topic: &str, partition: i32) -> Result<(), StateStoreManagerError> {
+    pub(crate) fn create_state_store_if_not_exists(
+        &self,
+        source_topic: &str,
+        partition: i32,
+    ) -> Result<(), StateStoreManagerError> {
         match self.create_state_store(source_topic, partition) {
-            Ok(_) |
-            Err(StateStoreManagerError::StateStoreExists{..}) => Ok(()),
+            Ok(_) | Err(StateStoreManagerError::StateStoreExists { .. }) => Ok(()),
             Err(err) => Err(err),
         }
     }

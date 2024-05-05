@@ -1,5 +1,11 @@
 use std::{
-    cmp::Ordering, marker::PhantomData, ops::DerefMut, pin::Pin, sync::Arc, task::{Context, Poll}, time::Duration
+    cmp::Ordering,
+    marker::PhantomData,
+    ops::DerefMut,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
 };
 
 use futures::ready;
@@ -7,9 +13,23 @@ use pin_project_lite::pin_project;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::info;
 
-use crate::{engine::{changelog_manager::ChangelogManager, client_manager::{self, ClientManager}, context::EngineContext, queue_manager::partition_queue::StreamPeridotPartitionQueue, wrapper::serde::native::NativeBytes}, message::types::{Message, TryFromOwnedMessage}, state::{self, backend::StateBackend}};
+use crate::{
+    engine::{
+        changelog_manager::ChangelogManager,
+        client_manager::{self, ClientManager},
+        context::EngineContext,
+        queue_manager::partition_queue::StreamPeridotPartitionQueue,
+        wrapper::serde::native::NativeBytes,
+    },
+    message::types::{Message, TryFromOwnedMessage},
+    state::{self, backend::StateBackend},
+};
 
-use super::{sink::{state_sink::StateSink, MessageSink}, stream::{serialiser::QueueSerialiser, MessageStream}, CommitState};
+use super::{
+    sink::{state_sink::StateSink, MessageSink},
+    stream::{serialiser::QueueSerialiser, MessageStream},
+    CommitState,
+};
 
 type DeserialiserQueue<K, V> = QueueSerialiser<NativeBytes<K>, NativeBytes<V>>;
 
@@ -55,7 +75,13 @@ where
     M: MessageStream,
     B: StateBackend,
 {
-    pub fn new(message_stream: M, state_sink: StateSink<B, M::KeyType, M::ValueType>, engine_context: Arc<EngineContext>, store_name: String, partition: i32) -> Self {
+    pub fn new(
+        message_stream: M,
+        state_sink: StateSink<B, M::KeyType, M::ValueType>,
+        engine_context: Arc<EngineContext>,
+        store_name: String,
+        partition: i32,
+    ) -> Self {
         Self {
             changelog_stream: None,
             message_stream,
@@ -71,13 +97,13 @@ where
     }
 
     pub fn new_with_changelog(
-            changelog_stream: StreamPeridotPartitionQueue, 
-            message_stream: M, 
-            state_sink: StateSink<B, M::KeyType, M::ValueType>, 
-            engine_context: Arc<EngineContext>, 
-            store_name: String, 
-            partition: i32
-        ) -> Self {
+        changelog_stream: StreamPeridotPartitionQueue,
+        message_stream: M,
+        state_sink: StateSink<B, M::KeyType, M::ValueType>,
+        engine_context: Arc<EngineContext>,
+        store_name: String,
+        partition: i32,
+    ) -> Self {
         Self {
             changelog_stream: Some(QueueSerialiser::new(changelog_stream)),
             message_stream,
@@ -140,63 +166,76 @@ where
             }
 
             if changelog_start.is_none() {
-                let checkpoint = state_sink.get_checkpoint()
-                .expect("Failed to get checkpoint")
-                .unwrap_or(0);
+                let checkpoint = state_sink
+                    .get_checkpoint()
+                    .expect("Failed to get checkpoint")
+                    .unwrap_or(0);
 
                 tracing::debug!("Rebuilding state store from checkpoint: {}", checkpoint);
-                
+
                 let watermarks = engine_context.watermark_for_changelog(store_name, *partition);
 
                 tracing::debug!("State store changelog watermarks: {}", watermarks);
-                
+
                 let mut beginning_offset = 0;
 
                 if checkpoint > watermarks.high() {
-                    tracing::debug!("State store checkpoint higher than changelog high watermark...");
+                    tracing::debug!(
+                        "State store checkpoint higher than changelog high watermark..."
+                    );
                     beginning_offset = watermarks.low();
-        
+
                     // reset state store
-                }
-                else if checkpoint < watermarks.high() && checkpoint < watermarks.low(){
+                } else if checkpoint < watermarks.high() && checkpoint < watermarks.low() {
                     tracing::debug!("State store checkpoint lower than low watermark...");
                     beginning_offset = watermarks.low();
 
                     // reset state store
-                }
-                else {
+                } else {
                     // If the check point is seekable, or the checkpoint is equal with the high watermark
                     // Just use the checkpoint as the next offset.
                     tracing::debug!("Resuming changelog from checkpoint...");
                     beginning_offset = checkpoint;
                 }
 
-                tracing::debug!("Seeking changelog consumer for {}-{} to offset: {}", store_name, partition, beginning_offset);
+                tracing::debug!(
+                    "Seeking changelog consumer for {}-{} to offset: {}",
+                    store_name,
+                    partition,
+                    beginning_offset
+                );
 
-                engine_context.seek_changlog_consumer(store_name, *partition, beginning_offset)
+                engine_context
+                    .seek_changlog_consumer(store_name, *partition, beginning_offset)
                     .expect("Failed to seek changelog consumer.");
 
-                tracing::debug!("Reading changelog from current store position: {}", beginning_offset);
+                tracing::debug!(
+                    "Reading changelog from current store position: {}",
+                    beginning_offset
+                );
 
                 let _ = changelog_start.replace(beginning_offset);
             }
 
             for _ in 0..1024 {
-                
                 match stream.as_mut().poll_next(cx) {
-                    Poll::Ready(None) => panic!("Changelog stream closed before state store rebuilt."),
+                    Poll::Ready(None) => {
+                        panic!("Changelog stream closed before state store rebuilt.")
+                    }
                     Poll::Ready(Some(message)) => {
                         tracing::debug!("Sending changelog record to sink.");
 
-                        state_sink.as_mut()
+                        state_sink
+                            .as_mut()
                             .start_send(message)
                             .expect("Failed to send message to sink.")
-                    },
+                    }
                     Poll::Pending => {
                         tracing::debug!("No records for changelog.");
-                        
-                        let consumer_position = engine_context.get_changelog_consumer_position(store_name, *partition);
-                        
+
+                        let consumer_position =
+                            engine_context.get_changelog_consumer_position(store_name, *partition);
+
                         tracing::debug!("Checkpointing consumer position offset: {} for store: {}, partition: {}", consumer_position, store_name, partition);
                         state_sink.checkpoint_changelog_position(consumer_position);
 
@@ -206,30 +245,40 @@ where
 
                                 *commit_state = CommitState::Committing;
                                 return Poll::Pending;
-                            },
+                            }
                             Poll::Ready(result) => {
                                 result.expect("Sink failed to commit.");
 
-                                let watermarks = engine_context.watermark_for_changelog(store_name, *partition);
-                                
-                                let checkpoint = state_sink.get_checkpoint()
+                                let watermarks =
+                                    engine_context.watermark_for_changelog(store_name, *partition);
+
+                                let checkpoint = state_sink
+                                    .get_checkpoint()
                                     .expect("Failed to get checkpoint.")
                                     .expect("State sink not checkpointed after commit.");
 
                                 match checkpoint.cmp(&std::cmp::max(watermarks.high(), 0)) {
                                     Ordering::Equal => {
-                                        tracing::debug!("checkpoint: {} caught up to high watermark: {}", checkpoint, watermarks.high());
+                                        tracing::debug!(
+                                            "checkpoint: {} caught up to high watermark: {}",
+                                            checkpoint,
+                                            watermarks.high()
+                                        );
 
                                         break;
-                                    },
+                                    }
                                     Ordering::Greater => {
                                         panic!("Checkpoint greater than watermark after state store rebuild, checkpoint: {}, watermark: {}", checkpoint, watermarks.high())
-                                    },
+                                    }
                                     Ordering::Less => {
-                                        tracing::debug!("checkpoint: {} still behind high watermark: {}", checkpoint, watermarks.high());
+                                        tracing::debug!(
+                                            "checkpoint: {} still behind high watermark: {}",
+                                            checkpoint,
+                                            watermarks.high()
+                                        );
 
                                         return Poll::Pending;
-                                    },
+                                    }
                                 }
                             }
                         }
@@ -237,11 +286,20 @@ where
                 }
             }
 
-            tracing::debug!("Setting state store status to StoreState::Ready for store: {}, partition: {}", store_name, partition);
+            tracing::debug!(
+                "Setting state store status to StoreState::Ready for store: {}, partition: {}",
+                store_name,
+                partition
+            );
             *store_state = StoreState::Ready;
-            
-            tracing::debug!("Closing changelog stream for for store: {}, partition: {}", store_name, partition);
-            engine_context.close_changelog_stream(store_name, *partition)
+
+            tracing::debug!(
+                "Closing changelog stream for for store: {}, partition: {}",
+                store_name,
+                partition
+            );
+            engine_context
+                .close_changelog_stream(store_name, *partition)
                 .expect("Failed to close changelog stream.");
         }
 

@@ -1,4 +1,3 @@
-pub mod state_fork;
 pub mod count;
 pub mod filter;
 pub mod fold;
@@ -9,4 +8,5 @@ pub mod join_by;
 pub mod map;
 pub mod reduce;
 pub mod sink;
+pub mod state_fork;
 pub mod stream;

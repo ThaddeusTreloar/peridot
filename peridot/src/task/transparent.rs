@@ -1,4 +1,7 @@
-use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream, state::backend::StateBackend};
+use crate::{
+    app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream,
+    state::backend::StateBackend,
+};
 
 use super::{PipelineParts, Task};
 
@@ -45,7 +48,11 @@ where
     }
 
     fn into_parts(self) -> PipelineParts<'a, Self::B, Self::G, Self::R> {
-        let Self { app, source_topic, output } = self;
+        let Self {
+            app,
+            source_topic,
+            output,
+        } = self;
 
         PipelineParts(app, source_topic, output)
     }

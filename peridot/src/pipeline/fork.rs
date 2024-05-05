@@ -49,10 +49,7 @@ where
     S::MStream: MessageStream,
     S::KeyType: Clone + Send + 'static,
     S::ValueType: Clone + Send + 'static,
-    SF: MessageSinkFactory<
-        S::KeyType,
-        S::ValueType
-    > + Send + 'static,
+    SF: MessageSinkFactory<S::KeyType, S::ValueType> + Send + 'static,
     SF::SinkType: Send + 'static,
 {
     type KeyType = <S::MStream as MessageStream>::KeyType;

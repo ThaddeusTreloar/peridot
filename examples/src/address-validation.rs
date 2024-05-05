@@ -65,7 +65,7 @@ fn validate_address(Value(address): Value<ChangeOfAddress>) -> Value<ValidatedAd
         address,
         city,
         state,
-        postcode
+        postcode,
     } = address;
 
     let validated = ValidatedAddress {
@@ -73,7 +73,7 @@ fn validate_address(Value(address): Value<ChangeOfAddress>) -> Value<ValidatedAd
         city,
         state,
         postcode,
-        is_valid: valid
+        is_valid: valid,
     };
 
     Value(validated)
@@ -98,7 +98,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .set_log_level(RDKafkaLogLevel::Debug);
 
     let app = AppBuilder::new()
-        .with_config(PeridotConfigBuilder::from(&client_config).build().expect("Failed to build config."))
+        .with_config(
+            PeridotConfigBuilder::from(&client_config)
+                .build()
+                .expect("Failed to build config."),
+        )
         .with_delivery_guarantee::<ExactlyOnce>()
         .with_state_backend::<InMemoryStateBackend>()
         .build()
@@ -108,12 +112,12 @@ async fn main() -> Result<(), anyhow::Error> {
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .map(validate_address)
-        .join(&joining_table, |_, right| right)// combiner as fn(ValidatedAddress, String) -> String)
+        .join(&joining_table, |_, right| right) // combiner as fn(ValidatedAddress, String) -> String)
         .into_topic::<String, Json<_>>("genericTopic");
 
     joining_table
-        .map(|Value(s)|s)
-        .into_topic::<String , String>("topic");
+        .map(|Value(s)| s)
+        .into_topic::<String, String>("topic");
 
     app.run().await?;
 

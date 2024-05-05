@@ -1,16 +1,24 @@
 use std::{
-    marker::PhantomData, pin::Pin, task::{Context, Poll}
+    marker::PhantomData,
+    pin::Pin,
+    task::{Context, Poll},
 };
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    engine::queue_manager::queue_metadata::QueueMetadata, message::{
-        join::Combiner, sink::MessageSink, stream::{ChannelStream, MessageStream, PipelineStage}, types::{FromMessage, Message, PatchMessage}
-    }, pipeline::{
+    engine::queue_manager::queue_metadata::QueueMetadata,
+    message::{
+        join::Combiner,
+        sink::MessageSink,
+        stream::{ChannelStream, MessageStream, PipelineStage},
+        types::{FromMessage, Message, PatchMessage},
+    },
+    pipeline::{
         fork::PipelineFork, forward::PipelineForward, join::JoinPipeline, join_by::JoinBy,
         map::MapPipeline, sink::MessageSinkFactory,
-    }, state::backend::{GetView, GetViewDistributor}
+    },
+    state::backend::{GetView, GetViewDistributor},
 };
 
 //pub mod import;
@@ -35,14 +43,8 @@ pub trait PipelineStreamExt: PipelineStream {
     fn map<F, E, R>(self, f: F) -> MapPipeline<Self, F, E, R>
     where
         F: Fn(E) -> R,
-        E: FromMessage<
-                Self::KeyType,
-                Self::ValueType,
-            >,
-        R: PatchMessage<
-                Self::KeyType,
-                Self::ValueType,
-            >,
+        E: FromMessage<Self::KeyType, Self::ValueType>,
+        R: PatchMessage<Self::KeyType, Self::ValueType>,
         Self: Sized,
     {
         MapPipeline::new(self, f)
@@ -78,7 +80,7 @@ pub trait PipelineStreamExt: PipelineStream {
     {
         JoinPipeline::new(self, table, combiner)
     }
-/*
+    /*
     fn join_by<T, J, C>(self, table: T, joiner: J, combiner: C) -> JoinBy<Self, T, J, C>
     where
         T: GetViewDistributor + Send + 'static,

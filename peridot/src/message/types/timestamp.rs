@@ -1,4 +1,3 @@
-
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PeridotTimestamp {
     #[default]

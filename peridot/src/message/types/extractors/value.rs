@@ -12,8 +12,7 @@ impl<K> Value<K> {
     }
 }
 
-impl<K, V> FromMessage<K, V> for Value<V>
-{
+impl<K, V> FromMessage<K, V> for Value<V> {
     fn from_message(
         Message {
             topic,
@@ -22,10 +21,11 @@ impl<K, V> FromMessage<K, V> for Value<V>
             offset,
             headers,
             key,
-            value
-        }: Message<K, V>
-    ) -> (Self, PartialMessage<K, V>) 
-    where Self: Sized
+            value,
+        }: Message<K, V>,
+    ) -> (Self, PartialMessage<K, V>)
+    where
+        Self: Sized,
     {
         let partial_message = PartialMessage {
             topic: Some(topic),
@@ -41,15 +41,11 @@ impl<K, V> FromMessage<K, V> for Value<V>
     }
 }
 
-impl<K, V, VR> PatchMessage<K, V> for Value<VR>
-{
+impl<K, V, VR> PatchMessage<K, V> for Value<VR> {
     type RK = K;
     type RV = VR;
 
-    fn patch(
-        self,
-        partial_message: PartialMessage<K, V>,
-    ) -> Message<Self::RK, Self::RV> {
+    fn patch(self, partial_message: PartialMessage<K, V>) -> Message<Self::RK, Self::RV> {
         match partial_message {
             PartialMessage {
                 topic: Some(topic),
@@ -59,33 +55,28 @@ impl<K, V, VR> PatchMessage<K, V> for Value<VR>
                 headers: Some(headers),
                 key: Some(key),
                 ..
-            } => {
-                Message {
-                    topic,
-                    timestamp,
-                    partition,
-                    offset,
-                    headers,
-                    key,
-                    value: self.value(),
-                }
+            } => Message {
+                topic,
+                timestamp,
+                partition,
+                offset,
+                headers,
+                key,
+                value: self.value(),
             },
-            _ => panic!("Missing value in partial message, this should not be possible.")
+            _ => panic!("Missing value in partial message, this should not be possible."),
         }
     }
 }
 
 impl<K, V, VR> PatchMessage<K, V> for VR
-where   
-    VR: Debug
+where
+    VR: Debug,
 {
     type RK = K;
     type RV = VR;
 
-    fn patch(
-        self,
-        partial_message: PartialMessage<K, V>,
-    ) -> Message<Self::RK, Self::RV> {
+    fn patch(self, partial_message: PartialMessage<K, V>) -> Message<Self::RK, Self::RV> {
         match partial_message {
             PartialMessage {
                 topic: Some(topic),
@@ -95,18 +86,16 @@ where
                 headers: Some(headers),
                 key: Some(key),
                 ..
-            } => {
-                Message {
-                    topic,
-                    timestamp,
-                    partition,
-                    offset,
-                    headers,
-                    key,
-                    value: self,
-                }
+            } => Message {
+                topic,
+                timestamp,
+                partition,
+                offset,
+                headers,
+                key,
+                value: self,
             },
-            _ => panic!("Missing value in partial message, this should not be possible.")
+            _ => panic!("Missing value in partial message, this should not be possible."),
         }
     }
 }

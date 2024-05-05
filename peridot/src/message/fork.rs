@@ -63,7 +63,10 @@ where
         // If we have transitioned to a committing state, we can start our
         // sink commit process. Otherwise, we can continue to poll the stream.
         if let CommitState::Committing = commit_state {
-            tracing::debug!("Notifying fork sink of commit: {}", std::any::type_name::<Si>());
+            tracing::debug!(
+                "Notifying fork sink of commit: {}",
+                std::any::type_name::<Si>()
+            );
             ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commut");
             *commit_state = CommitState::Committed;
         }

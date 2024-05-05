@@ -1,13 +1,16 @@
 use rdkafka::ClientConfig;
 
-use crate::{engine::util::{DeliveryGuaranteeType, ExactlyOnce}, state::backend::{in_memory::InMemoryStateBackend, StateBackend}};
+use crate::{
+    engine::util::{DeliveryGuaranteeType, ExactlyOnce},
+    state::backend::{in_memory::InMemoryStateBackend, StateBackend},
+};
 
 use super::{config::PeridotConfig, error::PeridotAppCreationError, PeridotApp};
 
 pub struct AppBuilder<C, B, G> {
     config: C,
     _delivery_guarantee: std::marker::PhantomData<G>,
-    _state_backend: std::marker::PhantomData<B>
+    _state_backend: std::marker::PhantomData<B>,
 }
 
 impl Default for AppBuilder<(), (), ()> {
@@ -58,15 +61,16 @@ impl<C, B, G> AppBuilder<C, B, G> {
     }
 }
 
-impl AppBuilder<PeridotConfig, (), ()> 
-{
-    pub fn build(self) -> Result<PeridotApp<InMemoryStateBackend, ExactlyOnce>, PeridotAppCreationError> {
+impl AppBuilder<PeridotConfig, (), ()> {
+    pub fn build(
+        self,
+    ) -> Result<PeridotApp<InMemoryStateBackend, ExactlyOnce>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;
         Ok(app)
     }
 }
 
-impl<B> AppBuilder<PeridotConfig, B, ()> 
+impl<B> AppBuilder<PeridotConfig, B, ()>
 where
     B: StateBackend + Send + Sync + 'static,
 {
@@ -76,7 +80,7 @@ where
     }
 }
 
-impl<G> AppBuilder<PeridotConfig, (), G> 
+impl<G> AppBuilder<PeridotConfig, (), G>
 where
     G: DeliveryGuaranteeType,
 {
@@ -86,7 +90,7 @@ where
     }
 }
 
-impl<B, G> AppBuilder<PeridotConfig, B, G> 
+impl<B, G> AppBuilder<PeridotConfig, B, G>
 where
     G: DeliveryGuaranteeType,
     B: StateBackend + Send + Sync + 'static,

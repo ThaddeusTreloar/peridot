@@ -32,7 +32,7 @@ fn partial_task(
 async fn main() -> Result<(), anyhow::Error> {
     let mut client_config = ClientConfig::new();
 
-    // some normal kafka configuration 
+    // some normal kafka configuration
 
     let app = PeridotApp::from_client_config(&client_config)?;
 
@@ -59,7 +59,7 @@ struct Client {
 async fn main() -> Result<(), anyhow::Error> {
     let mut client_config = ClientConfig::new();
 
-    // some normal kafka configuration 
+    // some normal kafka configuration
 
     let app = PeridotApp::from_client_config(&client_config)?;
 
@@ -87,7 +87,6 @@ pub mod task;
 pub(crate) mod util;
 
 use tracing::info;
-
 
 pub const HELP_URL: &str = "https://github.com/ThaddeusTreloar/peridot/blob/master/docs";
 

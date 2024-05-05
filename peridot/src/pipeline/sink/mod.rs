@@ -1,10 +1,16 @@
-use crate::{engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{serializers::Serializers, PeridotStatefulSerializer}}, message::sink::MessageSink};
+use crate::{
+    engine::{
+        queue_manager::queue_metadata::QueueMetadata,
+        wrapper::serde::{serializers::Serializers, PeridotStatefulSerializer},
+    },
+    message::sink::MessageSink,
+};
 
 pub(crate) mod changelog_sink;
+pub(crate) mod noop_sink;
 pub mod print_sink;
 pub(crate) mod state_sink;
 pub mod topic_sink;
-pub(crate) mod noop_sink;
 
 /*
 Currently undocumented is the design behaviour of different sink types.
@@ -29,10 +35,10 @@ pub trait MessageSinkFactory<K, V> {
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType;
 }
 
-pub trait DynamicSerialiserSinkFactory<KS, VS>: MessageSinkFactory<KS::Input, VS::Input> 
+pub trait DynamicSerialiserSinkFactory<KS, VS>: MessageSinkFactory<KS::Input, VS::Input>
 where
     KS: PeridotStatefulSerializer,
-    VS: PeridotStatefulSerializer
+    VS: PeridotStatefulSerializer,
 {
     fn new_sink_with_serialisers(serialisers: Serializers<KS, VS>) -> Self::SinkType;
 }

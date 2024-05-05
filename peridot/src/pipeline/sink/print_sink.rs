@@ -1,7 +1,10 @@
 use std::{fmt::Display, marker::PhantomData};
 
 use crate::{
-    engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer}},
+    engine::{
+        queue_manager::queue_metadata::QueueMetadata,
+        wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer},
+    },
     message::sink::print_sink::PrintSink,
 };
 

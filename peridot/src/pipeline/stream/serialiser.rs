@@ -8,7 +8,9 @@ use pin_project_lite::pin_project;
 use tracing::info;
 
 use crate::{
-    engine::{queue_manager::QueueReceiver, util::ExactlyOnce, wrapper::serde::PeridotDeserializer},
+    engine::{
+        queue_manager::QueueReceiver, util::ExactlyOnce, wrapper::serde::PeridotDeserializer,
+    },
     message::stream::{serialiser::QueueSerialiser, PipelineStage},
 };
 

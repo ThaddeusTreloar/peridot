@@ -4,11 +4,24 @@ use serde::Serialize;
 
 use crate::{
     app::PeridotApp,
-    engine::{util::DeliveryGuaranteeType, wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer}},
-    message::{join::Combiner, types::{FromMessage, PatchMessage}},
+    engine::{
+        util::DeliveryGuaranteeType,
+        wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer},
+    },
+    message::{
+        join::Combiner,
+        types::{FromMessage, PatchMessage},
+    },
     pipeline::{
-        join::JoinPipeline, map::MapPipeline, sink::{print_sink::PrintSinkFactory, topic_sink::TopicSinkFactory}, stream::{PipelineStream, PipelineStreamExt}
-    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend},
+        join::JoinPipeline,
+        map::MapPipeline,
+        sink::{print_sink::PrintSinkFactory, topic_sink::TopicSinkFactory},
+        stream::{PipelineStream, PipelineStreamExt},
+    },
+    state::backend::{
+        facade::{FacadeDistributor, StateFacade},
+        GetViewDistributor, StateBackend,
+    },
 };
 
 use self::{table::TableTask, transform::TransformTask};
@@ -19,10 +32,12 @@ pub mod transform;
 pub mod transparent;
 
 pub struct PipelineParts<'a, B, G, R>(&'a PeridotApp<B, G>, String, R)
-where G: DeliveryGuaranteeType;
+where
+    G: DeliveryGuaranteeType;
 
-impl <'a, B, G, R> PipelineParts<'a, B, G, R> 
-where G: DeliveryGuaranteeType
+impl<'a, B, G, R> PipelineParts<'a, B, G, R>
+where
+    G: DeliveryGuaranteeType,
 {
     pub fn app(&self) -> &'a PeridotApp<B, G> {
         self.0
@@ -54,23 +69,27 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(parts.app(), parts.source_topic(), next, parts.output())
     }
 
-    fn join<T, C>(self, table: T, combiner: C) -> TransformTask<
+    fn join<T, C>(
+        self,
+        table: T,
+        combiner: C,
+    ) -> TransformTask<
         'a,
-        impl FnOnce(Self::R) -> JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C>,
+        impl FnOnce(
+            Self::R,
+        )
+            -> JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C>,
         Self::R,
         JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C>,
-        Self::B, 
-        Self::G
+        Self::B,
+        Self::G,
     >
     where
         T: GetViewDistributor + Send + 'a,
         T::KeyType: Send + Sync + 'static,
         T::ValueType: Send + Sync + 'static,
         T::Backend: StateBackend + Sync + 'static,
-        C: Combiner<
-            <Self::R as PipelineStream>::ValueType,
-            T::ValueType,
-        > + 'static,
+        C: Combiner<<Self::R as PipelineStream>::ValueType, T::ValueType> + 'static,
         C::Output: Send + 'static,
         <Self::R as PipelineStream>::KeyType: PartialEq<T::KeyType> + Send,
         Self: Sized,
@@ -92,8 +111,8 @@ pub trait Task<'a> {
         impl FnOnce(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
         Self::R,
         MapPipeline<Self::R, MF, ME, MR>,
-        Self::B, 
-        Self::G
+        Self::B,
+        Self::G,
     >
     where
         MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
@@ -112,7 +131,12 @@ pub trait Task<'a> {
     {
         let parts = self.into_parts();
 
-        TransformTask::<'a>::new(parts.app(), parts.source_topic(), move |input| input.map(next), parts.output())
+        TransformTask::<'a>::new(
+            parts.app(),
+            parts.source_topic(),
+            move |input| input.map(next),
+            parts.output(),
+        )
     }
 
     fn into_table(self, store_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
@@ -123,7 +147,12 @@ pub trait Task<'a> {
     {
         let parts = self.into_parts();
 
-        TableTask::new(parts.app(), parts.source_topic(), store_name.to_owned(), parts.output())
+        TableTask::new(
+            parts.app(),
+            parts.source_topic(),
+            store_name.to_owned(),
+            parts.output(),
+        )
     }
 
     fn into_pipeline(self) -> Self::R;

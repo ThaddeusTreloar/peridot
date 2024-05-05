@@ -1,16 +1,26 @@
-use std::{pin::Pin, sync::{Arc, Mutex}};
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
-use futures::{future::{join_all, select_all}, Future};
+use futures::{
+    future::{join_all, select_all},
+    Future,
+};
 use rdkafka::{consumer::BaseConsumer, ClientConfig};
 use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    app::extensions::PeridotConsumerContext, engine::{
+    app::extensions::PeridotConsumerContext,
+    engine::{
         util::{DeliveryGuaranteeType, ExactlyOnce},
         wrapper::serde::PeridotDeserializer,
         AppEngine,
-    }, pipeline::stream::serialiser::SerialiserPipeline, state::backend::{in_memory::InMemoryStateBackend, StateBackend}, task::{table::TableTask, transparent::TransparentTask, Task}
+    },
+    pipeline::stream::serialiser::SerialiserPipeline,
+    state::backend::{in_memory::InMemoryStateBackend, StateBackend},
+    task::{table::TableTask, transparent::TransparentTask, Task},
 };
 
 use self::{
@@ -55,7 +65,7 @@ where
     _phantom: std::marker::PhantomData<G>,
 }
 
-impl<B, G> PeridotApp<B, G> 
+impl<B, G> PeridotApp<B, G>
 where
     G: DeliveryGuaranteeType,
     B: StateBackend + Send + Sync + 'static,
@@ -83,11 +93,10 @@ where
         KS::Output: Clone + Serialize + Send,
         VS::Output: Clone + Serialize + Send,
     {
-        let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
-            .stream(topic)
-            .expect("Failed to create topic");
+        let input: SerialiserPipeline<KS, VS, ExactlyOnce> =
+            self.stream(topic).expect("Failed to create topic");
 
-        TransparentTask::new(self, topic,input).into_table(store_name)
+        TransparentTask::new(self, topic, input).into_table(store_name)
     }
 
     pub fn task<'a, KS, VS>(
@@ -120,8 +129,7 @@ where
     }
 
     pub(crate) fn job(&self, job: Job) {
-        let mut jobs = self.jobs.lock()
-            .expect("Job lock poinsoned.");
+        let mut jobs = self.jobs.lock().expect("Job lock poinsoned.");
 
         jobs.push(Box::new(job));
     }
@@ -148,7 +156,7 @@ where
         self.engine.run().await?;
 
         let mut select = select_all(job_results.into_iter());
-        
+
         loop {
             let (job_result, _, remaining) = select.await;
 
@@ -156,7 +164,7 @@ where
                 Ok(_) => (),
                 Err(e) => {
                     unimplemented!("Transition engine state on job fail: {}", e)
-                },
+                }
             }
 
             select = select_all(remaining);

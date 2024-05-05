@@ -12,7 +12,7 @@ use super::{Checkpoint, StateBackend};
 pub struct InMemoryStateBackend {
     store: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
     checkpoint: DashMap<String, Checkpoint>,
-    store_time: PeridotTimestamp
+    store_time: PeridotTimestamp,
 }
 
 impl InMemoryStateBackend {
@@ -25,23 +25,25 @@ impl InMemoryStateBackend {
             None => {
                 self.store.insert(state_key.to_owned(), Default::default());
 
-                self.store.get(state_key).expect("THIS SHOULD BE IMPOSSIBLE.")
-            },
-            Some(state) => {
-                state
+                self.store
+                    .get(state_key)
+                    .expect("THIS SHOULD BE IMPOSSIBLE.")
             }
+            Some(state) => state,
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum InMemoryStateBackendError {
-}
+pub enum InMemoryStateBackendError {}
 
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
 
-    fn with_source_topic_name_and_partition(_topic_name: &str, _partition: i32) -> Result<Self, Self::Error> {
+    fn with_source_topic_name_and_partition(
+        _topic_name: &str,
+        _partition: i32,
+    ) -> Result<Self, Self::Error> {
         Ok(Default::default())
     }
 
@@ -55,18 +57,26 @@ impl StateBackend for InMemoryStateBackend {
         Some(self.checkpoint.get(&checkpoint_name)?.clone())
     }
 
-    fn create_checkpoint(&self, store_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error> {
+    fn create_checkpoint(
+        &self,
+        store_name: &str,
+        partition: i32,
+        offset: i64,
+    ) -> Result<(), Self::Error> {
         let checkpoint_name = format!("{}-{}", store_name, partition);
 
         match self.checkpoint.get_mut(&checkpoint_name) {
             None => {
-                self.checkpoint.insert(checkpoint_name.clone(), Checkpoint { 
-                    store_name: checkpoint_name,
-                    offset,
-                });
+                self.checkpoint.insert(
+                    checkpoint_name.clone(),
+                    Checkpoint {
+                        store_name: checkpoint_name,
+                        offset,
+                    },
+                );
 
                 Ok(())
-            },
+            }
             Some(mut checkpoint_ref) => {
                 checkpoint_ref.value_mut().set_offset_if_greater(offset);
 
@@ -93,8 +103,9 @@ impl StateBackend for InMemoryStateBackend {
 
         let value = match store.get(&key_bytes) {
             None => return Ok(None),
-            Some(value_bytes) => 
-                    bincode::deserialize(value_bytes.as_ref()).expect("Failed to deserialize value")
+            Some(value_bytes) => {
+                bincode::deserialize(value_bytes.as_ref()).expect("Failed to deserialize value")
+            }
         };
 
         Ok(Some(value))
@@ -135,9 +146,9 @@ impl StateBackend for InMemoryStateBackend {
     {
         let state_key = Self::derive_state_key(store_name, partition);
 
-        self.store.iter().for_each(|e| {
-            tracing::debug!("Key in stores: {}", e.key())
-        });
+        self.store
+            .iter()
+            .for_each(|e| tracing::debug!("Key in stores: {}", e.key()));
 
         for (key, value) in range {
             let store = self.get_state_store(&state_key);
@@ -151,12 +162,7 @@ impl StateBackend for InMemoryStateBackend {
         Ok(())
     }
 
-    async fn delete<K>(
-        &self,
-        key: K,
-        store_name: &str,
-        partition: i32,
-    ) -> Result<(), Self::Error>
+    async fn delete<K>(&self, key: K, store_name: &str, partition: i32) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
     {
@@ -171,11 +177,7 @@ impl StateBackend for InMemoryStateBackend {
         Ok(())
     }
 
-    async fn clear<K>(
-        &self,
-        store_name: &str,
-        partition: i32,
-    ) -> Result<(), Self::Error>
+    async fn clear<K>(&self, store_name: &str, partition: i32) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
     {

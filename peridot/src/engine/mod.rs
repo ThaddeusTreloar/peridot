@@ -12,7 +12,6 @@ use rdkafka::{
     consumer::Consumer, producer::PARTITION_UA, topic_partition_list::TopicPartitionListElem,
     ClientConfig, TopicPartitionList,
 };
-use tracing_subscriber::field::display;
 use std::default;
 use std::ops::Deref;
 use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
@@ -21,6 +20,7 @@ use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 use tracing::{error, info, warn};
+use tracing_subscriber::field::display;
 
 use crate::engine::queue_manager::QueueManager;
 use crate::state::backend::StateBackend;
@@ -56,11 +56,11 @@ pub mod changelog_manager;
 pub mod circuit_breaker;
 pub mod client_manager;
 pub mod context;
-pub mod queue_manager;
-pub mod error;
 pub mod engine_state;
+pub mod error;
 pub mod metadata_manager;
 pub mod producer_factory;
+pub mod queue_manager;
 pub mod state_store_manager;
 pub mod util;
 pub mod wrapper;
@@ -131,14 +131,17 @@ where
         let engine_context = EngineContext {
             config: config.clone(),
             admin_manager: AdminManager::new(config)?,
-            client_manager: ClientManager::from_config(config)?, 
-            metadata_manager: MetadataManager::new(config.app_id()), 
-            changelog_manager: ChangelogManager::from_config(config)?, 
+            client_manager: ClientManager::from_config(config)?,
+            metadata_manager: MetadataManager::new(config.app_id()),
+            changelog_manager: ChangelogManager::from_config(config)?,
         };
 
         Ok(Self {
             engine_context: Arc::new(engine_context),
-            producer_factory: Arc::new(ProducerFactory::new(config.clone(), DeliverySemantics::ExactlyOnce)),
+            producer_factory: Arc::new(ProducerFactory::new(
+                config.clone(),
+                DeliverySemantics::ExactlyOnce,
+            )),
             downstreams: Default::default(),
             engine_state: Default::default(),
             state_store_manager: Default::default(),
@@ -159,8 +162,13 @@ where
         // where if this function is called while the engine is running, then the QueueManager
         // may recieve a partition queue before it's internal record has updated, leading to
         // undefined behaviour.
-        let metadata = self.engine_context.client_manager.create_topic_source(&topic)?;
-        self.engine_context.metadata_manager.register_source_topic(&topic, &metadata)?;
+        let metadata = self
+            .engine_context
+            .client_manager
+            .create_topic_source(&topic)?;
+        self.engine_context
+            .metadata_manager
+            .register_source_topic(&topic, &metadata)?;
 
         let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
         self.downstreams.insert(topic.clone(), queue_sender);

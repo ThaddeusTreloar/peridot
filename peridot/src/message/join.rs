@@ -18,7 +18,7 @@ pin_project! {
     }
 }
 
-impl <M, C, B, R> MessageStream for JoinMessage<M, C, B, R>
+impl<M, C, B, R> MessageStream for JoinMessage<M, C, B, R>
 where
     M: MessageStream,
     B: StateBackend,
@@ -28,9 +28,9 @@ where
     type ValueType = C::Output;
 
     fn poll_next(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Option<super::types::Message<Self::KeyType, Self::ValueType>>> {
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<super::types::Message<Self::KeyType, Self::ValueType>>> {
         unimplemented!("")
     }
 }
@@ -41,12 +41,12 @@ pub trait Combiner<L, R>: Send + Sync {
     fn combine(&self, left: L, right: R) -> Self::Output;
 }
 
-impl <L, R, F, RV> Combiner<L, R> for F
+impl<L, R, F, RV> Combiner<L, R> for F
 where
-    F: Send + Sync + Fn(L, R) -> RV
+    F: Send + Sync + Fn(L, R) -> RV,
 {
     type Output = RV;
-    
+
     fn combine(&self, left: L, right: R) -> Self::Output {
         (self)(left, right)
     }

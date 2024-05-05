@@ -1,4 +1,7 @@
-use crate::{app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream, state::backend::StateBackend};
+use crate::{
+    app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream,
+    state::backend::StateBackend,
+};
 
 use super::{PipelineParts, Task};
 

@@ -73,7 +73,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .set_log_level(RDKafkaLogLevel::Error);
 
     let app = AppBuilder::new()
-        .with_config(PeridotConfigBuilder::from(&client_config).build().expect("Failed to build config."))
+        .with_config(
+            PeridotConfigBuilder::from(&client_config)
+                .build()
+                .expect("Failed to build config."),
+        )
         .build()
         .expect("Failed to build app.");
 

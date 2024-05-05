@@ -17,7 +17,7 @@ impl<K, V> FromMessage<K, V> for (K, V)
             key,
             value
         }: Message<K, V>
-    ) -> (Self, PartialMessage<K, V>) 
+    ) -> (Self, PartialMessage<K, V>)
     where Self: Sized
     {
         let partial_message = PartialMessage {
@@ -67,8 +67,7 @@ impl<K, V, KR, VR> PatchMessage<K, V> for (KR, VR) {
 }
  */
 
-impl<K, V> FromMessage<K, V> for KeyValue<K, V>
-{
+impl<K, V> FromMessage<K, V> for KeyValue<K, V> {
     fn from_message(
         Message {
             topic,
@@ -77,10 +76,11 @@ impl<K, V> FromMessage<K, V> for KeyValue<K, V>
             offset,
             headers,
             key,
-            value
-        }: Message<K, V>
-    ) -> (Self, PartialMessage<K, V>) 
-    where Self: Sized
+            value,
+        }: Message<K, V>,
+    ) -> (Self, PartialMessage<K, V>)
+    where
+        Self: Sized,
     {
         let partial_message = PartialMessage {
             topic: Some(topic),
@@ -100,10 +100,7 @@ impl<K, V, KR, VR> PatchMessage<K, V> for KeyValue<KR, VR> {
     type RK = KR;
     type RV = VR;
 
-    fn patch(
-        self,
-        partial_message: PartialMessage<K, V>
-    ) -> Message<Self::RK, Self::RV> {
+    fn patch(self, partial_message: PartialMessage<K, V>) -> Message<Self::RK, Self::RV> {
         let Self(key, value) = self;
 
         match partial_message {
@@ -114,18 +111,16 @@ impl<K, V, KR, VR> PatchMessage<K, V> for KeyValue<KR, VR> {
                 offset: Some(offset),
                 headers: Some(headers),
                 ..
-            } => {
-                Message {
-                    topic,
-                    timestamp,
-                    partition,
-                    offset,
-                    headers,
-                    key,
-                    value,
-                }
+            } => Message {
+                topic,
+                timestamp,
+                partition,
+                offset,
+                headers,
+                key,
+                value,
             },
-            _ => panic!("Missing value in partial message, this should not be possible.")
+            _ => panic!("Missing value in partial message, this should not be possible."),
         }
     }
 }

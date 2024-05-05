@@ -9,10 +9,10 @@ pub struct Proto<T> {
     _type: PhantomData<T>,
 }
 
-impl <T> Default for Proto<T> {
+impl<T> Default for Proto<T> {
     fn default() -> Self {
         Self {
-            _type: Default::default()
+            _type: Default::default(),
         }
     }
 }
@@ -20,9 +20,9 @@ impl <T> Default for Proto<T> {
 #[derive(Debug, thiserror::Error)]
 pub enum ProtoSerdeError {}
 
-impl<T> PeridotSerializer for Proto<T> 
+impl<T> PeridotSerializer for Proto<T>
 where
-    T: Message
+    T: Message,
 {
     type Error = prost::EncodeError;
     type Input = T;
@@ -36,9 +36,9 @@ where
     }
 }
 
-impl<T> PeridotDeserializer for Proto<T> 
+impl<T> PeridotDeserializer for Proto<T>
 where
-    T: Message + Default
+    T: Message + Default,
 {
     type Error = prost::DecodeError;
     type Output = T;

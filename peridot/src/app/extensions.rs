@@ -207,8 +207,7 @@ impl ConsumerContext for PeridotConsumerContext {
 
         debug!("Context: pre rebalance, {}", &owned_rebalance);
 
-        let _ = self.pre_rebalance_waker
-            .send(owned_rebalance);
+        let _ = self.pre_rebalance_waker.send(owned_rebalance);
     }
 
     fn post_rebalance<'a>(&self, rebalance: &rdkafka::consumer::Rebalance<'_>) {
@@ -216,8 +215,7 @@ impl ConsumerContext for PeridotConsumerContext {
 
         debug!("Context: post rebalance, {}", &owned_rebalance);
 
-        let _ = self.post_rebalance_waker
-            .send(owned_rebalance);
+        let _ = self.post_rebalance_waker.send(owned_rebalance);
     }
 
     fn commit_callback(

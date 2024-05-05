@@ -7,17 +7,17 @@ pub struct NativeBytes<T> {
     _type: PhantomData<T>,
 }
 
-impl <T> Default for NativeBytes<T> {
+impl<T> Default for NativeBytes<T> {
     fn default() -> Self {
         Self {
-            _type: Default::default()
+            _type: Default::default(),
         }
     }
 }
 
-impl<T> PeridotSerializer for NativeBytes<T> 
+impl<T> PeridotSerializer for NativeBytes<T>
 where
-    T: serde::ser::Serialize
+    T: serde::ser::Serialize,
 {
     type Error = bincode::Error;
     type Input = T;
@@ -27,9 +27,9 @@ where
     }
 }
 
-impl<T> PeridotDeserializer for NativeBytes<T> 
+impl<T> PeridotDeserializer for NativeBytes<T>
 where
-    T: serde::de::DeserializeOwned
+    T: serde::de::DeserializeOwned,
 {
     type Error = bincode::Error;
     type Output = T;

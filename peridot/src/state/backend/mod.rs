@@ -25,10 +25,7 @@ pub struct Checkpoint {
 
 impl Checkpoint {
     pub fn new(store_name: String, offset: i64) -> Self {
-        Self {
-            store_name,
-            offset
-        }
+        Self { store_name, offset }
     }
 
     pub fn set_offset(&mut self, new_offset: i64) {
@@ -59,14 +56,14 @@ pub trait GetView {
     type ValueType;
     type Backend;
 
-    fn get_view (
+    fn get_view(
         &self,
         partition: i32,
     ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend>;
 }
 
 #[trait_variant::make(Send)]
-pub trait StateBackend 
+pub trait StateBackend
 where
     Self: Sized,
 {
@@ -81,7 +78,12 @@ where
 
     fn get_state_store_checkpoint(&self, store_name: &str, partition: i32) -> Option<Checkpoint>;
 
-    fn create_checkpoint(&self, store_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error>;
+    fn create_checkpoint(
+        &self,
+        store_name: &str,
+        partition: i32,
+        offset: i64,
+    ) -> Result<(), Self::Error>;
 
     async fn get<K, V>(
         &self,
@@ -114,20 +116,11 @@ where
         K: Serialize + Send,
         V: Serialize + Send;
 
-    async fn delete<K>(
-        &self,
-        key: K,
-        store: &str,
-        partition: i32,
-    ) -> Result<(), Self::Error>
+    async fn delete<K>(&self, key: K, store: &str, partition: i32) -> Result<(), Self::Error>
     where
         K: Serialize + Send;
 
-    async fn clear<K>(
-        &self,
-        store: &str,
-        partition: i32,
-    ) -> Result<(), Self::Error>
+    async fn clear<K>(&self, store: &str, partition: i32) -> Result<(), Self::Error>
     where
         K: Serialize + Send;
 }
@@ -191,9 +184,7 @@ pub trait ReadableStateView {
         key: Self::KeyType,
     ) -> Result<Option<Self::ValueType>, Self::Error>;
 
-    fn get_checkpoint(
-        &self,
-    ) -> Result<Option<Checkpoint>, Self::Error>;
+    fn get_checkpoint(&self) -> Result<Option<Checkpoint>, Self::Error>;
 }
 
 #[trait_variant::make(Send)]
@@ -202,10 +193,7 @@ pub trait WriteableStateView {
     type KeyType: Serialize + Send;
     type ValueType: Serialize + Send;
 
-    fn create_checkpoint(
-        &self,
-        offset: i64,
-    ) -> Result<(), Self::Error>;
+    fn create_checkpoint(&self, offset: i64) -> Result<(), Self::Error>;
 
     async fn put(
         self: Arc<Self>,
@@ -218,10 +206,7 @@ pub trait WriteableStateView {
         range: Vec<(Self::KeyType, Self::ValueType)>,
     ) -> Result<(), Self::Error>;
 
-    async fn delete(
-        self: Arc<Self>,
-        key: Self::KeyType,
-    ) -> Result<(), Self::Error>;
+    async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), Self::Error>;
 }
 
 #[trait_variant::make(Send)]

@@ -5,7 +5,9 @@ use tracing::warn;
 
 use crate::help;
 
-use self::builder::{PeridotConfigBuilder, PeridotConfigError, APP_FIELDS, GROUP_ID, GROUP_INSTANCE_ID};
+use self::builder::{
+    PeridotConfigBuilder, PeridotConfigError, APP_FIELDS, GROUP_ID, GROUP_INSTANCE_ID,
+};
 
 pub mod builder;
 mod persistent_config;
@@ -18,9 +20,12 @@ pub struct PeridotConfig {
 
 impl From<PeridotConfigBuilder> for PeridotConfig {
     fn from(value: PeridotConfigBuilder) -> Self {
-        let PeridotConfigBuilder { client_config, app_config } = value;
+        let PeridotConfigBuilder {
+            client_config,
+            app_config,
+        } = value;
 
-        Self { 
+        Self {
             client_config,
             app_config,
         }
@@ -51,15 +56,16 @@ impl PeridotConfig {
 
     pub fn get(&self, key: &str) -> Option<&str> {
         if APP_FIELDS.contains(&key) {
-            self.app_config.get(key).map(|s|s.as_str())
+            self.app_config.get(key).map(|s| s.as_str())
         } else {
             self.client_config.get(key)
         }
     }
 
     pub fn app_id(&self) -> &str {
-        self.get("application.id")
-            .expect("Failed to get 'application.id' from PeridotConfig. This should not be possible")
+        self.get("application.id").expect(
+            "Failed to get 'application.id' from PeridotConfig. This should not be possible",
+        )
     }
 }
 

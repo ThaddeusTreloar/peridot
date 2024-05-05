@@ -1,4 +1,8 @@
-use std::{fmt::{Display, Write}, sync::Arc, time::Duration};
+use std::{
+    fmt::{Display, Write},
+    sync::Arc,
+    time::Duration,
+};
 
 use rdkafka::{consumer::Consumer, Message, Offset, TopicPartitionList};
 use tracing::{info, warn};
@@ -12,7 +16,11 @@ pub struct Watermarks(i64, i64);
 
 impl Display for Watermarks {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("Watermarks: {{ low: {}, high: {}}}", self.low(), self.high()))
+        f.write_str(&format!(
+            "Watermarks: {{ low: {}, high: {}}}",
+            self.low(),
+            self.high()
+        ))
     }
 }
 
@@ -56,7 +64,13 @@ pub enum ChangelogManagerError {
         partition: i32,
         err: rdkafka::error::KafkaError,
     },
-    #[error("ChangelogManagerError::FailedToSeekConsumer, failed to consumer {}:{} to {} caused by {}", topic, partition, offset, err)]
+    #[error(
+        "ChangelogManagerError::FailedToSeekConsumer, failed to consumer {}:{} to {} caused by {}",
+        topic,
+        partition,
+        offset,
+        err
+    )]
     FailedToSeekConsumer {
         topic: String,
         partition: i32,
@@ -71,8 +85,7 @@ pub(crate) struct ChangelogManager {
 
 impl ChangelogManager {
     pub(crate) fn from_config(config: &PeridotConfig) -> Result<Self, ChangelogManagerError> {
-        let config = config.clone()
-            .with_earliest_offset_reset();
+        let config = config.clone().with_earliest_offset_reset();
 
         let context = PeridotConsumerContext::from_config(&config);
 
@@ -111,7 +124,8 @@ impl ChangelogManager {
         } else {
             tracing::debug!(
                 "Getting partition for topic: {}, partition: {}",
-                changelog_topic, partition
+                changelog_topic,
+                partition
             );
 
             let partition_queue = match self
@@ -140,7 +154,8 @@ impl ChangelogManager {
 
             tracing::debug!(
                 "Partition assigned to consumer for topic: {}, partition: {}",
-                changelog_topic, partition
+                changelog_topic,
+                partition
             );
 
             Ok(partition_queue)
@@ -183,24 +198,47 @@ impl ChangelogManager {
         Ok(Watermarks(low, high))
     }
 
-    pub(super) fn seek_consumer(&self, changelog_topic: &str, partition: i32, offset: i64) -> Result<(), ChangelogManagerError> {
+    pub(super) fn seek_consumer(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+        offset: i64,
+    ) -> Result<(), ChangelogManagerError> {
         let mut topic_partition_list = TopicPartitionList::new();
 
-        topic_partition_list.add_partition_offset(changelog_topic, partition, rdkafka::Offset::Offset(offset));
+        topic_partition_list.add_partition_offset(
+            changelog_topic,
+            partition,
+            rdkafka::Offset::Offset(offset),
+        );
 
-        self.consumer.seek_partitions(topic_partition_list, Duration::from_millis(1000))
-            .map(|tpl|{
+        self.consumer
+            .seek_partitions(topic_partition_list, Duration::from_millis(1000))
+            .map(|tpl| {
                 for ((topic, partition), offset) in tpl.to_topic_map() {
                     match offset {
                         Offset::Offset(offset) => {
-                            tracing::debug!("Successfully seeked topic: {}, partition: {}, to offset: {}", topic, partition, offset);
-                        },
-                        _ => tracing::error!("Unrecognised seek for topic: {}, partition: {}", topic, partition)
+                            tracing::debug!(
+                                "Successfully seeked topic: {}, partition: {}, to offset: {}",
+                                topic,
+                                partition,
+                                offset
+                            );
+                        }
+                        _ => tracing::error!(
+                            "Unrecognised seek for topic: {}, partition: {}",
+                            topic,
+                            partition
+                        ),
                     }
-
                 }
             })
-            .map_err(|err| ChangelogManagerError::FailedToSeekConsumer { topic: changelog_topic.to_owned(), partition, offset, err })
+            .map_err(|err| ChangelogManagerError::FailedToSeekConsumer {
+                topic: changelog_topic.to_owned(),
+                partition,
+                offset,
+                err,
+            })
     }
 
     pub(super) fn poll_consumer(&self) {
@@ -216,7 +254,7 @@ impl ChangelogManager {
                         message.partition(),
                         message.offset(),
                     );
-        
+
                     panic!(
                         "Unexpected changelog consumer message: topic: {}, partition: {}, offset: {}",
                         message.topic(),
@@ -229,27 +267,29 @@ impl ChangelogManager {
     }
 
     pub(super) fn get_topic_offset(&self, changelog_topic: &str, partition: i32) -> i64 {
-        match self.consumer.assignment()
+        match self
+            .consumer
+            .assignment()
             .expect("Failed to get assignment")
             .elements_for_topic(changelog_topic)
             .into_iter()
-            .find(|elem|elem.partition()==partition)
-            .map(|elem|elem.offset())
+            .find(|elem| elem.partition() == partition)
+            .map(|elem| elem.offset())
             .expect("Unable to find topic offset.")
         {
             Offset::Offset(offset) => offset,
             Offset::Beginning => {
                 panic!("Offset::Beginning")
-            },
+            }
             Offset::End => {
                 panic!("Offset::End")
-            },
+            }
             Offset::OffsetTail(o) => {
                 panic!("Offset::OffsetTail({})", o)
-            },
+            }
             Offset::Stored => {
                 panic!("Offset::Stored")
-            },
+            }
             Offset::Invalid => {
                 warn!("Current offset invalid...");
                 -1
@@ -258,27 +298,29 @@ impl ChangelogManager {
     }
 
     pub(super) fn get_topic_consumer_position(&self, changelog_topic: &str, partition: i32) -> i64 {
-        match self.consumer.position()
+        match self
+            .consumer
+            .position()
             .expect("Failed to get assignment")
             .elements_for_topic(changelog_topic)
             .into_iter()
-            .find(|elem|elem.partition()==partition)
-            .map(|elem|elem.offset())
+            .find(|elem| elem.partition() == partition)
+            .map(|elem| elem.offset())
             .expect("Unable to find topic offset.")
         {
             Offset::Offset(offset) => offset,
             Offset::Beginning => {
                 panic!("Offset::Beginning")
-            },
+            }
             Offset::End => {
                 panic!("Offset::End")
-            },
+            }
             Offset::OffsetTail(o) => {
                 panic!("Offset::OffsetTail({})", o)
-            },
+            }
             Offset::Stored => {
                 panic!("Offset::Stored")
-            },
+            }
             Offset::Invalid => {
                 warn!("Current offset invalid...");
                 -1

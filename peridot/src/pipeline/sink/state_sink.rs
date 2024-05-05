@@ -3,7 +3,11 @@ use std::sync::Arc;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    engine::{queue_manager::queue_metadata::QueueMetadata, state_store_manager::{self, StateStoreManager}, AppEngine},
+    engine::{
+        queue_manager::queue_metadata::QueueMetadata,
+        state_store_manager::{self, StateStoreManager},
+        AppEngine,
+    },
     message::sink::state_sink::StateSink,
     state::backend::{facade::StateFacade, StateBackend},
 };
@@ -20,8 +24,8 @@ pub struct StateSinkFactory<B, K, V> {
 
 impl<B, K, V> StateSinkFactory<B, K, V> {
     pub(crate) fn from_state_store_manager(
-        state_store_manager: Arc<StateStoreManager<B>>, 
-        store_name: &str, 
+        state_store_manager: Arc<StateStoreManager<B>>,
+        store_name: &str,
         source_topic: &str,
     ) -> Self {
         Self {
@@ -45,12 +49,16 @@ where
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
         let partition = queue_metadata.partition();
 
-        let state_store = self.state_store_manager
+        let state_store = self
+            .state_store_manager
             .get_state_store(&self.source_topic, partition)
             .expect("No state store for partition.");
 
-        let facade = StateFacade
-            ::new(state_store, self.store_name.clone(), queue_metadata.partition());
+        let facade = StateFacade::new(
+            state_store,
+            self.store_name.clone(),
+            queue_metadata.partition(),
+        );
 
         StateSink::<B, K, V>::new(queue_metadata, facade)
     }

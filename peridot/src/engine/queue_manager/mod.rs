@@ -4,7 +4,11 @@ pub type QueueSender = UnboundedSender<Queue>;
 pub type QueueReceiver = UnboundedReceiver<Queue>;
 
 use std::{
-    collections::HashMap, pin::Pin, sync::{Arc, Mutex}, task::{Context, Poll}, time::Duration
+    collections::HashMap,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{Context, Poll},
+    time::Duration,
 };
 
 use crossbeam::atomic::AtomicCell;
@@ -13,17 +17,42 @@ use futures::{ready, Future, FutureExt, SinkExt};
 use pin_project_lite::pin_project;
 use rdkafka::{producer::PARTITION_UA, Message, TopicPartitionList};
 use serde::Deserialize;
-use tokio::{sync::{broadcast::{error::TryRecvError, Receiver}, mpsc::{UnboundedReceiver, UnboundedSender}}, time::Sleep};
+use tokio::{
+    sync::{
+        broadcast::{error::TryRecvError, Receiver},
+        mpsc::{UnboundedReceiver, UnboundedSender},
+    },
+    time::Sleep,
+};
 use tracing::{debug, error, info};
 
-use crate::{app::{extensions::{OwnedRebalance, RebalanceReceiver}, PeridotConsumer}, engine::{context::EngineContext, queue_manager::changelog_queues::ChangelogQueues, wrapper::serde::{PeridotDeserializer, PeridotSerializer}}, state::backend::StateBackend};
+use crate::{
+    app::{
+        extensions::{OwnedRebalance, RebalanceReceiver},
+        PeridotConsumer,
+    },
+    engine::{
+        context::EngineContext,
+        queue_manager::changelog_queues::ChangelogQueues,
+        wrapper::serde::{PeridotDeserializer, PeridotSerializer},
+    },
+    state::backend::StateBackend,
+};
 
 use self::{
-    partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue}, queue_metadata::QueueMetadata
+    partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue},
+    queue_metadata::QueueMetadata,
 };
 
 use super::{
-    changelog_manager::{self, ChangelogManager}, client_manager::ClientManager, engine_state::EngineState, error::PeridotEngineRuntimeError, metadata_manager::{self, MetadataManager}, producer_factory::ProducerFactory, state_store_manager::StateStoreManager, TableMetadata
+    changelog_manager::{self, ChangelogManager},
+    client_manager::ClientManager,
+    engine_state::EngineState,
+    error::PeridotEngineRuntimeError,
+    metadata_manager::{self, MetadataManager},
+    producer_factory::ProducerFactory,
+    state_store_manager::StateStoreManager,
+    TableMetadata,
 };
 
 pub mod changelog_queues;
@@ -55,21 +84,20 @@ impl<B> QueueManager<B> {
         engine_state: Arc<AtomicCell<EngineState>>,
         rebalance_waker: RebalanceReceiver,
     ) -> Self {
-        let partition_queues = engine_context.metadata_manager
+        let partition_queues = engine_context
+            .metadata_manager
             .list_source_topics()
             .into_iter()
-            .flat_map(|(topic, md)|{
-                (0..md.partition_count())
-                    .map(move |p: i32|(topic.clone(), p))
-            })
+            .flat_map(|(topic, md)| (0..md.partition_count()).map(move |p: i32| (topic.clone(), p)))
             .map(|(topic, partition)| {
                 let partition_queue = engine_context
-                .client_manager
-                .get_partition_queue(&topic, partition)
-                .expect("Failed to get partition queue.");
+                    .client_manager
+                    .get_partition_queue(&topic, partition)
+                    .expect("Failed to get partition queue.");
 
                 ((topic, partition), partition_queue)
-            }).collect();
+            })
+            .collect();
 
         Self {
             engine_context,
@@ -83,13 +111,11 @@ impl<B> QueueManager<B> {
         }
     }
 
-    pub fn register_downstream(&self, queue_sender: QueueSender) {
-
-    }
+    pub fn register_downstream(&self, queue_sender: QueueSender) {}
 }
 
-impl<B> Future for QueueManager<B> 
-where 
+impl<B> Future for QueueManager<B>
+where
     B: StateBackend,
     B::Error: 'static,
 {
@@ -112,7 +138,8 @@ where
 
         if let Some(message) = this.engine_context.client_manager.poll_consumer()? {
             let key = <String as PeridotDeserializer>::deserialize(message.key().unwrap()).unwrap();
-            let value = <String as PeridotDeserializer>::deserialize(message.payload().unwrap()).unwrap();
+            let value =
+                <String as PeridotDeserializer>::deserialize(message.payload().unwrap()).unwrap();
 
             error!(
                 "Unexpected consumer message: topic: {}, partition: {}, offset: {}, key: {}, value: {}",
@@ -139,8 +166,8 @@ where
             Ok(rebalance) => rebalance,
             Err(TryRecvError::Closed) => {
                 tracing::debug!("Wakers closed...");
-                return Poll::Ready(Ok(()))
-            },
+                return Poll::Ready(Ok(()));
+            }
             Err(TryRecvError::Empty) => {
                 let sleep = tokio::time::sleep(Duration::from_millis(1));
 
@@ -151,7 +178,7 @@ where
                 }
 
                 return Poll::Pending;
-            },
+            }
             Err(TryRecvError::Lagged(_)) => panic!("Rebalance receiver lagged."),
         };
 
@@ -163,7 +190,7 @@ where
             OwnedRebalance::Revoke(_) => {
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
-            },
+            }
         };
 
         tracing::debug!("Handling rebalance");
@@ -178,12 +205,15 @@ where
             .collect();
 
         for (topic, partition) in for_downstream.into_iter() {
-            let queue_sender = this.downstreams.get(&topic)
+            let queue_sender = this
+                .downstreams
+                .get(&topic)
                 .expect("Failed to get queue sender for topic.");
 
             tracing::debug!(
                 "Attempting to send partition queue to downstream: {}, for partition: {}",
-                topic, partition
+                topic,
+                partition
             );
 
             this.state_store_manager
@@ -195,31 +225,34 @@ where
                 .metadata_manager
                 .get_tables_for_topic(&topic)
                 .into_iter()
-                .map(
-                    |table| {
-                        let changelog_topic = this
-                            .engine_context
-                            .metadata_manager
-                            .get_changelog_topic_for_store(&table);
+                .map(|table| {
+                    let changelog_topic = this
+                        .engine_context
+                        .metadata_manager
+                        .get_changelog_topic_for_store(&table);
 
-                        let partition = this
-                            .engine_context
-                            .changelog_manager
-                            .request_changelog_partition(&changelog_topic, partition)
-                            .expect("Failed to get changelog partition");
+                    let partition = this
+                        .engine_context
+                        .changelog_manager
+                        .request_changelog_partition(&changelog_topic, partition)
+                        .expect("Failed to get changelog partition");
 
-                        (table, partition)
-                    }
-                ).collect();
+                    (table, partition)
+                })
+                .collect();
 
             let partition_queue = this
                 .partition_queues
                 .remove(&(topic.clone(), partition))
                 .expect("Failed to get partition queue.");
 
-            let queue_metadata =  QueueMetadata {
+            let queue_metadata = QueueMetadata {
                 engine_context: this.engine_context.clone(),
-                producer_ref: Arc::new(this.producer_factory.create_producer(&topic, partition).expect("Fail")),
+                producer_ref: Arc::new(
+                    this.producer_factory
+                        .create_producer(&topic, partition)
+                        .expect("Fail"),
+                ),
                 changelog_queues: ChangelogQueues::new(changelog_queues),
                 partition,
                 source_topic: topic.clone(),
@@ -227,7 +260,8 @@ where
 
             tracing::debug!(
                 "Sending partition queue to downstream: {}, for partition: {}",
-                topic, partition
+                topic,
+                partition
             );
 
             queue_sender

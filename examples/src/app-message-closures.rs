@@ -73,7 +73,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .set_log_level(RDKafkaLogLevel::Error);
 
     let app = AppBuilder::new()
-        .with_config(PeridotConfigBuilder::from(&client_config).build().expect("Failed to build config."))
+        .with_config(
+            PeridotConfigBuilder::from(&client_config)
+                .build()
+                .expect("Failed to build config."),
+        )
         .build()
         .expect("Failed to build app.");
 
@@ -92,7 +96,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
     tokio::spawn(app.run());
 
-
     // Very dodgy test of the state store
     // Using the internal facade distributor rather than a user facing version.
     tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -106,7 +109,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     print!("Enter key: ");
     std::io::stdout().flush();
-    
+
     for line in stdin.lock().lines() {
         let name = line.unwrap();
 
@@ -116,7 +119,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 print!("Enter key: ");
                 std::io::stdout().flush();
                 continue;
-            },
+            }
             Ok(None) => (),
             Err(e) => panic!("Facade failure: {}", e),
         }
@@ -127,7 +130,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 print!("Enter key: ");
                 std::io::stdout().flush();
                 continue;
-            },
+            }
             Ok(None) => (),
             Err(e) => panic!("Facade failure: {}", e),
         }

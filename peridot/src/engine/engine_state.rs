@@ -24,11 +24,12 @@ impl Display for EngineState {
 
 #[derive(Debug, thiserror::Error, derive_more::Display)]
 pub enum StateTransitionError {
-    #[display(fmt = "StateTransitionError::InvalidStateTransition: from {} to {}", from, to)]
-    InvalidStateTransition {
-        to: String,
-        from: String,
-    }
+    #[display(
+        fmt = "StateTransitionError::InvalidStateTransition: from {} to {}",
+        from,
+        to
+    )]
+    InvalidStateTransition { to: String, from: String },
 }
 
 impl EngineState {

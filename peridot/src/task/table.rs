@@ -4,18 +4,39 @@ use crossbeam::atomic::AtomicCell;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    app::PeridotApp, engine::{context::EngineContext, engine_state::EngineState, metadata_manager::table_metadata, util::{DeliveryGuaranteeType, ExactlyOnce}, wrapper::serde::json::Json, AppEngine}, pipeline::{
-        fork::PipelineFork, sink::{changelog_sink::ChangelogSinkFactory, noop_sink::NoopSinkFactory, state_sink::StateSinkFactory}, state_fork::StateForkPipeline, stream::{PipelineStream, PipelineStreamExt}
-    }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend}
+    app::PeridotApp,
+    engine::{
+        context::EngineContext,
+        engine_state::EngineState,
+        metadata_manager::table_metadata,
+        util::{DeliveryGuaranteeType, ExactlyOnce},
+        wrapper::serde::json::Json,
+        AppEngine,
+    },
+    pipeline::{
+        fork::PipelineFork,
+        sink::{
+            changelog_sink::ChangelogSinkFactory, noop_sink::NoopSinkFactory,
+            state_sink::StateSinkFactory,
+        },
+        state_fork::StateForkPipeline,
+        stream::{PipelineStream, PipelineStreamExt},
+    },
+    state::backend::{
+        facade::{FacadeDistributor, StateFacade},
+        GetViewDistributor, StateBackend,
+    },
 };
 
 use super::{PipelineParts, Task};
 
-pub type TableOutput<K, V, P, B> = StateForkPipeline<PipelineFork<P, ChangelogSinkFactory<K, V>, ExactlyOnce>, B>;
+pub type TableOutput<K, V, P, B> =
+    StateForkPipeline<PipelineFork<P, ChangelogSinkFactory<K, V>, ExactlyOnce>, B>;
 
-type TableDownstream<P, B, K, V> = StateForkPipeline<PipelineFork<P, ChangelogSinkFactory<K, V>, ExactlyOnce>, B>;
+type TableDownstream<P, B, K, V> =
+    StateForkPipeline<PipelineFork<P, ChangelogSinkFactory<K, V>, ExactlyOnce>, B>;
 
-#[must_use="Tables do not run unless they are finished or they have downsream tasks."]
+#[must_use = "Tables do not run unless they are finished or they have downsream tasks."]
 pub struct TableTask<'a, P, B, G>
 where
     G: DeliveryGuaranteeType,
@@ -40,14 +61,22 @@ where
     P::KeyType: Clone + Serialize + Send + 'static,
     P::ValueType: Clone + Serialize + Send + 'static,
 {
-    // TODO: considering refactoring this so that is returns (Self, TableHandle)
-    pub fn new(app: &'a PeridotApp<B, G>, source_topic: String, store_name: String, stream_queue: P) -> Self {
-        let table_metadata = app.engine()
+    // TODO: considering refactoring this so that is returns (Self, TableHandle) where
+    // TableHandle is what is used for joins, views, etc
+    pub fn new(
+        app: &'a PeridotApp<B, G>,
+        source_topic: String,
+        store_name: String,
+        stream_queue: P,
+    ) -> Self {
+        let table_metadata = app
+            .engine()
             .engine_context()
             .register_state_store(&source_topic, &store_name)
             .expect("Failed to register table.");
-        
-        let changelog_sink_factory = ChangelogSinkFactory::new(&store_name, app.engine().engine_context());
+
+        let changelog_sink_factory =
+            ChangelogSinkFactory::new(&store_name, app.engine().engine_context());
 
         let changelog_output = stream_queue.fork::<_, ExactlyOnce>(changelog_sink_factory);
 
@@ -59,9 +88,9 @@ where
             );
 
         let backend_output = StateForkPipeline::new_with_changelog(
-            changelog_output, 
-            backend_sink_factory, 
-            store_name.clone(), 
+            changelog_output,
+            backend_sink_factory,
+            store_name.clone(),
             app.engine().engine_context(),
         );
 
@@ -97,8 +126,7 @@ where
     }
 }
 
-
-impl<'a, P, B, G> Task<'a> for TableTask<'a, P, B, G> 
+impl<'a, P, B, G> Task<'a> for TableTask<'a, P, B, G>
 where
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
@@ -108,14 +136,11 @@ where
     G: DeliveryGuaranteeType,
 {
     type G = G;
-    type B =  B;
+    type B = B;
     type R = TableOutput<P::KeyType, P::ValueType, P, B>;
 
     fn into_pipeline(self) -> Self::R {
-        let Self {
-            backend_output,
-            ..
-        } = self;
+        let Self { backend_output, .. } = self;
 
         backend_output
     }
@@ -132,7 +157,7 @@ where
     }
 }
 
-impl<'a, P, B, G> GetViewDistributor for &TableTask<'a, P, B, G> 
+impl<'a, P, B, G> GetViewDistributor for &TableTask<'a, P, B, G>
 where
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
@@ -147,8 +172,8 @@ where
     type Backend = B;
 
     fn get_view_distributor(
-            &self,
-        ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
+        &self,
+    ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
         let engine = self.app.engine_arc().clone();
 
         FacadeDistributor::new(engine, self.name.clone())
@@ -167,8 +192,8 @@ impl<B, G> GetViewDistributor for TableHandle<B, G> {
     type Error = std::io::Error;
 
     fn get_view_distributor(
-            &self,
-        ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
+        &self,
+    ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
         todo!("")
     }
 }

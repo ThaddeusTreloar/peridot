@@ -2,7 +2,13 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::{engine::{context::EngineContext, queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer}, message::sink::{changelog_sink::ChangelogSink, topic_sink::TopicSink}};
+use crate::{
+    engine::{
+        context::EngineContext, queue_manager::queue_metadata::QueueMetadata,
+        wrapper::serde::PeridotSerializer,
+    },
+    message::sink::{changelog_sink::ChangelogSink, topic_sink::TopicSink},
+};
 
 use super::MessageSinkFactory;
 

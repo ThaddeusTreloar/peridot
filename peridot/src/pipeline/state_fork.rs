@@ -1,5 +1,8 @@
 use std::{
-    marker::PhantomData, pin::Pin, sync::Arc, task::{Context, Poll}
+    marker::PhantomData,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
 };
 
 use pin_project_lite::pin_project;
@@ -8,11 +11,18 @@ use serde::{de::DeserializeOwned, Serialize};
 use crate::{
     engine::{context::EngineContext, util::ExactlyOnce},
     message::{
-        fork::Fork, sink::MessageSink, state_fork::StateSinkFork, stream::{MessageStream, PipelineStage}
-    }, state::backend::StateBackend,
+        fork::Fork,
+        sink::MessageSink,
+        state_fork::StateSinkFork,
+        stream::{MessageStream, PipelineStage},
+    },
+    state::backend::StateBackend,
 };
 
-use super::{sink::{state_sink::StateSinkFactory, MessageSinkFactory}, stream::PipelineStream};
+use super::{
+    sink::{state_sink::StateSinkFactory, MessageSinkFactory},
+    stream::PipelineStream,
+};
 
 pin_project! {
     #[project = StateForkProjection]
@@ -34,7 +44,16 @@ impl<S, B, G> StateForkPipeline<S, B, G>
 where
     S: PipelineStream,
 {
-    pub fn new(queue_stream: S, sink_factory: StateSinkFactory<B, <S::MStream as MessageStream>::KeyType,<S::MStream as MessageStream>::ValueType>, store_name: String, engine_context: Arc<EngineContext>) -> Self {
+    pub fn new(
+        queue_stream: S,
+        sink_factory: StateSinkFactory<
+            B,
+            <S::MStream as MessageStream>::KeyType,
+            <S::MStream as MessageStream>::ValueType,
+        >,
+        store_name: String,
+        engine_context: Arc<EngineContext>,
+    ) -> Self {
         Self {
             queue_stream,
             sink_factory,
@@ -45,7 +64,16 @@ where
         }
     }
 
-    pub fn new_with_changelog(queue_stream: S, sink_factory: StateSinkFactory<B, <S::MStream as MessageStream>::KeyType,<S::MStream as MessageStream>::ValueType>, store_name: String,engine_context: Arc<EngineContext>) -> Self {
+    pub fn new_with_changelog(
+        queue_stream: S,
+        sink_factory: StateSinkFactory<
+            B,
+            <S::MStream as MessageStream>::KeyType,
+            <S::MStream as MessageStream>::ValueType,
+        >,
+        store_name: String,
+        engine_context: Arc<EngineContext>,
+    ) -> Self {
         let mut state_fork = Self::new(queue_stream, sink_factory, store_name, engine_context);
 
         state_fork.has_changelog = true;
@@ -84,15 +112,16 @@ where
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(PipelineStage(metadata, message_stream))) => {
                 if *has_changelog {
-                    let changelog_stream = metadata.take_changelog_queue(store_name)
+                    let changelog_stream = metadata
+                        .take_changelog_queue(store_name)
                         .expect("Failed to get changelog queue for changelog backed state store!");
 
                     let message_sink = sink_factory.new_sink(metadata.clone());
 
                     let forwarder = StateSinkFork::new_with_changelog(
-                        changelog_stream, 
-                        message_stream, 
-                        message_sink, 
+                        changelog_stream,
+                        message_stream,
+                        message_sink,
                         engine_context.clone(),
                         store_name.clone(),
                         metadata.partition(),

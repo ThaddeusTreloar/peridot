@@ -2,7 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use rdkafka::producer::FutureProducer;
 
-use crate::{app::{config::PeridotConfig, PeridotConsumer}, engine::{context::EngineContext, AppEngine}};
+use crate::{
+    app::{config::PeridotConfig, PeridotConsumer},
+    engine::{context::EngineContext, AppEngine},
+};
 
 use super::{changelog_queues::ChangelogQueues, partition_queue::StreamPeridotPartitionQueue};
 

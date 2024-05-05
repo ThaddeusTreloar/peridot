@@ -1,7 +1,8 @@
 use std::{
     pin::Pin,
     sync::{atomic::AtomicI64, Arc},
-    task::{ready, Context, Poll}, time::Duration,
+    task::{ready, Context, Poll},
+    time::Duration,
 };
 
 use futures::Future;
@@ -11,14 +12,20 @@ use serde::{de::DeserializeOwned, Serialize};
 use tracing::{debug, info};
 
 use crate::{
-    app::PeridotConsumer, engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::{json::Json, native::NativeBytes, PeridotSerializer}}, message::{
+    app::PeridotConsumer,
+    engine::{
+        queue_manager::queue_metadata::QueueMetadata,
+        wrapper::serde::{json::Json, native::NativeBytes, PeridotSerializer},
+    },
+    message::{
         sink::{MessageSink, NonCommittingSink},
         types::{Message, TryFromOwnedMessage},
-    }, state::backend::{facade::StateFacade, ReadableStateView, StateBackend, WriteableStateView}
+    },
+    state::backend::{facade::StateFacade, ReadableStateView, StateBackend, WriteableStateView},
 };
 
-type PendingCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>> + Send>>>;
-type PendingOffsetCommit<E> = Option<Pin<Box<dyn Future<Output=Result<(), E>> + Send>>>;
+type PendingCommit<E> = Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>;
+type PendingOffsetCommit<E> = Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>;
 
 pin_project! {
     pub struct StateSink<B, K, V>
@@ -56,10 +63,9 @@ where
     }
 
     pub fn get_checkpoint(&self) -> Result<Option<i64>, B::Error> {
-        self.state_facade.get_checkpoint()
-            .map(
-                |r| r.map(|c|c.offset)
-            )
+        self.state_facade
+            .get_checkpoint()
+            .map(|r| r.map(|c| c.offset))
     }
 }
 impl<B, K, V> StateSink<B, K, V>
@@ -91,7 +97,7 @@ impl<B, K, V> MessageSink<K, V> for StateSink<B, K, V>
 where
     B: StateBackend + Send + Sync + 'static,
     K: Serialize + Send + Sync + 'static,
-    V: Serialize + DeserializeOwned + Send + Sync + 'static
+    V: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
     type Error = StateSinkError;
 
@@ -108,12 +114,23 @@ where
             if this.buffer.is_empty() {
                 debug!("Nothing to commit...");
 
-                if this.state_facade.get_checkpoint().expect("Error while checking checkpoint.").is_none() {
+                if this
+                    .state_facade
+                    .get_checkpoint()
+                    .expect("Error while checking checkpoint.")
+                    .is_none()
+                {
                     let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
-    
-                    debug!("Checkpointing state store: {}-{} with offset: {}", this.state_facade.store_name(), this.state_facade.partition(), offset);
 
-                    this.state_facade.create_checkpoint(*offset)
+                    debug!(
+                        "Checkpointing state store: {}-{} with offset: {}",
+                        this.state_facade.store_name(),
+                        this.state_facade.partition(),
+                        offset
+                    );
+
+                    this.state_facade
+                        .create_checkpoint(*offset)
                         .expect("Failed to store commit.");
                 }
 
@@ -141,7 +158,8 @@ where
 
         tracing::debug!("Checkpointing state store.");
 
-        this.state_facade.create_checkpoint(*offset)
+        this.state_facade
+            .create_checkpoint(*offset)
             .expect("Failed to store commit.");
 
         Poll::Ready(Ok(()))
@@ -151,10 +169,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(
-        self: Pin<&mut Self>,
-        message: Message<K, V>,
-    ) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, message: Message<K, V>) -> Result<(), Self::Error> {
         let this = self.project();
 
         let raw_key = Json::serialize(message.key()).unwrap();
@@ -164,7 +179,7 @@ where
 
         tracing::debug!("Buffering state sink message: topic: {}, partition: {}, offset: {}, key: {}, value: {}", message.topic(), message.partition(), message.offset(), ser_key, ser_value);
 
-        let offset = std::cmp::max(message.offset+1, *this.highest_offset);
+        let offset = std::cmp::max(message.offset + 1, *this.highest_offset);
 
         *this.highest_offset = offset;
 

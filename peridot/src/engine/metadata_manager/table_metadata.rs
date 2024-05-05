@@ -23,8 +23,9 @@ impl TableStateAggregate {
     }
 
     pub(crate) fn table_state(&self) -> TableState {
-        self.inner.iter()
-            .map(|s|s.value().clone())
+        self.inner
+            .iter()
+            .map(|s| s.value().clone())
             .min()
             .unwrap_or(Default::default())
     }
@@ -40,8 +41,14 @@ pub struct TableMetadata {
 impl Display for TableMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.changelog_topic {
-            None => f.write_str(&format!("{{ source_topic: {}, changelog_topic: None }}", self.source_topic)),
-            Some(c_topic) => f.write_str(&format!("{{ source_topic: {}, changelog_topic: {} }}", self.source_topic, c_topic)),
+            None => f.write_str(&format!(
+                "{{ source_topic: {}, changelog_topic: None }}",
+                self.source_topic
+            )),
+            Some(c_topic) => f.write_str(&format!(
+                "{{ source_topic: {}, changelog_topic: {} }}",
+                self.source_topic, c_topic
+            )),
         }
     }
 }
@@ -78,7 +85,7 @@ impl TableMetadata {
         self.changelog_topic.as_ref()
     }
 
-    pub(crate) fn source_topic(&self) -> &str{
+    pub(crate) fn source_topic(&self) -> &str {
         &self.source_topic
     }
 }

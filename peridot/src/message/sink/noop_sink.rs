@@ -1,13 +1,16 @@
 use std::{
     pin::Pin,
-    task::{Context, Poll}, time::Duration,
+    task::{Context, Poll},
+    time::Duration,
 };
 
 use pin_project_lite::pin_project;
 use rdkafka::{consumer::Consumer, producer::Producer, Offset, TopicPartitionList};
 use tracing::info;
 
-use crate::engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer};
+use crate::engine::{
+    queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer,
+};
 
 use super::{CommitingSink, MessageSink};
 
@@ -32,7 +35,7 @@ impl<K, V> NoopSink<K, V> {
     }
 }
 
-impl <K, V> CommitingSink for NoopSink<K, V> {}
+impl<K, V> CommitingSink for NoopSink<K, V> {}
 
 #[derive(Debug, thiserror::Error)]
 pub enum NoopSinkError {}

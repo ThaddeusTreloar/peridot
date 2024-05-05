@@ -1,10 +1,13 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{message::join::{Combiner, JoinMessage}, state::backend::{GetView, GetViewDistributor, StateBackend}};
+use crate::{
+    message::join::{Combiner, JoinMessage},
+    state::backend::{GetView, GetViewDistributor, StateBackend},
+};
 
 use super::stream::PipelineStream;
 
-pub struct JoinPipeline<S, T, C> 
+pub struct JoinPipeline<S, T, C>
 where
     S: PipelineStream,
 {
@@ -28,7 +31,7 @@ where
     }
 }
 
-impl<S, T, C> PipelineStream for JoinPipeline<S, T, C> 
+impl<S, T, C> PipelineStream for JoinPipeline<S, T, C>
 where
     S: PipelineStream,
     S::KeyType: Send,
@@ -45,9 +48,9 @@ where
     type ValueType = C::Output;
 
     fn poll_next(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Option<crate::message::stream::PipelineStage<Self::MStream>>> {
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<crate::message::stream::PipelineStage<Self::MStream>>> {
         unimplemented!("")
     }
 }

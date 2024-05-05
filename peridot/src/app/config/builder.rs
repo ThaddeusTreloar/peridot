@@ -1,4 +1,9 @@
-use std::{collections::{HashMap, HashSet}, fs::File, io, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io,
+    path::Path,
+};
 
 use rdkafka::ClientConfig;
 use tracing::warn;
@@ -6,25 +11,31 @@ use uuid::Uuid;
 
 use crate::help;
 
-use super::{persistent_config::{self, PersistentConfig, PersistentConfigConversionError, PersistentConfigParseError, PersistentConfigWriteError}, PeridotConfig};
+use super::{
+    persistent_config::{
+        self, PersistentConfig, PersistentConfigConversionError, PersistentConfigParseError,
+        PersistentConfigWriteError,
+    },
+    PeridotConfig,
+};
 
 // Config keys
-pub (super) const APPLICATION_ID: &str = "application.id";
-pub (super) const BOOTSTRAP_SERVERS: &str = "bootstrap.servers";
-pub (super) const CLIENT_ID: &str = "client.id";
-pub (super) const ENABLE_IDEMPOTENCE: &str = "enable.idempotence";
-pub (super) const GROUP_ID: &str = "group.id";
-pub (super) const GROUP_INSTANCE_ID: &str = "group.instance.id";
-pub (super) const ISOLATION_LEVEL: &str = "isolation.level";
-pub (super) const PARTITIONER: &str = "partitioner";
-pub (super) const PERSISTENT_CONFIG_DIR: &str = "persistent.config.dir";
-pub (super) const PERSISTENT_CONFIG_FILENAME: &str = "peridot.persistent.config";
-pub (super) const STATE_DIR: &str = "state.dir";
+pub(super) const APPLICATION_ID: &str = "application.id";
+pub(super) const BOOTSTRAP_SERVERS: &str = "bootstrap.servers";
+pub(super) const CLIENT_ID: &str = "client.id";
+pub(super) const ENABLE_IDEMPOTENCE: &str = "enable.idempotence";
+pub(super) const GROUP_ID: &str = "group.id";
+pub(super) const GROUP_INSTANCE_ID: &str = "group.instance.id";
+pub(super) const ISOLATION_LEVEL: &str = "isolation.level";
+pub(super) const PARTITIONER: &str = "partitioner";
+pub(super) const PERSISTENT_CONFIG_DIR: &str = "persistent.config.dir";
+pub(super) const PERSISTENT_CONFIG_FILENAME: &str = "peridot.persistent.config";
+pub(super) const STATE_DIR: &str = "state.dir";
 
 // Config values
-pub (super) const ENABLE_IDEMPOTENCE_TRUE: &str = "TRUE";
-pub (super) const ISOLATION_LEVEL_READ_COMMITTED: &str = "read_committed";
-pub (super) const PARTITIONER_MURMUR_2_RANDOM: &str = "murmur2_random";
+pub(super) const ENABLE_IDEMPOTENCE_TRUE: &str = "TRUE";
+pub(super) const ISOLATION_LEVEL_READ_COMMITTED: &str = "read_committed";
+pub(super) const PARTITIONER_MURMUR_2_RANDOM: &str = "murmur2_random";
 
 pub(super) const REQUIRED_FIELDS: [&str; 6] = [
     APPLICATION_ID,
@@ -35,24 +46,29 @@ pub(super) const REQUIRED_FIELDS: [&str; 6] = [
     STATE_DIR,
 ];
 
-pub(super) const APP_FIELDS: [&str; 3] = [
-    APPLICATION_ID,
-    STATE_DIR,
-    PERSISTENT_CONFIG_DIR,
-];
+pub(super) const APP_FIELDS: [&str; 3] = [APPLICATION_ID, STATE_DIR, PERSISTENT_CONFIG_DIR];
 
 pub(super) const DEFAULT_FIELDS: [(&str, &str); 5] = [
     (ENABLE_IDEMPOTENCE, ENABLE_IDEMPOTENCE_TRUE),
-    (ISOLATION_LEVEL, ISOLATION_LEVEL_READ_COMMITTED),// TODO: Make setting this dependent on delivery semantics arg
-    (PARTITIONER, PARTITIONER_MURMUR_2_RANDOM),// TODO: Make setting this dependent on delivery semantics arg
+    (ISOLATION_LEVEL, ISOLATION_LEVEL_READ_COMMITTED), // TODO: Make setting this dependent on delivery semantics arg
+    (PARTITIONER, PARTITIONER_MURMUR_2_RANDOM), // TODO: Make setting this dependent on delivery semantics arg
     (PERSISTENT_CONFIG_DIR, "./"),
     (STATE_DIR, "/var/lib/peridot"),
 ];
 
 pub(super) const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [
-    (GROUP_ID, "'application.id' is used to derive 'group.id' in streams applications"),
-    (GROUP_INSTANCE_ID, "'application.id' is used to derive 'group.instance.id' in streams applications"),
-    (CLIENT_ID, "'application.id' is used to derive 'client.id' in streams applications"),
+    (
+        GROUP_ID,
+        "'application.id' is used to derive 'group.id' in streams applications",
+    ),
+    (
+        GROUP_INSTANCE_ID,
+        "'application.id' is used to derive 'group.instance.id' in streams applications",
+    ),
+    (
+        CLIENT_ID,
+        "'application.id' is used to derive 'client.id' in streams applications",
+    ),
 ];
 
 #[derive(Debug, Clone, Default, derive_more::From)]
@@ -64,9 +80,7 @@ pub struct PeridotConfigBuilder {
 #[derive(Debug, thiserror::Error)]
 pub enum PeridotConfigError {
     #[error("PeridotConfigError::MissingConfig")]
-    MissingConfig {
-        configs: Vec<&'static str>
-    },
+    MissingConfig { configs: Vec<&'static str> },
     #[error("PeridotConfigError::WriteConfigError: failed to create file '{}'", 0)]
     WriteConfigError(#[from] io::Error),
     #[error(transparent)]
@@ -79,7 +93,7 @@ pub enum PeridotConfigError {
 
 impl PeridotConfigBuilder {
     pub fn new() -> Self {
-        Self { 
+        Self {
             ..Default::default()
         }
     }
@@ -89,16 +103,16 @@ impl PeridotConfigBuilder {
     }
 
     fn get_app_var(&self, key: &str) -> Option<&str> {
-        self.app_config.get(key).map(|s|s.as_str())
+        self.app_config.get(key).map(|s| s.as_str())
     }
 
     fn get_client_var(&self, key: &str) -> Option<&str> {
         self.client_config.get(key)
     }
-    
+
     pub fn get<'a, K: Into<&'a str>>(&self, key: K) -> Option<&str> {
         let key: &str = key.into();
-        
+
         if APP_FIELDS.contains(&key) {
             self.get_app_var(key)
         } else {
@@ -113,7 +127,7 @@ impl PeridotConfigBuilder {
     fn set_client_var(&mut self, key: String, value: String) {
         self.client_config.set(key, value);
     }
-    
+
     pub fn set<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) -> &mut Self {
         let key: String = key.into();
         let value: String = value.into();
@@ -129,7 +143,7 @@ impl PeridotConfigBuilder {
 
     pub fn remove<'a, K: Into<&'a str>>(&mut self, key: K) -> &mut Self {
         let key: &str = key.into();
-        
+
         if APP_FIELDS.contains(&key) {
             self.app_config.remove(key);
         } else {
@@ -148,13 +162,17 @@ impl PeridotConfigBuilder {
     fn overwrite_with_persisted_config(mut self) -> Result<Self, PeridotConfigError> {
         let mut persistent_config_stub = Path::new(PERSISTENT_CONFIG_FILENAME);
 
-        let mut persistent_config_path = Path::new(
-            self.get(PERSISTENT_CONFIG_DIR)
-                .unwrap_or_else(|| {
-                    tracing::error!("{} not set in config. This should not be possible.", PERSISTENT_CONFIG_DIR);
-                    panic!("{} not set in config. This should not be possible.", PERSISTENT_CONFIG_DIR)
-                })
-        );
+        let mut persistent_config_path =
+            Path::new(self.get(PERSISTENT_CONFIG_DIR).unwrap_or_else(|| {
+                tracing::error!(
+                    "{} not set in config. This should not be possible.",
+                    PERSISTENT_CONFIG_DIR
+                );
+                panic!(
+                    "{} not set in config. This should not be possible.",
+                    PERSISTENT_CONFIG_DIR
+                )
+            }));
 
         let filepath = persistent_config_path.join(persistent_config_stub);
 
@@ -175,12 +193,15 @@ impl PeridotConfigBuilder {
     }
 
     fn check_missing_required(mut self) -> Result<Self, PeridotConfigError> {
-        let missing_fields: Vec<_> = REQUIRED_FIELDS.into_iter()
-            .filter(|field|self.get(*field).is_none())
+        let missing_fields: Vec<_> = REQUIRED_FIELDS
+            .into_iter()
+            .filter(|field| self.get(*field).is_none())
             .collect();
 
         if !missing_fields.is_empty() {
-            Err(PeridotConfigError::MissingConfig { configs: missing_fields })?
+            Err(PeridotConfigError::MissingConfig {
+                configs: missing_fields,
+            })?
         }
 
         Ok(self)
@@ -194,26 +215,29 @@ impl PeridotConfigBuilder {
         let instance_suffix = Uuid::new_v4();
         let instance_id = format!("{}-{}", app_id, instance_suffix);
 
-        self
-            .set("group.id", app_id)
+        self.set("group.id", app_id)
             .set("group.instance.id", instance_id.clone())
             .set("client.id", instance_id);
-        
+
         Ok(self)
     }
 
     fn resolve_config_conflict(&mut self, key: &str, reason: &str) {
         if let Some(value) = self.get(key) {
-            warn!("'{}' set as '{}' in client config. Disabling becaus: {}", key, value, reason);
-    
+            warn!(
+                "'{}' set as '{}' in client config. Disabling becaus: {}",
+                key, value, reason
+            );
+
             self.remove(key);
         }
     }
 
     fn set_missing_defaults(mut self) -> Self {
-        let missing_defaults = DEFAULT_FIELDS.into_iter()
+        let missing_defaults = DEFAULT_FIELDS
+            .into_iter()
             .filter(|(name, _)| self.get(*name).is_none())
-            .map(|(k , v)|(k.to_owned(), v.to_owned()))
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
             .collect::<Vec<_>>();
 
         self.extend(&missing_defaults);
@@ -222,24 +246,23 @@ impl PeridotConfigBuilder {
     }
 
     fn clean_config(mut self) -> Self {
-        FORBID_USER_SET_FIELDS.into_iter()
-            .for_each(|(f, r)|self.resolve_config_conflict(f, r));
+        FORBID_USER_SET_FIELDS
+            .into_iter()
+            .for_each(|(f, r)| self.resolve_config_conflict(f, r));
 
         self
     }
 
-    pub fn build(self) -> Result<PeridotConfig, PeridotConfigError>  {
-        Ok(
-            self.clean_config()
-                .set_missing_defaults()
-                .check_missing_required()?
-                .derive_internal_fields()?
-                .overwrite_with_persisted_config()?
-                .into()
-        )
+    pub fn build(self) -> Result<PeridotConfig, PeridotConfigError> {
+        Ok(self
+            .clean_config()
+            .set_missing_defaults()
+            .check_missing_required()?
+            .derive_internal_fields()?
+            .overwrite_with_persisted_config()?
+            .into())
     }
 }
-
 
 impl From<&ClientConfig> for PeridotConfigBuilder {
     fn from(client_config: &ClientConfig) -> Self {
@@ -254,12 +277,9 @@ impl From<&HashMap<String, String>> for PeridotConfigBuilder {
             app_config: Default::default(),
         };
 
-        config_map.iter()
-            .for_each(
-                |(key, value)| {
-                    pconfig.set(key, value);
-                }
-            );
+        config_map.iter().for_each(|(key, value)| {
+            pconfig.set(key, value);
+        });
 
         pconfig
     }

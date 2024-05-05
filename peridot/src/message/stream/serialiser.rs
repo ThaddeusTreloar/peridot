@@ -9,7 +9,10 @@ use pin_project_lite::pin_project;
 use tracing::error;
 
 use crate::{
-    engine::{queue_manager::partition_queue::StreamPeridotPartitionQueue, wrapper::serde::PeridotDeserializer},
+    engine::{
+        queue_manager::partition_queue::StreamPeridotPartitionQueue,
+        wrapper::serde::PeridotDeserializer,
+    },
     message::types::{Message, TryFromOwnedMessage},
 };
 

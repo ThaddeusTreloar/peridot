@@ -1,10 +1,18 @@
 use std::{
-    pin::Pin, sync::Arc, task::{Context, Poll}, time::Duration
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
 };
 
 use futures::{ready, Future};
 use pin_project_lite::pin_project;
-use rdkafka::{consumer::Consumer, error::KafkaError, producer::{FutureProducer, Producer}, Offset, TopicPartitionList};
+use rdkafka::{
+    consumer::Consumer,
+    error::KafkaError,
+    producer::{FutureProducer, Producer},
+    Offset, TopicPartitionList,
+};
 use tracing::info;
 
 use crate::engine::queue_manager::queue_metadata::QueueMetadata;
@@ -64,17 +72,32 @@ where
             // If the sink has not completed it's committing, we need to wait.
             ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit transaction.");
 
-            match queue_metadata.producer().commit_transaction(Duration::from_millis(2500)){
+            match queue_metadata
+                .producer()
+                .commit_transaction(Duration::from_millis(2500))
+            {
                 Ok(r) => {
                     tracing::debug!("Successfully committed producer transaction for source_topic: {}, partition: {}", queue_metadata.source_topic(), queue_metadata.partition())
-                },
+                }
                 Err(KafkaError::Transaction(e)) => {
-                    tracing::error!("Transaction error while committing transaction, caused by {}", e);
-                    panic!("Transaction error while committing transaction, caused by {}", e);
-                },
+                    tracing::error!(
+                        "Transaction error while committing transaction, caused by {}",
+                        e
+                    );
+                    panic!(
+                        "Transaction error while committing transaction, caused by {}",
+                        e
+                    );
+                }
                 Err(e) => {
-                    tracing::error!("Unknown error while committing transaction, caused by {}", e);
-                    panic!("Unknown error while committing transaction, caused by {}", e);
+                    tracing::error!(
+                        "Unknown error while committing transaction, caused by {}",
+                        e
+                    );
+                    panic!(
+                        "Unknown error while committing transaction, caused by {}",
+                        e
+                    );
                 }
             }
 
@@ -84,14 +107,26 @@ where
             match queue_metadata.producer().begin_transaction() {
                 Ok(r) => {
                     tracing::debug!("Successfully begun producer transaction for source_topic: {}, partition: {}", queue_metadata.source_topic(), queue_metadata.partition())
-                },
+                }
                 Err(KafkaError::Transaction(e)) => {
-                    tracing::error!("Transaction error while committing transaction, caused by {}", e);
-                    panic!("Transaction error while committing transaction, caused by {}", e);
-                },
+                    tracing::error!(
+                        "Transaction error while committing transaction, caused by {}",
+                        e
+                    );
+                    panic!(
+                        "Transaction error while committing transaction, caused by {}",
+                        e
+                    );
+                }
                 Err(e) => {
-                    tracing::error!("Unknown error while committing transaction, caused by {}", e);
-                    panic!("Unknown error while committing transaction, caused by {}", e);
+                    tracing::error!(
+                        "Unknown error while committing transaction, caused by {}",
+                        e
+                    );
+                    panic!(
+                        "Unknown error while committing transaction, caused by {}",
+                        e
+                    );
                 }
             };
         }
@@ -101,14 +136,22 @@ where
 
             match message_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => {
-                    tracing::debug!("No Messages left for stream topic: {}, partition: {}, finishing...", queue_metadata.source_topic(), queue_metadata.partition());
+                    tracing::debug!(
+                        "No Messages left for stream topic: {}, partition: {}, finishing...",
+                        queue_metadata.source_topic(),
+                        queue_metadata.partition()
+                    );
 
                     ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close.");
 
                     return Poll::Ready(());
                 }
                 Poll::Pending => {
-                    tracing::debug!("No messages available for topic: {} partition: {}, waiting...", queue_metadata.source_topic(), queue_metadata.partition());
+                    tracing::debug!(
+                        "No messages available for topic: {} partition: {}, waiting...",
+                        queue_metadata.source_topic(),
+                        queue_metadata.partition()
+                    );
 
                     // We have recieved no messages from upstream, they will have
                     // transitioned to a commit state.
@@ -138,31 +181,43 @@ where
                         .start_send(message)
                         .expect("Failed to send message to sink.");
 
-                    let cgm = queue_metadata
-                        .engine_context()
-                        .group_metadata();
+                    let cgm = queue_metadata.engine_context().group_metadata();
 
                     let mut offsets = TopicPartitionList::new();
 
-                    let next_offset = offset+1;
+                    let next_offset = offset + 1;
 
                     offsets
                         .add_partition_offset(&topic, partition, Offset::Offset(next_offset))
                         .expect("Failed to add partition offset.");
 
-                    match queue_metadata
-                        .producer_arc()
-                        .send_offsets_to_transaction(&offsets, &cgm, Duration::from_millis(1000)){
+                    match queue_metadata.producer_arc().send_offsets_to_transaction(
+                        &offsets,
+                        &cgm,
+                        Duration::from_millis(1000),
+                    ) {
                         Ok(r) => {
                             tracing::debug!("Successfully sent offsets, {} to producer transaction for source_topic: {}, partition: {}", next_offset, queue_metadata.source_topic(), queue_metadata.partition())
-                        },
+                        }
                         Err(KafkaError::Transaction(e)) => {
-                            tracing::error!("Transaction error while committing transaction, caused by {}", e);
-                            panic!("Transaction error while committing transaction, caused by {}", e);
-                        },
+                            tracing::error!(
+                                "Transaction error while committing transaction, caused by {}",
+                                e
+                            );
+                            panic!(
+                                "Transaction error while committing transaction, caused by {}",
+                                e
+                            );
+                        }
                         Err(e) => {
-                            tracing::error!("Unknown error while committing transaction, caused by {}", e);
-                            panic!("Unknown error while committing transaction, caused by {}", e);
+                            tracing::error!(
+                                "Unknown error while committing transaction, caused by {}",
+                                e
+                            );
+                            panic!(
+                                "Unknown error while committing transaction, caused by {}",
+                                e
+                            );
                         }
                     };
                 }

@@ -11,8 +11,8 @@ pub struct ChangelogQueues {
 impl Clone for ChangelogQueues {
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone()
-        }   
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -20,12 +20,10 @@ impl ChangelogQueues {
     pub fn new(queues: Vec<(String, StreamPeridotPartitionQueue)>) -> Self {
         let inner = Arc::new(queues.into_iter().collect());
 
-        Self {
-            inner
-        }
+        Self { inner }
     }
 
     pub(crate) fn take(&self, store: &str) -> Option<StreamPeridotPartitionQueue> {
-        self.inner.remove(store).map(|(k, v)|v)
+        self.inner.remove(store).map(|(k, v)| v)
     }
 }

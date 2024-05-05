@@ -1,5 +1,8 @@
 use std::{
-    pin::Pin, sync::Arc, task::{Poll, Waker}, time::Duration
+    pin::Pin,
+    sync::Arc,
+    task::{Poll, Waker},
+    time::Duration,
 };
 
 use futures::{Future, Stream};
@@ -18,7 +21,7 @@ pin_project! {
     pub struct StreamPeridotPartitionQueue {
         waker: Arc<Mutex<Option<Waker>>>,
         partition_queue: PeridotPartitionQueue,
-        source_topic: String, 
+        source_topic: String,
         partition: i32,
         // TODO: maybe remove rebalance waker as due to consumer behaviour when splitting
         // partition queues, we have to split partition queues before our first call to Consumer::poll.
@@ -28,17 +31,17 @@ pin_project! {
         // that would make a circular reference, it might be more hassle than it is worth.
         // Another approach would be to have the queue manager create and store a new PeridotPartitionQueue on partition
         // revoke, then this stream would destroy it's own, before closing the pipeline. However, we still have the possibility
-        // of some time span where the queue manager has not yet created a new split partition, and this struct 
+        // of some time span where the queue manager has not yet created a new split partition, and this struct
         // has been dropped, in which the BaseConsumer may buffer a message from this partition.
-        //pre_rebalance_waker: RebalanceReceiver, 
+        //pre_rebalance_waker: RebalanceReceiver,
     }
 }
 
 impl StreamPeridotPartitionQueue {
     pub fn new(
-        mut partition_queue: PeridotPartitionQueue, 
+        mut partition_queue: PeridotPartitionQueue,
         //pre_rebalance_waker: RebalanceReceiver,
-        source_topic: String, 
+        source_topic: String,
         partition: i32,
     ) -> Self {
         let waker: Arc<Mutex<Option<Waker>>> = Arc::new(Mutex::new(Default::default()));
@@ -73,13 +76,13 @@ impl Stream for StreamPeridotPartitionQueue {
         // TODO: handle stream consumption time option.
         // let stream_time: i64 = 0;
         // let _timestamp = PeridotTimestamp::ConsumptionTime(stream_time);
-        
-        let QueueProjection { 
-            waker, 
-            partition_queue, 
-            //mut pre_rebalance_waker, 
+
+        let QueueProjection {
+            waker,
+            partition_queue,
+            //mut pre_rebalance_waker,
             source_topic,
-            partition, 
+            partition,
         } = self.project();
 
         //tracing::debug!("Checking rebalances for topic: {} partition: {}", source_topic, partition);
@@ -95,8 +98,12 @@ impl Stream for StreamPeridotPartitionQueue {
         //    Ok(_) => tracing::debug!("No rebalance for topic: {} partition: {}", source_topic, partition),
         //}
 
-        tracing::debug!("Checking consumer messages for topic: {} partition: {}", source_topic, partition);
-        
+        tracing::debug!(
+            "Checking consumer messages for topic: {} partition: {}",
+            source_topic,
+            partition
+        );
+
         match partition_queue.poll(Duration::from_millis(0)) {
             Some(Ok(message)) => Poll::Ready(Option::Some(message.detach())),
             Some(Err(e)) => panic!("Failed to get message from upstream: {}", e),

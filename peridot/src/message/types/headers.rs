@@ -1,4 +1,4 @@
-use rdkafka::message::{BorrowedHeaders, Header, OwnedHeaders,Headers as KafkaHeaders};
+use rdkafka::message::{BorrowedHeaders, Header, Headers as KafkaHeaders, OwnedHeaders};
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MessageHeaders {
