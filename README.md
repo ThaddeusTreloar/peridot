@@ -42,6 +42,28 @@ Currently, the upstream C++ library, librdkafka, does not expose the consumer as
 
 This library uses static dispatch when dealing with state store implementations, and therefore the engine can only store a collection of exact typed state backend. What this means is that when the app is initially configured to utilise a particular type that Implements StateBackend, all state store instances are created with that type. Due to the way the StateBackend trait is designed, StateBackend implementations are not object safe and cannot be stored with dynamic dispatch, eg: Vec< Arc< dyn StateBackend >>. It will be evaluated later in development if there is a use case for dynamic state backend types, but for the moment, this is not being considered.
 
+## Performance
+
+Although it is still early and some features aren't implemented, performance is looking quite good. Using a basic timing tool (--bin app-message-bench) the library is currently achieving a input_topic > deser(json) > ser(json) > output_topic performance of:
+```
+2024-05-05T13:41:45.398645Z  INFO peridot::bencher: peridot/src/bencher/mod.rs:44: Time taken: 1515ms
+2024-05-05T13:41:45.398664Z  INFO peridot::bencher: peridot/src/bencher/mod.rs:45: Messages per sec: 682514.85m/s
+```
+
+For reference, a similar test on Kafka Stream yielded ~130k m/s.
+
+Benchmark performed on a Framework 13 Ryzen™ 7 7840U 32GB with the clusters hosted with docker on the same machine. The cluster contained 3 nodes and the topics were configured as:
+``` 
+Topic: outputTopic      TopicId: *  PartitionCount: 6       ReplicationFactor: 3    
+Configs: 
+        Topic: outputTopic      Partition: 0    Leader: 3       Replicas: 3,1,2 Isr: 3,1,2
+        Topic: outputTopic      Partition: 1    Leader: 1       Replicas: 1,2,3 Isr: 1,2,3
+        Topic: outputTopic      Partition: 2    Leader: 2       Replicas: 2,3,1 Isr: 2,3,1
+        Topic: outputTopic      Partition: 3    Leader: 2       Replicas: 2,3,1 Isr: 2,3,1
+        Topic: outputTopic      Partition: 4    Leader: 3       Replicas: 3,1,2 Isr: 3,1,2
+        Topic: outputTopic      Partition: 5    Leader: 1       Replicas: 1,2,3 Isr: 1,2,3
+```
+
 ## Example
 
 Tasks can be created with pipeline templates as such:

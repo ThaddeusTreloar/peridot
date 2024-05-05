@@ -62,11 +62,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .expect("Failed to build app.");
 
-    let message_count: i64 = 100_000;
+    let message_count: i64 = 1_000_000;
 
     let (sender, receiver) = tokio::sync::mpsc::channel(message_count as usize);
 
-    let bencher = Bencher::new(message_count, 6, receiver);
+    let bencher = Bencher::new(message_count, receiver);
 
     app.task::<String, Json<ChangeOfAddress>>("inputTopic")
         .into_bench::<String, Json<ChangeOfAddress>>("outputTopic", sender);

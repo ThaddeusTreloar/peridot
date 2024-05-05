@@ -17,16 +17,12 @@ pin_project! {
 }
 
 impl Bencher {
-    pub fn new(
-        message_count: i64,
-        partition_count: usize,
-        waker: tokio::sync::mpsc::Receiver<(i32, i64)>,
-    ) -> Self {
+    pub fn new(message_count: i64, waker: tokio::sync::mpsc::Receiver<(i32, i64)>) -> Self {
         Self {
             waker,
             timer: tokio::time::Instant::now(),
             message_count,
-            offsets: vec![0; partition_count],
+            offsets: vec![0; 128],
         }
     }
 }
