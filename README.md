@@ -46,8 +46,8 @@ This library uses static dispatch when dealing with state store implementations,
 
 Although it is still early and some features aren't implemented, performance is looking quite good. Using a basic timing tool (--bin app-message-bench) the library is currently achieving a input_topic > deser(json) > ser(json) > output_topic performance of:
 ```
-2024-05-05T13:41:45.398645Z  INFO peridot::bencher: peridot/src/bencher/mod.rs:44: Time taken: 1515ms
-2024-05-05T13:41:45.398664Z  INFO peridot::bencher: peridot/src/bencher/mod.rs:45: Messages per sec: 682514.85m/s
+INFO peridot::bencher: peridot/src/bencher/mod.rs:44: Time taken: 1515ms
+INFO peridot::bencher: peridot/src/bencher/mod.rs:45: Messages per sec: 682514.85m/s
 ```
 
 For reference, a similar test on Kafka Streams yielded ~130k m/s.
