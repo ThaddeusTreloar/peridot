@@ -50,7 +50,7 @@ Although it is still early and some features aren't implemented, performance is 
 2024-05-05T13:41:45.398664Z  INFO peridot::bencher: peridot/src/bencher/mod.rs:45: Messages per sec: 682514.85m/s
 ```
 
-For reference, a similar test on Kafka Stream yielded ~130k m/s.
+For reference, a similar test on Kafka Streams yielded ~130k m/s.
 
 Benchmark performed on a Framework 13 Ryzen™ 7 7840U 32GB with the clusters hosted with docker on the same machine. The cluster contained 3 nodes and the topics were configured as:
 ``` 
