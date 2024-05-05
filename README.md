@@ -44,7 +44,7 @@ This library uses static dispatch when dealing with state store implementations,
 
 ## Performance
 
-Although it is still early and some features aren't implemented, performance is looking quite good. Using a basic timing tool (--bin app-message-bench) the library is currently achieving a input_topic > deser(json) > ser(json) > output_topic performance of:
+Although it is still early and some features aren't implemented, performance is looking quite good. Using a basic timing tool (--bin app-message-bench). On a 1 million message log and a input_topic > deser(json) > ser(json) > output_topic pipeline, peridot is achieving throughput of:
 ```
 INFO peridot::bencher: peridot/src/bencher/mod.rs:44: Time taken: 1515ms
 INFO peridot::bencher: peridot/src/bencher/mod.rs:45: Messages per sec: 682514.85m/s
