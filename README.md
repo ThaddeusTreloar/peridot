@@ -49,6 +49,7 @@ Although it is still early and some features aren't implemented, performance is 
 INFO peridot::bencher: peridot/src/bencher/mod.rs:44: Time taken: 1515ms
 INFO peridot::bencher: peridot/src/bencher/mod.rs:45: Messages per sec: 682514.85m/s
 ```
+The test was performed with transactional producers and a commit interval of 100ms.
 
 For reference, a similar test on Kafka Streams yielded ~130k m/s.
 
