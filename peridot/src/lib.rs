@@ -78,6 +78,7 @@ async fn main() -> Result<(), anyhow::Error> {
 #![allow(refining_impl_trait)]
 
 pub mod app;
+pub mod bencher;
 pub mod engine;
 pub mod init;
 pub mod message;

@@ -92,8 +92,10 @@ impl From<Message<(), ()>> for PartialMessage<(), ()> {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum TryFromKafkaMessageError {
-    #[error("Deserialization error: {0}")]
-    DeserializationError(String),
+    #[error("KeyDeserialization error: {0}")]
+    KeyDeserializationError(String),
+    #[error("ValueDeserialization error: {0}")]
+    ValueDeserializationError(String),
 }
 
 pub trait TryFromOwnedMessage<'a, KS, VS> {
@@ -119,7 +121,7 @@ where
         );
 
         let key = KS::deserialize(raw_key)
-            .map_err(|e| TryFromKafkaMessageError::DeserializationError(e.to_string()))?;
+            .map_err(|e| TryFromKafkaMessageError::KeyDeserializationError(e.to_string()))?;
 
         let raw_value = msg.payload().unwrap();
 
@@ -132,7 +134,7 @@ where
         );
 
         let value = VS::deserialize(raw_value)
-            .map_err(|e| TryFromKafkaMessageError::DeserializationError(e.to_string()))?;
+            .map_err(|e| TryFromKafkaMessageError::ValueDeserializationError(e.to_string()))?;
 
         let headers = match msg.headers() {
             Some(h) => MessageHeaders::from(h),
@@ -176,12 +178,12 @@ where
         let raw_key = msg.key().unwrap();
 
         let key = KS::deserialize(raw_key)
-            .map_err(|e| TryFromKafkaMessageError::DeserializationError(e.to_string()))?;
+            .map_err(|e| TryFromKafkaMessageError::KeyDeserializationError(e.to_string()))?;
 
         let raw_value = msg.payload().unwrap();
 
         let value = VS::deserialize(raw_value)
-            .map_err(|e| TryFromKafkaMessageError::DeserializationError(e.to_string()))?;
+            .map_err(|e| TryFromKafkaMessageError::ValueDeserializationError(e.to_string()))?;
 
         let headers = match msg.headers() {
             Some(h) => MessageHeaders::from(h),

@@ -14,6 +14,10 @@ name = "sbx"
 path = "src/sbx.rs"
 
 [[bin]]
+name = "app-message-bench"
+path = "src/app-message-bench.rs"
+
+[[bin]]
 name = "app-message-closures"
 path = "src/app-message-closures.rs"
 
@@ -24,6 +28,10 @@ path = "src/app-message-task.rs"
 [[bin]]
 name = "address-validation"
 path = "src/address-validation.rs"
+
+[[bin]]
+name = "baseline_bench"
+path = "src/baseline_bench.rs"
 
 [dependencies]
 crossbeam = "0.8.4"

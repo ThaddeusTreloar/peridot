@@ -8,7 +8,7 @@ pub mod state_fork;
 pub mod stream;
 pub mod types;
 
-const BATCH_SIZE: usize = 1024;
+const BATCH_SIZE: usize = 65535;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 enum CommitState {

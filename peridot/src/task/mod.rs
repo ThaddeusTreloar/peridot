@@ -16,7 +16,10 @@ use crate::{
         filter::FilterPipeline,
         join::JoinPipeline,
         map::MapPipeline,
-        sink::{print_sink::PrintSinkFactory, topic_sink::TopicSinkFactory},
+        sink::{
+            bench_sink::BenchSinkFactory, print_sink::PrintSinkFactory,
+            topic_sink::TopicSinkFactory,
+        },
         stream::{PipelineStream, PipelineStreamExt},
     },
     state::backend::{
@@ -205,6 +208,21 @@ pub trait Task<'a> {
     {
         let PipelineParts(app, _, output) = self.into_parts();
         let sink_factory = TopicSinkFactory::<KS, VS>::new(topic, app.engine().engine_context());
+        let job = output.forward(sink_factory);
+        app.job(Box::pin(job));
+    }
+
+    fn into_bench<KS, VS>(self, topic: &str, waker: tokio::sync::mpsc::Sender<(i32, i64)>)
+    where
+        KS: PeridotSerializer<Input = <Self::R as PipelineStream>::KeyType> + Send + 'static,
+        VS: PeridotSerializer<Input = <Self::R as PipelineStream>::ValueType> + Send + 'static,
+        KS::Input: Send + Serialize + 'static,
+        VS::Input: Send + Serialize + 'static,
+        Self: Sized + 'a,
+        Self::R: PipelineStreamExt,
+    {
+        let PipelineParts(app, _, output) = self.into_parts();
+        let sink_factory = BenchSinkFactory::<KS, VS>::new(topic, waker);
         let job = output.forward(sink_factory);
         app.job(Box::pin(job));
     }

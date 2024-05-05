@@ -6,6 +6,7 @@ use std::{
 
 use super::types::Message;
 
+pub mod bench_sink;
 pub(crate) mod changelog_sink;
 pub(crate) mod noop_sink;
 pub mod print_sink;

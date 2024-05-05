@@ -13,6 +13,7 @@ use rdkafka::{
     producer::{FutureProducer, Producer},
     Offset, TopicPartitionList,
 };
+use tokio::time::Instant;
 use tracing::info;
 
 use crate::engine::queue_manager::queue_metadata::QueueMetadata;
@@ -32,6 +33,7 @@ pin_project! {
         message_sink: Si,
         queue_metadata: QueueMetadata,
         commit_state: CommitState,
+        interval: Option<Instant>,
     }
 }
 
@@ -46,6 +48,7 @@ where
             message_sink,
             queue_metadata,
             commit_state: Default::default(),
+            interval: None,
         }
     }
 }
@@ -69,12 +72,18 @@ where
             mut message_sink,
             queue_metadata,
             mut commit_state,
+            mut interval,
         } = self.project();
+
+        if interval.is_none() {
+            let _ = interval.replace(Instant::now());
+        }
 
         // If we have entered a commit state, we need to commit the transaction before continuing.
         if commit_state.is_committing() {
             // If the sink has not completed it's committing, we need to wait.
             ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit transaction.");
+            // TODO: match and if err, abort transaction.
 
             match queue_metadata
                 .producer()
@@ -133,6 +142,8 @@ where
                     );
                 }
             };
+
+            let _ = interval.replace(Instant::now());
         }
 
         for _ in 0..BATCH_SIZE {
@@ -196,45 +207,64 @@ where
                         .start_send(message)
                         .expect("Failed to send message to sink.");
 
-                    let cgm = queue_metadata.engine_context().group_metadata();
+                    if let Some(interval) = interval {
+                        if interval.elapsed().as_millis() > 100 {
+                            let cgm = queue_metadata.engine_context().group_metadata();
 
-                    let mut offsets = TopicPartitionList::new();
+                            let mut offsets = TopicPartitionList::new();
 
-                    let next_offset = offset + 1;
+                            let next_offset = offset + 1;
 
-                    offsets
-                        .add_partition_offset(&topic, partition, Offset::Offset(next_offset))
-                        .expect("Failed to add partition offset.");
+                            offsets
+                                .add_partition_offset(
+                                    &topic,
+                                    partition,
+                                    Offset::Offset(next_offset),
+                                )
+                                .expect("Failed to add partition offset.");
 
-                    match queue_metadata.producer_arc().send_offsets_to_transaction(
-                        &offsets,
-                        &cgm,
-                        Duration::from_millis(1000),
-                    ) {
-                        Ok(r) => {
-                            tracing::debug!("Successfully sent offsets, {} to producer transaction for source_topic: {}, partition: {}", next_offset, queue_metadata.source_topic(), queue_metadata.partition())
+                            match queue_metadata.producer_arc().send_offsets_to_transaction(
+                                &offsets,
+                                &cgm,
+                                Duration::from_millis(1000),
+                            ) {
+                                Ok(r) => {
+                                    tracing::debug!("Successfully sent offsets, {} to producer transaction for source_topic: {}, partition: {}", next_offset, queue_metadata.source_topic(), queue_metadata.partition())
+                                }
+                                Err(KafkaError::Transaction(e)) => {
+                                    tracing::error!(
+                                        "Transaction error while committing transaction, caused by {}",
+                                        e
+                                    );
+                                    panic!(
+                                        "Transaction error while committing transaction, caused by {}",
+                                        e
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Unknown error while committing transaction, caused by {}",
+                                        e
+                                    );
+                                    panic!(
+                                        "Unknown error while committing transaction, caused by {}",
+                                        e
+                                    );
+                                }
+                            };
+
+                            // We have recieved no messages from upstream, they will have
+                            // transitioned to a commit state.
+                            // We can transition to a commit state if we haven't already.
+                            if let CommitState::Uncommitted = commit_state {
+                                *commit_state = CommitState::Committing;
+                                cx.waker().wake_by_ref();
+                            }
+
+                            // Propogate the pending state to the caller.
+                            return Poll::Pending;
                         }
-                        Err(KafkaError::Transaction(e)) => {
-                            tracing::error!(
-                                "Transaction error while committing transaction, caused by {}",
-                                e
-                            );
-                            panic!(
-                                "Transaction error while committing transaction, caused by {}",
-                                e
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Unknown error while committing transaction, caused by {}",
-                                e
-                            );
-                            panic!(
-                                "Unknown error while committing transaction, caused by {}",
-                                e
-                            );
-                        }
-                    };
+                    }
                 }
             }
         }
