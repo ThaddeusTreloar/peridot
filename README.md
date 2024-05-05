@@ -52,7 +52,7 @@ INFO peridot::bencher: peridot/src/bencher/mod.rs:45: Messages per sec: 682514.8
 
 For reference, a similar test on Kafka Streams yielded ~130k m/s.
 
-Benchmark performed on a Framework 13 Ryzen™ 7 7840U 32GB (Fedora Linux 39) with the clusters hosted with docker on the same machine. The cluster contained 3 nodes and the topics were configured as:
+Benchmark performed on a Framework 13 Ryzen™ 7 7840U 32GB (Fedora Linux 39). The clusters were hosted on docker, and on the same machine that was running the test. The cluster contained 3 nodes and the topics were configured as:
 ``` 
 Topic: outputTopic      TopicId: *  PartitionCount: 6       ReplicationFactor: 3    
 Configs: 
