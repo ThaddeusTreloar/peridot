@@ -75,7 +75,7 @@ where
     pub fn table<'a, KS, VS>(
         &'a self,
         topic: &'a str,
-        table_name: &'a str,
+        store_name: &'a str,
     ) -> DirectTableTask<KS, VS, B, G>
     where
         KS: PeridotDeserializer + Send + 'static,
@@ -87,7 +87,7 @@ where
             .stream(topic)
             .expect("Failed to create topic");
 
-        TransparentTask::new(self, topic,input).into_table(table_name)
+        TransparentTask::new(self, topic,input).into_table(store_name)
     }
 
     pub fn task<'a, KS, VS>(

@@ -42,7 +42,7 @@ pin_project! {
         #[pin]
         changelog_stream: Option<DeserialiserQueue<M::KeyType, M::ValueType>>,
         changelog_start: Option<i64>,
-        table_name: String,
+        store_name: String,
         partition: i32,
         commit_state: CommitState,
         store_state: StoreState,
@@ -55,13 +55,13 @@ where
     M: MessageStream,
     B: StateBackend,
 {
-    pub fn new(message_stream: M, state_sink: StateSink<B, M::KeyType, M::ValueType>, engine_context: Arc<EngineContext>, table_name: String, partition: i32) -> Self {
+    pub fn new(message_stream: M, state_sink: StateSink<B, M::KeyType, M::ValueType>, engine_context: Arc<EngineContext>, store_name: String, partition: i32) -> Self {
         Self {
             changelog_stream: None,
             message_stream,
             state_sink,
             engine_context,
-            table_name,
+            store_name,
             partition,
             changelog_start: None,
             store_state: StoreState::Ready,
@@ -75,7 +75,7 @@ where
             message_stream: M, 
             state_sink: StateSink<B, M::KeyType, M::ValueType>, 
             engine_context: Arc<EngineContext>, 
-            table_name: String, 
+            store_name: String, 
             partition: i32
         ) -> Self {
         Self {
@@ -83,7 +83,7 @@ where
             message_stream,
             state_sink,
             engine_context,
-            table_name,
+            store_name,
             partition,
             changelog_start: None,
             store_state: Default::default(),
@@ -114,7 +114,7 @@ where
             commit_state,
             store_state,
             engine_context,
-            table_name,
+            store_name,
             partition,
             changelog_start,
             ..
@@ -146,7 +146,7 @@ where
 
                 tracing::debug!("Rebuilding state store from checkpoint: {}", checkpoint);
                 
-                let watermarks = engine_context.watermark_for_changelog(table_name, *partition);
+                let watermarks = engine_context.watermark_for_changelog(store_name, *partition);
 
                 tracing::debug!("State store changelog watermarks: {}", watermarks);
                 
@@ -171,9 +171,9 @@ where
                     beginning_offset = checkpoint;
                 }
 
-                tracing::debug!("Seeking changelog consumer for {}-{} to offset: {}", table_name, partition, beginning_offset);
+                tracing::debug!("Seeking changelog consumer for {}-{} to offset: {}", store_name, partition, beginning_offset);
 
-                engine_context.seek_changlog_consumer(table_name, *partition, beginning_offset)
+                engine_context.seek_changlog_consumer(store_name, *partition, beginning_offset)
                     .expect("Failed to seek changelog consumer.");
 
                 tracing::debug!("Reading changelog from current store position: {}", beginning_offset);
@@ -195,9 +195,9 @@ where
                     Poll::Pending => {
                         tracing::debug!("No records for changelog.");
                         
-                        let consumer_position = engine_context.get_changelog_consumer_position(table_name, *partition);
+                        let consumer_position = engine_context.get_changelog_consumer_position(store_name, *partition);
                         
-                        tracing::debug!("Checkpointing consumer position offset: {} for store: {}, partition: {}", consumer_position, table_name, partition);
+                        tracing::debug!("Checkpointing consumer position offset: {} for store: {}, partition: {}", consumer_position, store_name, partition);
                         state_sink.checkpoint_changelog_position(consumer_position);
 
                         match state_sink.as_mut().poll_commit(cx) {
@@ -210,7 +210,7 @@ where
                             Poll::Ready(result) => {
                                 result.expect("Sink failed to commit.");
 
-                                let watermarks = engine_context.watermark_for_changelog(table_name, *partition);
+                                let watermarks = engine_context.watermark_for_changelog(store_name, *partition);
                                 
                                 let checkpoint = state_sink.get_checkpoint()
                                     .expect("Failed to get checkpoint.")
@@ -237,11 +237,11 @@ where
                 }
             }
 
-            tracing::debug!("Setting state store status to StoreState::Ready for store: {}, partition: {}", table_name, partition);
+            tracing::debug!("Setting state store status to StoreState::Ready for store: {}, partition: {}", store_name, partition);
             *store_state = StoreState::Ready;
             
-            tracing::debug!("Closing changelog stream for for store: {}, partition: {}", table_name, partition);
-            engine_context.close_changelog_stream(table_name, *partition)
+            tracing::debug!("Closing changelog stream for for store: {}, partition: {}", store_name, partition);
+            engine_context.close_changelog_stream(store_name, *partition)
                 .expect("Failed to close changelog stream.");
         }
 

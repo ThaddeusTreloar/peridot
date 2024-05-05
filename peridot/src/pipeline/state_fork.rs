@@ -23,7 +23,7 @@ pin_project! {
         #[pin]
         queue_stream: S,
         sink_factory: StateSinkFactory<B, <S::MStream as MessageStream>::KeyType,<S::MStream as MessageStream>::ValueType>,
-        state_name: String,
+        store_name: String,
         engine_context: Arc<EngineContext>,
         has_changelog: bool,
         _delivery_guarantee: PhantomData<G>
@@ -34,19 +34,19 @@ impl<S, B, G> StateForkPipeline<S, B, G>
 where
     S: PipelineStream,
 {
-    pub fn new(queue_stream: S, sink_factory: StateSinkFactory<B, <S::MStream as MessageStream>::KeyType,<S::MStream as MessageStream>::ValueType>, state_name: String, engine_context: Arc<EngineContext>) -> Self {
+    pub fn new(queue_stream: S, sink_factory: StateSinkFactory<B, <S::MStream as MessageStream>::KeyType,<S::MStream as MessageStream>::ValueType>, store_name: String, engine_context: Arc<EngineContext>) -> Self {
         Self {
             queue_stream,
             sink_factory,
-            state_name,
+            store_name,
             engine_context,
             has_changelog: false,
             _delivery_guarantee: PhantomData,
         }
     }
 
-    pub fn new_with_changelog(queue_stream: S, sink_factory: StateSinkFactory<B, <S::MStream as MessageStream>::KeyType,<S::MStream as MessageStream>::ValueType>, state_name: String,engine_context: Arc<EngineContext>) -> Self {
-        let mut state_fork = Self::new(queue_stream, sink_factory, state_name, engine_context);
+    pub fn new_with_changelog(queue_stream: S, sink_factory: StateSinkFactory<B, <S::MStream as MessageStream>::KeyType,<S::MStream as MessageStream>::ValueType>, store_name: String,engine_context: Arc<EngineContext>) -> Self {
+        let mut state_fork = Self::new(queue_stream, sink_factory, store_name, engine_context);
 
         state_fork.has_changelog = true;
 
@@ -73,7 +73,7 @@ where
         let StateForkProjection {
             mut queue_stream,
             sink_factory,
-            state_name,
+            store_name,
             has_changelog,
             engine_context,
             ..
@@ -84,7 +84,7 @@ where
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(PipelineStage(metadata, message_stream))) => {
                 if *has_changelog {
-                    let changelog_stream = metadata.take_changelog_queue(state_name)
+                    let changelog_stream = metadata.take_changelog_queue(store_name)
                         .expect("Failed to get changelog queue for changelog backed state store!");
 
                     let message_sink = sink_factory.new_sink(metadata.clone());
@@ -94,7 +94,7 @@ where
                         message_stream, 
                         message_sink, 
                         engine_context.clone(),
-                        state_name.clone(),
+                        store_name.clone(),
                         metadata.partition(),
                     );
 

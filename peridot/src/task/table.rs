@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    app::PeridotApp, engine::{engine_state::EngineState, metadata_manager::table_metadata, util::{DeliveryGuaranteeType, ExactlyOnce}, wrapper::serde::json::Json}, pipeline::{
+    app::PeridotApp, engine::{context::EngineContext, engine_state::EngineState, metadata_manager::table_metadata, util::{DeliveryGuaranteeType, ExactlyOnce}, wrapper::serde::json::Json, AppEngine}, pipeline::{
         fork::PipelineFork, sink::{changelog_sink::ChangelogSinkFactory, noop_sink::NoopSinkFactory, state_sink::StateSinkFactory}, state_fork::StateForkPipeline, stream::{PipelineStream, PipelineStreamExt}
     }, state::backend::{facade::{FacadeDistributor, StateFacade}, GetViewDistributor, StateBackend}
 };
@@ -40,34 +40,35 @@ where
     P::KeyType: Clone + Serialize + Send + 'static,
     P::ValueType: Clone + Serialize + Send + 'static,
 {
-    pub fn new(app: &'a PeridotApp<B, G>, source_topic: String, table_name: String, stream_queue: P) -> Self {
+    // TODO: considering refactoring this so that is returns (Self, TableHandle)
+    pub fn new(app: &'a PeridotApp<B, G>, source_topic: String, store_name: String, stream_queue: P) -> Self {
         let table_metadata = app.engine()
             .engine_context()
-            .register_state_store(&source_topic, &table_name)
+            .register_state_store(&source_topic, &store_name)
             .expect("Failed to register table.");
         
-        let changelog_sink_factory = ChangelogSinkFactory::new(&table_name, app.engine().engine_context());
+        let changelog_sink_factory = ChangelogSinkFactory::new(&store_name, app.engine().engine_context());
 
         let changelog_output = stream_queue.fork::<_, ExactlyOnce>(changelog_sink_factory);
 
         let backend_sink_factory =
             StateSinkFactory::<B, P::KeyType, P::ValueType>::from_state_store_manager(
                 app.engine_arc().state_store_context(),
-                &table_name,
+                &store_name,
                 &source_topic,
             );
 
         let backend_output = StateForkPipeline::new_with_changelog(
             changelog_output, 
             backend_sink_factory, 
-            table_name.clone(), 
+            store_name.clone(), 
             app.engine().engine_context(),
         );
 
         Self {
             app,
             source_topic,
-            name: table_name,
+            name: store_name,
             backend_output,
             state: Default::default(),
             _delivery_guarantee: Default::default(),
@@ -154,3 +155,20 @@ where
     }
 }
 
+pub struct TableHandle<B, G> {
+    engine: Arc<AppEngine<B, G>>,
+    store_name: String,
+}
+
+impl<B, G> GetViewDistributor for TableHandle<B, G> {
+    type Backend = B;
+    type KeyType = ();
+    type ValueType = ();
+    type Error = std::io::Error;
+
+    fn get_view_distributor(
+            &self,
+        ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
+        todo!("")
+    }
+}

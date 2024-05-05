@@ -16,8 +16,8 @@ pub struct InMemoryStateBackend {
 }
 
 impl InMemoryStateBackend {
-    fn derive_state_key(state_name: &str, partition: i32) -> String {
-        format!("{}-{}", state_name, partition)
+    fn derive_state_key(store_name: &str, partition: i32) -> String {
+        format!("{}-{}", store_name, partition)
     }
 
     fn get_state_store(&self, state_key: &str) -> Ref<String, DashMap<Vec<u8>, Vec<u8>>> {
@@ -49,19 +49,19 @@ impl StateBackend for InMemoryStateBackend {
         self.store_time.clone()
     }
 
-    fn get_state_store_checkpoint(&self, state_name: &str, partition: i32) -> Option<Checkpoint> {
-        let checkpoint_name = format!("{}-{}", state_name, partition);
+    fn get_state_store_checkpoint(&self, store_name: &str, partition: i32) -> Option<Checkpoint> {
+        let checkpoint_name = format!("{}-{}", store_name, partition);
 
         Some(self.checkpoint.get(&checkpoint_name)?.clone())
     }
 
-    fn create_checkpoint(&self, state_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error> {
-        let checkpoint_name = format!("{}-{}", state_name, partition);
+    fn create_checkpoint(&self, store_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error> {
+        let checkpoint_name = format!("{}-{}", store_name, partition);
 
         match self.checkpoint.get_mut(&checkpoint_name) {
             None => {
                 self.checkpoint.insert(checkpoint_name.clone(), Checkpoint { 
-                    table_name: checkpoint_name,
+                    store_name: checkpoint_name,
                     offset,
                 });
 
@@ -78,14 +78,14 @@ impl StateBackend for InMemoryStateBackend {
     async fn get<K, V>(
         &self,
         key: K,
-        state_name: &str,
+        store_name: &str,
         partition: i32,
     ) -> Result<Option<V>, Self::Error>
     where
         K: Serialize + Send,
         V: DeserializeOwned,
     {
-        let state_key = Self::derive_state_key(state_name, partition);
+        let state_key = Self::derive_state_key(store_name, partition);
 
         let store = self.get_state_store(&state_key);
 
@@ -104,14 +104,14 @@ impl StateBackend for InMemoryStateBackend {
         &self,
         key: K,
         value: V,
-        state_name: &str,
+        store_name: &str,
         partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send,
     {
-        let state_key = Self::derive_state_key(state_name, partition);
+        let state_key = Self::derive_state_key(store_name, partition);
 
         let store = self.get_state_store(&state_key);
 
@@ -126,14 +126,14 @@ impl StateBackend for InMemoryStateBackend {
     async fn put_range<K, V>(
         &self,
         range: Vec<(K, V)>,
-        state_name: &str,
+        store_name: &str,
         partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
         V: Serialize + Send,
     {
-        let state_key = Self::derive_state_key(state_name, partition);
+        let state_key = Self::derive_state_key(store_name, partition);
 
         self.store.iter().for_each(|e| {
             tracing::debug!("Key in stores: {}", e.key())
@@ -154,13 +154,13 @@ impl StateBackend for InMemoryStateBackend {
     async fn delete<K>(
         &self,
         key: K,
-        state_name: &str,
+        store_name: &str,
         partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
     {
-        let state_key = Self::derive_state_key(state_name, partition);
+        let state_key = Self::derive_state_key(store_name, partition);
 
         let store = self.get_state_store(&state_key);
 
@@ -173,13 +173,13 @@ impl StateBackend for InMemoryStateBackend {
 
     async fn clear<K>(
         &self,
-        state_name: &str,
+        store_name: &str,
         partition: i32,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
     {
-        let state_key = Self::derive_state_key(state_name, partition);
+        let state_key = Self::derive_state_key(store_name, partition);
 
         if let Some(store) = self.store.get(&state_key) {
             store.clear()

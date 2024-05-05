@@ -7,16 +7,16 @@ use crate::{engine::{context::EngineContext, queue_manager::queue_metadata::Queu
 use super::MessageSinkFactory;
 
 pub struct ChangelogSinkFactory<K, V> {
-    state_name: String,
+    store_name: String,
     engine_context: Arc<EngineContext>,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
 }
 
 impl<K, V> ChangelogSinkFactory<K, V> {
-    pub fn new(state_name: &str, engine_context: Arc<EngineContext>) -> Self {
+    pub fn new(store_name: &str, engine_context: Arc<EngineContext>) -> Self {
         Self {
-            state_name: state_name.to_owned(),
+            store_name: store_name.to_owned(),
             engine_context,
             _key_type: Default::default(),
             _value_type: Default::default(),
@@ -33,7 +33,7 @@ where
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
         let changlog_topic = self.engine_context
-            .get_changelog_topic_name(&self.state_name);
+            .get_changelog_topic_name(&self.store_name);
 
         ChangelogSink::from_queue_metadata(queue_metadata, changlog_topic)
     }

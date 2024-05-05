@@ -55,16 +55,16 @@ impl EngineContext {
             .expect("Failed to get consumer group metadata.")
     }
     
-    pub(crate) fn watermark_for_changelog(&self, table_name: &str, partition: i32) -> Watermarks {
-        let changelog_topic = self.metadata_manager.get_changelog_topic_for_store(table_name);
+    pub(crate) fn watermark_for_changelog(&self, store_name: &str, partition: i32) -> Watermarks {
+        let changelog_topic = self.metadata_manager.get_changelog_topic_for_store(store_name);
 
         self.changelog_manager
             .get_watermark_for_changelog(&changelog_topic, partition)
             .expect("Failed to fetch watermarks")
     }
 
-    pub(crate) fn close_changelog_stream(&self, table_name: &str, partition: i32) -> Result<(), EngineContextError> {
-        let changelog_topic = self.metadata_manager.get_changelog_topic_for_store(table_name);
+    pub(crate) fn close_changelog_stream(&self, store_name: &str, partition: i32) -> Result<(), EngineContextError> {
+        let changelog_topic = self.metadata_manager.get_changelog_topic_for_store(store_name);
 
         if let Err(err) = self.changelog_manager.close_changelog_stream(&changelog_topic, partition) {
             match err {
@@ -82,13 +82,13 @@ impl EngineContext {
         Ok(())
     }
 
-    pub(crate) fn get_changelog_topic_name(&self, state_name: &str) -> String {
-        self.metadata_manager.get_changelog_topic_for_store(state_name)
+    pub(crate) fn get_changelog_topic_name(&self, store_name: &str) -> String {
+        self.metadata_manager.get_changelog_topic_for_store(store_name)
     }
 
-    pub(crate) fn register_state_store(&self, source_topic: &str, state_name: &str) -> Result<TableMetadata, EngineContextError> {
+    pub(crate) fn register_state_store(&self, source_topic: &str, store_name: &str) -> Result<TableMetadata, EngineContextError> {
         Ok(self.metadata_manager
-            .register_table_with_changelog(state_name, source_topic)
+            .register_table_with_changelog(store_name, source_topic)
             .expect("Failed to register table."))
     }
 

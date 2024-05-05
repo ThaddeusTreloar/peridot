@@ -115,7 +115,7 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(parts.app(), parts.source_topic(), move |input| input.map(next), parts.output())
     }
 
-    fn into_table(self, table_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
+    fn into_table(self, store_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
     where
         <Self::R as PipelineStream>::KeyType: Clone + Serialize + Send + 'static,
         <Self::R as PipelineStream>::ValueType: Clone + Serialize + Send + 'static,
@@ -123,7 +123,7 @@ pub trait Task<'a> {
     {
         let parts = self.into_parts();
 
-        TableTask::new(parts.app(), parts.source_topic(), table_name.to_owned(), parts.output())
+        TableTask::new(parts.app(), parts.source_topic(), store_name.to_owned(), parts.output())
     }
 
     fn into_pipeline(self) -> Self::R;

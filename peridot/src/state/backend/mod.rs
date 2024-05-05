@@ -19,14 +19,14 @@ struct VersionedRecord<V> {
 
 #[derive(Debug, Default, Clone)]
 pub struct Checkpoint {
-    pub table_name: String,
+    pub store_name: String,
     pub offset: i64,
 }
 
 impl Checkpoint {
-    pub fn new(table_name: String, offset: i64) -> Self {
+    pub fn new(store_name: String, offset: i64) -> Self {
         Self {
-            table_name,
+            store_name,
             offset
         }
     }
@@ -79,9 +79,9 @@ where
 
     fn get_state_store_time(&self) -> PeridotTimestamp;
 
-    fn get_state_store_checkpoint(&self, state_name: &str, partition: i32) -> Option<Checkpoint>;
+    fn get_state_store_checkpoint(&self, store_name: &str, partition: i32) -> Option<Checkpoint>;
 
-    fn create_checkpoint(&self, state_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error>;
+    fn create_checkpoint(&self, store_name: &str, partition: i32, offset: i64) -> Result<(), Self::Error>;
 
     async fn get<K, V>(
         &self,

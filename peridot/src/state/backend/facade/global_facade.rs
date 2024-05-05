@@ -23,10 +23,10 @@ impl<K, V, EC> UnpartitionedStateFacade<K, V, EC>
 where
     EC: EngineContext,
 {
-    pub fn new(table_name: String, engine_context: EC) -> Self {
+    pub fn new(store_name: String, engine_context: EC) -> Self {
         Self {
             engine_context,
-            store_name: table_name,
+            store_name: store_name,
             _key_type: Default::default(),
             _value_type: Default::default(),
         }
@@ -49,13 +49,13 @@ where
 
         let partition_count = self
             .engine_context
-            .get_table_partition_count(&self.table_name)
+            .get_table_partition_count(&self.store_name)
             .expect("Table doesn't exist");
 
         let partition = get_partition_for_key(&key_bytes, partition_count);
 
         self.engine_context
-            .state_backend(self.table_name.clone(), partition)
+            .state_backend(self.store_name.clone(), partition)
             .get(key)
             .await
             .expect("Backend Failure")

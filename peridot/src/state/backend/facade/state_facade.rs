@@ -10,7 +10,7 @@ use crate::state::backend::{
 pub struct StateFacade<K, V, B> 
 {
     backend: Arc<B>,
-    state_name: String,
+    store_name: String,
     partition: i32,
     _key_type: std::marker::PhantomData<K>,
     _value_type: std::marker::PhantomData<V>,
@@ -18,10 +18,10 @@ pub struct StateFacade<K, V, B>
 
 impl<K, V, B> StateFacade<K, V, B> 
 {
-    pub fn new(backend: Arc<B>, state_name: String, partition: i32) -> Self {
+    pub fn new(backend: Arc<B>, store_name: String, partition: i32) -> Self {
         Self {
             backend,
-            state_name,
+            store_name,
             partition,
             _key_type: Default::default(),
             _value_type: Default::default(),
@@ -32,8 +32,8 @@ impl<K, V, B> StateFacade<K, V, B>
         self.backend.clone()
     }
 
-    pub fn state_name(&self) -> &str {
-        &self.state_name
+    pub fn store_name(&self) -> &str {
+        &self.store_name
     }
 
     pub fn partition(&self) -> i32 {
@@ -56,11 +56,11 @@ where
         key: Self::KeyType,
     ) -> Result<Option<Self::ValueType>, Self::Error>
     {
-        self.backend.get(key, self.state_name(), self.partition()).await
+        self.backend.get(key, self.store_name(), self.partition()).await
     }
 
     fn get_checkpoint(&self) -> Result<Option<Checkpoint> ,Self::Error> {
-        let checkpoint = self.backend.get_state_store_checkpoint(self.state_name(), self.partition());
+        let checkpoint = self.backend.get_state_store_checkpoint(self.store_name(), self.partition());
 
         Ok(checkpoint)
     }    
@@ -78,9 +78,9 @@ where
     type ValueType = V;
 
     fn create_checkpoint(&self, offset:i64) -> Result<() ,Self::Error> {
-        tracing::debug!("Creating checkpoint at offset: {}, for state: {}, partition: {}", offset, self.state_name(), self.partition());
+        tracing::debug!("Creating checkpoint at offset: {}, for state: {}, partition: {}", offset, self.store_name(), self.partition());
 
-        self.backend.create_checkpoint(self.state_name(), self.partition(), offset);
+        self.backend.create_checkpoint(self.store_name(), self.partition(), offset);
 
         Ok(())
     }
@@ -90,20 +90,20 @@ where
         key: Self::KeyType,
         value: Self::ValueType,
     ) -> Result<(), Self::Error> {
-        self.backend.put(key, value, self.state_name(), self.partition()).await
+        self.backend.put(key, value, self.store_name(), self.partition()).await
     }
 
     async fn put_range(
         self: Arc<Self>,
         range: Vec<(Self::KeyType, Self::ValueType)>,
     ) -> Result<(), Self::Error> {
-        self.backend.put_range(range, self.state_name(), self.partition()).await
+        self.backend.put_range(range, self.store_name(), self.partition()).await
     }
 
     async fn delete(
         self: Arc<Self>,
         key: Self::KeyType,
     ) -> Result<(), Self::Error> {
-        self.backend.delete(key, self.state_name(), self.partition()).await
+        self.backend.delete(key, self.store_name(), self.partition()).await
     }
 }

@@ -111,7 +111,7 @@ where
                 if this.state_facade.get_checkpoint().expect("Error while checking checkpoint.").is_none() {
                     let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
     
-                    debug!("Checkpointing state store: {}-{} with offset: {}", this.state_facade.state_name(), this.state_facade.partition(), offset);
+                    debug!("Checkpointing state store: {}-{} with offset: {}", this.state_facade.store_name(), this.state_facade.partition(), offset);
 
                     this.state_facade.create_checkpoint(*offset)
                         .expect("Failed to store commit.");

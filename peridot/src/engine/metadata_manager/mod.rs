@@ -45,27 +45,27 @@ impl MetadataManager {
         }
     }
 
-    pub(crate) fn register_table(&self, table_name: &str, source_topic: &str) -> Result<TableMetadata, MetadataManagerError> {
-        if self.table_metadata.contains_key(table_name) {
-            Err(MetadataManagerError::TableAlreadyRegistered { table: table_name.to_owned() })
+    pub(crate) fn register_table(&self, store_name: &str, source_topic: &str) -> Result<TableMetadata, MetadataManagerError> {
+        if self.table_metadata.contains_key(store_name) {
+            Err(MetadataManagerError::TableAlreadyRegistered { table: store_name.to_owned() })
         } else {
             let new_metadata = TableMetadata::new(source_topic);
 
-            self.table_metadata.insert(table_name.to_owned(), new_metadata.clone());
+            self.table_metadata.insert(store_name.to_owned(), new_metadata.clone());
 
             Ok(new_metadata)
         }
     }
 
-    pub(crate) fn register_table_with_changelog(&self, table_name: &str, source_topic: &str) -> Result<TableMetadata, MetadataManagerError> {
-        if self.table_metadata.contains_key(table_name) {
-            Err(MetadataManagerError::TableAlreadyRegistered { table: table_name.to_owned() })
+    pub(crate) fn register_table_with_changelog(&self, store_name: &str, source_topic: &str) -> Result<TableMetadata, MetadataManagerError> {
+        if self.table_metadata.contains_key(store_name) {
+            Err(MetadataManagerError::TableAlreadyRegistered { table: store_name.to_owned() })
         } else {
-            let changelog_topic = self.derive_changelog_topic(table_name);
+            let changelog_topic = self.derive_changelog_topic(store_name);
 
             let mut new_metadata = TableMetadata::new_with_changelog(source_topic, &changelog_topic);
 
-            self.table_metadata.insert(table_name.to_owned(), new_metadata.clone());
+            self.table_metadata.insert(store_name.to_owned(), new_metadata.clone());
 
             Ok(new_metadata)
         }
@@ -104,8 +104,8 @@ impl MetadataManager {
             .unwrap()
     }
 
-    fn derive_changelog_topic(&self, table_name: &str) -> String {
-        format!("{}-{}-Changelog", &self.app_id, table_name)
+    fn derive_changelog_topic(&self, store_name: &str) -> String {
+        format!("{}-{}-Changelog", &self.app_id, store_name)
     }
 
     pub(crate) fn app_id(&self) -> &str {

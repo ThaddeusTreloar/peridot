@@ -104,7 +104,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .expect("Failed to build app.");
 
-    let joining_table = app.table::<String, String>("asd", "table_name");
+    let joining_table = app.table::<String, String>("asd", "store_name");
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .map(validate_address)

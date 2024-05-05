@@ -36,7 +36,7 @@ impl QueueMetadata {
         self.producer_ref.clone()
     }
 
-    pub fn take_changelog_queue(&self, state_name: &str) -> Option<StreamPeridotPartitionQueue> {
-        self.changelog_queues.take(state_name)
+    pub fn take_changelog_queue(&self, store_name: &str) -> Option<StreamPeridotPartitionQueue> {
+        self.changelog_queues.take(store_name)
     }
 }
