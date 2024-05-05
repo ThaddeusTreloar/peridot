@@ -72,7 +72,7 @@ where
             Poll::Ready(Some(PipelineStage(metadata, message_stream))) => {
                 let message_sink = sink_factory.new_sink(metadata.clone());
 
-                let forwarder = Fork::new(message_stream, message_sink);
+                let forwarder = Fork::new(message_stream, message_sink, metadata.clone());
 
                 let pipeline_stage = PipelineStage::new(metadata, forwarder);
 

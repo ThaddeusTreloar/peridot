@@ -19,6 +19,8 @@ use crate::engine::queue_manager::queue_metadata::QueueMetadata;
 
 use super::{sink::MessageSink, stream::MessageStream, CommitState};
 
+const BATCH_SIZE: usize = 1024;
+
 pin_project! {
     #[project = ForwardProjection]
     pub struct Forward<M, Si>
@@ -50,14 +52,18 @@ where
     }
 }
 
-const BATCH_SIZE: usize = 1024;
+#[derive(Debug, thiserror::Error)]
+pub enum ForwarderError {
+    #[error(transparent)]
+    UnknownError(#[from] Box<dyn std::error::Error + Send>),
+}
 
 impl<M, Si> Future for Forward<M, Si>
 where
     M: MessageStream,
     Si: MessageSink<M::KeyType, M::ValueType>,
 {
-    type Output = ();
+    type Output = Result<(), ForwarderError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let ForwardProjection {
@@ -137,14 +143,25 @@ where
             match message_stream.as_mut().poll_next(cx) {
                 Poll::Ready(None) => {
                     tracing::debug!(
-                        "No Messages left for stream topic: {}, partition: {}, finishing...",
+                        "Upstream queue for topic: {}, partition: {}, has completed. Cleaning up...",
                         queue_metadata.source_topic(),
                         queue_metadata.partition()
                     );
 
-                    ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close.");
+                    match commit_state {
+                        CommitState::Committed => {
+                            ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
+                            return Poll::Ready(Ok(()));
+                        }
+                        CommitState::Uncommitted => {
+                            *commit_state = CommitState::Committing;
 
-                    return Poll::Ready(());
+                            cx.waker().wake_by_ref();
+
+                            return Poll::Pending;
+                        }
+                        CommitState::Committing => panic!("This should not be possible"),
+                    }
                 }
                 Poll::Pending => {
                     tracing::debug!(

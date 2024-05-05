@@ -14,11 +14,12 @@ Below is a list of the features currently being architected:
 - ✅ State store architecture
 - ✅ Exactly once semantics (Streams)
 - ✅ Exactly once semantics (Tables)
-- ✅ Changelogs
+- ✅ Changelog state rebuilding
+- 🚧 Automatic topic creation (changelogs etc.)
 - 🚧 Joins
-- 🚧 Timestamp extraction
 - 🚧 Unified Service layer API 
 - 🚧 Import/Export integration API for any types that implement futures::Stream 
+- ❌ Timestamp extraction
 - ❌ Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
 - ❌ Windowed operations (Stream-Stream Joins)
 - ❌ Result 'style' dead letter support (impl FromResidual)

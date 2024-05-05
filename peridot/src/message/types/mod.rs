@@ -8,7 +8,7 @@ mod timestamp;
 pub use extractors::{headers::*, key_value::*, value::*};
 pub use headers::*;
 pub use message::*;
-use partial_message::*;
+pub(crate) use partial_message::*;
 pub use timestamp::*;
 
 pub trait FromMessage<K, V> {

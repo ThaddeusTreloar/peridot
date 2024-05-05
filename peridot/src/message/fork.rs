@@ -7,6 +7,8 @@ use futures::ready;
 use pin_project_lite::pin_project;
 use tracing::info;
 
+use crate::engine::queue_manager::queue_metadata::{self, QueueMetadata};
+
 use super::{sink::MessageSink, stream::MessageStream, CommitState};
 
 pin_project! {
@@ -16,6 +18,7 @@ pin_project! {
         M: MessageStream,
         Si: MessageSink<M::KeyType, M::ValueType>,
     {
+        queue_metadata: QueueMetadata,
         #[pin]
         message_stream: M,
         #[pin]
@@ -29,8 +32,9 @@ where
     M: MessageStream,
     Si: MessageSink<M::KeyType, M::ValueType>,
 {
-    pub fn new(message_stream: M, message_sink: Si) -> Self {
+    pub fn new(message_stream: M, message_sink: Si, queue_metadata: QueueMetadata) -> Self {
         Self {
+            queue_metadata,
             message_stream,
             message_sink,
             commit_state: Default::default(),
@@ -53,6 +57,7 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<super::types::Message<Self::KeyType, Self::ValueType>>> {
         let ForkProjection {
+            queue_metadata,
             mut message_stream,
             mut message_sink,
             commit_state,
@@ -77,12 +82,33 @@ where
         // at which point we know that they have either committed or aborted.
         match message_stream.as_mut().poll_next(cx) {
             Poll::Ready(None) => {
-                tracing::debug!("No Messages left for stream, finishing...");
-                ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
-                Poll::Ready(None)
+                tracing::debug!(
+                    "Upstream queue for topic: {}, partition: {}, has completed. Cleaning up...",
+                    queue_metadata.source_topic(),
+                    queue_metadata.partition()
+                );
+
+                match commit_state {
+                    CommitState::Committed => {
+                        ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
+                        Poll::Ready(None)
+                    }
+                    CommitState::Uncommitted => {
+                        *commit_state = CommitState::Committing;
+
+                        cx.waker().wake_by_ref();
+
+                        Poll::Pending
+                    }
+                    CommitState::Committing => panic!("This should not be possible"),
+                }
             }
             Poll::Pending => {
-                tracing::debug!("No messages available, waiting...");
+                tracing::debug!(
+                    "No messages available for topic: {}, partition: {}, sleeping...",
+                    queue_metadata.source_topic(),
+                    queue_metadata.partition()
+                );
 
                 // We have recieved no messages from upstream, they will have
                 // transitioned to a commit state.

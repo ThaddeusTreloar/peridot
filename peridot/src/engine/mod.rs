@@ -14,7 +14,9 @@ use rdkafka::{
 };
 use std::default;
 use std::ops::Deref;
+use std::process::exit;
 use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::{
     select,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -58,6 +60,7 @@ pub mod client_manager;
 pub mod context;
 pub mod engine_state;
 pub mod error;
+pub mod hook_manager;
 pub mod metadata_manager;
 pub mod producer_factory;
 pub mod queue_manager;
@@ -85,6 +88,8 @@ pub struct AppEngine<B, G = ExactlyOnce> {
     state_store_manager: Arc<StateStoreManager<B>>,
     producer_factory: Arc<ProducerFactory>,
     downstreams: Arc<DashMap<String, QueueSender>>,
+    // hook_manager: HookManager,
+    shutdown_signal: tokio::sync::broadcast::Sender<()>,
     engine_state: Arc<AtomicCell<EngineState>>,
     _delivery_guarantee: PhantomData<G>,
 }
@@ -120,6 +125,28 @@ where
 
         tokio::spawn(queue_distributor);
 
+        let shutdown_singnal_ref = self.shutdown_signal.clone();
+
+        tokio::spawn(async move {
+            let rx = shutdown_singnal_ref.subscribe();
+
+            let mut sigterm = signal(SignalKind::terminate()).unwrap();
+            let mut sigint = signal(SignalKind::interrupt()).unwrap();
+
+            select! {
+                _ = sigterm.recv() => info!("Engine recieved SIGTERM, notifying tasks."),
+                _ = sigint.recv() => info!("Engine recieved SIGINT, notifying tasks."),
+            };
+
+            match shutdown_singnal_ref.send(()) {
+                Ok(_) => info!("Shutdown signal broadcast to tasks."),
+                Err(e) => warn!("Shutdown signal already sent."),
+            };
+
+            // TODO: Remove this when shutdown hooks have been integrated.
+            exit(0)
+        });
+
         tracing::debug!("Engine running...");
 
         Ok(()) // Transition engine state.
@@ -136,6 +163,8 @@ where
             changelog_manager: ChangelogManager::from_config(config)?,
         };
 
+        let shutdown_signal = tokio::sync::broadcast::Sender::new(1);
+
         Ok(Self {
             engine_context: Arc::new(engine_context),
             producer_factory: Arc::new(ProducerFactory::new(
@@ -144,6 +173,7 @@ where
             )),
             downstreams: Default::default(),
             engine_state: Default::default(),
+            shutdown_signal,
             state_store_manager: Default::default(),
             _delivery_guarantee: PhantomData,
         })

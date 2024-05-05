@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     app::PeridotApp,
@@ -85,13 +85,14 @@ pub trait Task<'a> {
         Self::G,
     >
     where
-        T: GetViewDistributor + Send + 'a,
+        T: GetViewDistributor<KeyType = <Self::R as PipelineStream>::KeyType> + Send + 'a,
         T::KeyType: Send + Sync + 'static,
-        T::ValueType: Send + Sync + 'static,
+        T::ValueType: DeserializeOwned + Send + Sync + 'static,
         T::Backend: StateBackend + Sync + 'static,
         C: Combiner<<Self::R as PipelineStream>::ValueType, T::ValueType> + 'static,
-        C::Output: Send + 'static,
-        <Self::R as PipelineStream>::KeyType: PartialEq<T::KeyType> + Send,
+        C::Output: Send + Sync + 'static,
+        <Self::R as PipelineStream>::KeyType: PartialEq<T::KeyType> + Serialize + Clone + Send,
+        <Self::R as PipelineStream>::ValueType: Send + Sync,
         Self: Sized,
     {
         let parts = self.into_parts();

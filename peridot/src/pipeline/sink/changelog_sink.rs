@@ -3,8 +3,11 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::{
-    engine::{context::EngineContext, queue_manager::queue_metadata::QueueMetadata},
-    message::sink::changelog_sink::ChangelogSink,
+    engine::{
+        context::EngineContext, queue_manager::queue_metadata::QueueMetadata,
+        wrapper::serde::native::NativeBytes,
+    },
+    message::sink::{changelog_sink::ChangelogSink, topic_sink::TopicSink},
 };
 
 use super::MessageSinkFactory;
@@ -32,13 +35,17 @@ where
     K: Clone + Serialize,
     V: Clone + Serialize,
 {
-    type SinkType = ChangelogSink<K, V>; // TODO: replace this with TopicSink<NativeBytes<K>, NativeBytes<V>>
+    type SinkType = TopicSink<NativeBytes<K>, NativeBytes<V>>;
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
         let changlog_topic = self
             .engine_context
             .get_changelog_topic_name(&self.store_name);
 
-        ChangelogSink::from_queue_metadata(queue_metadata, changlog_topic)
+        TopicSink::<NativeBytes<K>, NativeBytes<V>>::from_queue_metadata(
+            queue_metadata,
+            &changlog_topic,
+        )
+        .for_changelog()
     }
 }

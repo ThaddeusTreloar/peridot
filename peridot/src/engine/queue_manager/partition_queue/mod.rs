@@ -14,6 +14,8 @@ use tracing::info;
 
 use crate::app::extensions::{OwnedRebalance, PeridotConsumerContext, RebalanceReceiver};
 
+pub mod queue_service;
+
 pub(super) type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
 
 pin_project! {
@@ -40,7 +42,6 @@ pin_project! {
 impl StreamPeridotPartitionQueue {
     pub fn new(
         mut partition_queue: PeridotPartitionQueue,
-        //pre_rebalance_waker: RebalanceReceiver,
         source_topic: String,
         partition: i32,
     ) -> Self {
@@ -61,7 +62,6 @@ impl StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
-            //pre_rebalance_waker,
         }
     }
 }
@@ -77,10 +77,13 @@ impl Stream for StreamPeridotPartitionQueue {
         // let stream_time: i64 = 0;
         // let _timestamp = PeridotTimestamp::ConsumptionTime(stream_time);
 
+        // TODO: Implement some broadcast::Recevier that recieves commands from the
+        // app engine. One example would be SIGTERM so that partition queue can propogate
+        // the signal to downstream pipelines to commit and close their dependencies.
+
         let QueueProjection {
             waker,
             partition_queue,
-            //mut pre_rebalance_waker,
             source_topic,
             partition,
         } = self.project();

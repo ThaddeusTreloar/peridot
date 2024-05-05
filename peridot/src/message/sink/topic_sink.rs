@@ -1,4 +1,5 @@
 use std::{
+    default,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -21,11 +22,19 @@ use crate::{
     message::sink::{MessageSink, NonCommittingSink},
 };
 
+#[derive(Debug, Clone, Default, derive_more::Display)]
+pub(crate) enum TopicType {
+    #[default]
+    Output,
+    Changelog,
+}
+
 pin_project! {
     pub struct TopicSink<KS, VS> {
         topic: String,
         queue_metadata: QueueMetadata,
         delivery_futures: Vec<DeliveryFuture>,
+        topic_type: TopicType,
         _key_ser_type: std::marker::PhantomData<KS>,
         _value_ser_type: std::marker::PhantomData<VS>,
     }
@@ -37,9 +46,16 @@ impl<KS, VS> TopicSink<KS, VS> {
             topic: topic.to_owned(),
             queue_metadata,
             delivery_futures: Default::default(),
+            topic_type: Default::default(),
             _key_ser_type: Default::default(),
             _value_ser_type: Default::default(),
         }
+    }
+
+    pub fn for_changelog(mut self) -> Self {
+        self.topic_type = TopicType::Changelog;
+
+        self
     }
 }
 
@@ -152,13 +168,23 @@ where
             &value_bytes
         );
 
-        let record = FutureRecord {
-            topic: this.topic,
-            partition: None,
-            key: Some(&key_bytes),
-            payload: Some(&value_bytes),
-            timestamp: message.timestamp().into(),
-            headers: Some(message.headers().into_owned_headers()),
+        let record = match this.topic_type {
+            TopicType::Output => FutureRecord {
+                topic: this.topic,
+                partition: None,
+                key: Some(&key_bytes),
+                payload: Some(&value_bytes),
+                timestamp: message.timestamp().into(),
+                headers: Some(message.headers().into_owned_headers()),
+            },
+            TopicType::Changelog => FutureRecord {
+                topic: this.topic,
+                partition: Some(message.partition()),
+                key: Some(&key_bytes),
+                payload: Some(&value_bytes),
+                timestamp: message.timestamp().into(),
+                headers: Some(message.headers().into_owned_headers()),
+            },
         };
 
         let delivery_future = this

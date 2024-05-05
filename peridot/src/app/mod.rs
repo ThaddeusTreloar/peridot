@@ -142,6 +142,9 @@ where
         self.engine.clone()
     }
 
+    // TODO: Have alternate method that returns (AppHandle, RuntimeFuture)
+    // Where the RuntimeFuture runs the app to completed, and the
+    // AppHandle allows app management and operational views.
     pub async fn run(self) -> Result<(), PeridotAppRuntimeError> {
         tracing::debug!("Running PeridotApp");
 
