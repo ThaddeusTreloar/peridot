@@ -17,7 +17,7 @@ use crate::{
 use super::MessageSink;
 
 pin_project! {
-    pub struct PrintSink<KS, VS>
+    pub struct DebugSink<KS, VS>
     where
         KS: PeridotSerializer,
         VS: PeridotSerializer,
@@ -28,7 +28,7 @@ pin_project! {
     }
 }
 
-impl<KS, VS> PrintSink<KS, VS>
+impl<KS, VS> DebugSink<KS, VS>
 where
     KS: PeridotSerializer,
     VS: PeridotSerializer,
@@ -49,7 +49,7 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum PrintSinkError {}
 
-impl<KS, VS> MessageSink<KS::Input, VS::Input> for PrintSink<KS, VS>
+impl<KS, VS> MessageSink<KS::Input, VS::Input> for DebugSink<KS, VS>
 where
     KS: PeridotSerializer,
     VS: PeridotSerializer,

@@ -45,9 +45,9 @@ pin_project! {
 
 impl<B, K, V> StateSink<B, K, V>
 where
-    B: StateBackend + Send + Sync,
-    K: Serialize + Send + Sync,
-    V: DeserializeOwned + Send + Sync,
+    B: StateBackend + Send + Sync + 'static,
+    K: Serialize + Send + Sync + 'static,
+    V: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
     pub fn new(queue_metadata: QueueMetadata, state_facade: StateFacade<K, V, B>) -> Self {
         Self {
@@ -67,7 +67,12 @@ where
             .get_checkpoint()
             .map(|r| r.map(|c| c.offset))
     }
+
+    pub fn wake_dependants(&self) {
+        self.state_facade.wake();
+    }
 }
+
 impl<B, K, V> StateSink<B, K, V>
 where
     B: StateBackend + Send + Sync,
@@ -161,6 +166,9 @@ where
         this.state_facade
             .create_checkpoint(*offset)
             .expect("Failed to store commit.");
+
+        // Check lag,
+        //
 
         Poll::Ready(Ok(()))
     }

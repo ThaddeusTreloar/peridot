@@ -5,7 +5,7 @@ use crate::{
         queue_manager::queue_metadata::QueueMetadata,
         wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer},
     },
-    message::sink::{noop_sink::NoopSink, print_sink::PrintSink},
+    message::sink::{debug_sink::DebugSink, noop_sink::NoopSink},
 };
 
 use super::{DynamicSerialiserSinkFactory, MessageSinkFactory};

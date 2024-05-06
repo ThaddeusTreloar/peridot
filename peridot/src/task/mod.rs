@@ -14,10 +14,11 @@ use crate::{
     },
     pipeline::{
         filter::FilterPipeline,
+        forward::PipelineForward,
         join::JoinPipeline,
         map::MapPipeline,
         sink::{
-            bench_sink::BenchSinkFactory, print_sink::PrintSinkFactory,
+            bench_sink::BenchSinkFactory, debug_sink::DebugSinkFactory,
             topic_sink::TopicSinkFactory,
         },
         stream::{PipelineStream, PipelineStreamExt},
@@ -37,11 +38,11 @@ pub mod transparent;
 
 pub struct PipelineParts<'a, B, G, R>(&'a PeridotApp<B, G>, String, R)
 where
-    G: DeliveryGuaranteeType;
+    G: DeliveryGuaranteeType + Send + Sync + 'static;
 
 impl<'a, B, G, R> PipelineParts<'a, B, G, R>
 where
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn app(&self) -> &'a PeridotApp<B, G> {
         self.0
@@ -57,7 +58,7 @@ where
 }
 
 pub trait Task<'a> {
-    type G: DeliveryGuaranteeType;
+    type G: DeliveryGuaranteeType + Send + Sync + 'static;
     type B: StateBackend + Send + Sync + 'static;
     type R: PipelineStream + Send + 'static;
 
@@ -103,14 +104,14 @@ pub trait Task<'a> {
 
         let view = table.get_view_distributor();
 
-        let transform = move |input: Self::R| input.join(view, combiner);
+        let transform = move |input: Self::R| JoinPipeline::new(input, view, combiner);
 
         TransformTask::<'a>::new(parts.app(), parts.source_topic(), transform, parts.output())
     }
 
     fn map<MF, ME, MR>(
         self,
-        next: MF,
+        callback: MF,
     ) -> TransformTask<
         'a,
         impl FnOnce(Self::R) -> MapPipeline<Self::R, MF, ME, MR>,
@@ -139,7 +140,7 @@ pub trait Task<'a> {
         TransformTask::<'a>::new(
             parts.app(),
             parts.source_topic(),
-            move |input| input.map(next),
+            move |input| MapPipeline::new(input, callback),
             parts.output(),
         )
     }
@@ -208,7 +209,7 @@ pub trait Task<'a> {
     {
         let PipelineParts(app, _, output) = self.into_parts();
         let sink_factory = TopicSinkFactory::<KS, VS>::new(topic, app.engine().engine_context());
-        let job = output.forward(sink_factory);
+        let job = PipelineForward::<_, _, Self::G>::new(output, sink_factory);
         app.job(Box::pin(job));
     }
 
@@ -223,7 +224,7 @@ pub trait Task<'a> {
     {
         let PipelineParts(app, _, output) = self.into_parts();
         let sink_factory = BenchSinkFactory::<KS, VS>::new(topic, waker);
-        let job = output.forward(sink_factory);
+        let job = PipelineForward::<_, _, Self::G>::new(output, sink_factory);
         app.job(Box::pin(job));
     }
 
@@ -236,9 +237,9 @@ pub trait Task<'a> {
         Self: Sized + 'a,
         Self::R: PipelineStreamExt,
     {
-        let sink_factory = PrintSinkFactory::<KS, VS>::new();
+        let sink_factory = DebugSinkFactory::<KS, VS>::new();
         let PipelineParts(app, _, output) = self.into_parts();
-        let job = output.forward(sink_factory);
+        let job = PipelineForward::<_, _, Self::G>::new(output, sink_factory);
         app.job(Box::pin(job));
     }
 

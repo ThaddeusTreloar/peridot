@@ -54,7 +54,7 @@ struct Client {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    init_tracing(LevelFilter::DEBUG);
+    init_tracing(LevelFilter::TRACE);
 
     let mut client_config = ClientConfig::new();
 

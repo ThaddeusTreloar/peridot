@@ -14,11 +14,11 @@ use rdkafka::{
     Offset, TopicPartitionList,
 };
 use tokio::time::Instant;
-use tracing::info;
+use tracing::{event, info, instrument, trace_span, Level};
 
-use crate::engine::queue_manager::queue_metadata::QueueMetadata;
+use crate::engine::queue_manager::queue_metadata::{self, QueueMetadata};
 
-use super::{sink::MessageSink, stream::MessageStream, CommitState, BATCH_SIZE};
+use super::{sink::MessageSink, stream::MessageStream, StreamState, BATCH_SIZE};
 
 pin_project! {
     #[project = ForwardProjection]
@@ -32,7 +32,7 @@ pin_project! {
         #[pin]
         message_sink: Si,
         queue_metadata: QueueMetadata,
-        commit_state: CommitState,
+        commit_state: StreamState,
         interval: Option<Instant>,
     }
 }
@@ -75,6 +75,14 @@ where
             mut interval,
         } = self.project();
 
+        let span = tracing::span!(
+            Level::TRACE,
+            "Forward::poll",
+            topic = queue_metadata.source_topic(),
+            partition = queue_metadata.partition()
+        )
+        .entered();
+
         if interval.is_none() {
             let _ = interval.replace(Instant::now());
         }
@@ -115,7 +123,7 @@ where
             }
 
             // Otherwise, we can transition our commit state.
-            *commit_state = CommitState::Committed;
+            *commit_state = StreamState::Committed;
 
             match queue_metadata.producer().begin_transaction() {
                 Ok(r) => {
@@ -158,18 +166,18 @@ where
                     );
 
                     match commit_state {
-                        CommitState::Committed => {
+                        StreamState::Committed | StreamState::Sleeping => {
                             ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
                             return Poll::Ready(Ok(()));
                         }
-                        CommitState::Uncommitted => {
-                            *commit_state = CommitState::Committing;
+                        StreamState::Uncommitted => {
+                            *commit_state = StreamState::Committing;
 
                             cx.waker().wake_by_ref();
 
                             return Poll::Pending;
                         }
-                        CommitState::Committing => panic!("This should not be possible"),
+                        StreamState::Committing => panic!("This should not be possible"),
                     }
                 }
                 Poll::Pending => {
@@ -182,8 +190,8 @@ where
                     // We have recieved no messages from upstream, they will have
                     // transitioned to a commit state.
                     // We can transition to a commit state if we haven't already.
-                    if let CommitState::Uncommitted = commit_state {
-                        *commit_state = CommitState::Committing;
+                    if let StreamState::Uncommitted = commit_state {
+                        *commit_state = StreamState::Committing;
                         cx.waker().wake_by_ref();
                     }
 
@@ -194,7 +202,7 @@ where
                     tracing::debug!("Message received in Fork, sending to sink.");
                     // If we were waiting for upstream nodes to finish committing, we can transition
                     // to our default state.
-                    if let CommitState::Committed = commit_state {
+                    if let StreamState::Committed = commit_state {
                         *commit_state = Default::default();
                     }
 
@@ -256,8 +264,8 @@ where
                             // We have recieved no messages from upstream, they will have
                             // transitioned to a commit state.
                             // We can transition to a commit state if we haven't already.
-                            if let CommitState::Uncommitted = commit_state {
-                                *commit_state = CommitState::Committing;
+                            if let StreamState::Uncommitted = commit_state {
+                                *commit_state = StreamState::Committing;
                                 cx.waker().wake_by_ref();
                             }
 

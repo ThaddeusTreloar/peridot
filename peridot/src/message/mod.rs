@@ -11,15 +11,16 @@ pub mod types;
 const BATCH_SIZE: usize = 65535;
 
 #[derive(Debug, Default, PartialEq, Eq)]
-enum CommitState {
+enum StreamState {
     #[default]
     Uncommitted,
     Committing,
     Committed,
+    Sleeping,
 }
 
-impl CommitState {
+impl StreamState {
     fn is_committing(&self) -> bool {
-        *self == CommitState::Committing
+        *self == StreamState::Committing
     }
 }

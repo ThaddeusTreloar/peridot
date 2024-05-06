@@ -7,7 +7,7 @@ use crate::{
         context::EngineContext, queue_manager::queue_metadata::QueueMetadata,
         wrapper::serde::PeridotSerializer,
     },
-    message::sink::{bench_sink::BenchSink, changelog_sink::ChangelogSink, topic_sink::TopicSink},
+    message::sink::topic_sink::{TopicSink, TopicType},
 };
 
 use super::MessageSinkFactory;
@@ -37,9 +37,10 @@ where
     VS: PeridotSerializer,
     VS::Input: Serialize,
 {
-    type SinkType = BenchSink<KS, VS>;
+    type SinkType = TopicSink<KS, VS>;
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
-        BenchSink::from_queue_metadata(queue_metadata, &self.topic, self.waker.clone())
+        TopicSink::from_queue_metadata(queue_metadata, &self.topic)
+            .with_topic_type(TopicType::Bench(self.waker.clone()))
     }
 }

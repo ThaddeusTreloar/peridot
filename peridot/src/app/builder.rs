@@ -32,7 +32,7 @@ impl AppBuilder<(), (), ()> {
 impl<C, B, G> AppBuilder<C, B, G> {
     pub fn with_delivery_guarantee<NG>(self) -> AppBuilder<C, B, NG>
     where
-        NG: DeliveryGuaranteeType,
+        NG: DeliveryGuaranteeType + Send + Sync + 'static,
     {
         AppBuilder {
             config: self.config,
@@ -82,7 +82,7 @@ where
 
 impl<G> AppBuilder<PeridotConfig, (), G>
 where
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn build(self) -> Result<PeridotApp<InMemoryStateBackend, G>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;
@@ -92,7 +92,7 @@ where
 
 impl<B, G> AppBuilder<PeridotConfig, B, G>
 where
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
     B: StateBackend + Send + Sync + 'static,
 {
     pub fn build(self) -> Result<PeridotApp<B, G>, PeridotAppCreationError> {

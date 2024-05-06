@@ -1,9 +1,12 @@
 pub type PeridotConsumer = BaseConsumer<PeridotConsumerContext>;
-
 pub type StateStoreMap<B> = Arc<DashMap<(String, i32), Arc<B>>>;
+pub(crate) type Job = Pin<Box<dyn Future<Output = Result<(), PeridotAppRuntimeError>> + Send>>;
+type JobList = Box<Job>;
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
+use futures::future::select_all;
+use futures::Future;
 use rdkafka::config::FromClientConfig;
 use rdkafka::consumer::{BaseConsumer, ConsumerContext};
 use rdkafka::producer::{FutureProducer, NoCustomPartitioner, Producer};
@@ -14,7 +17,9 @@ use rdkafka::{
 };
 use std::default;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::process::exit;
+use std::sync::Mutex;
 use std::{fmt::Display, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::{
@@ -24,6 +29,7 @@ use tokio::{
 use tracing::{error, info, warn};
 use tracing_subscriber::field::display;
 
+use crate::app::error::PeridotAppRuntimeError;
 use crate::engine::queue_manager::QueueManager;
 use crate::state::backend::StateBackend;
 use crate::{
@@ -43,6 +49,7 @@ use self::producer_factory::ProducerFactory;
 use self::queue_manager::partition_queue::StreamPeridotPartitionQueue;
 use self::queue_manager::QueueSender;
 use self::state_store_manager::StateStoreManager;
+use self::util::DeliveryGuaranteeType;
 use self::{
     error::{PeridotEngineCreationError, PeridotEngineRuntimeError},
     util::{ConsumerUtils, ExactlyOnce},
@@ -91,11 +98,13 @@ pub struct AppEngine<B, G = ExactlyOnce> {
     // hook_manager: HookManager,
     shutdown_signal: tokio::sync::broadcast::Sender<()>,
     engine_state: Arc<AtomicCell<EngineState>>,
+    jobs: Mutex<Vec<JobList>>,
     _delivery_guarantee: PhantomData<G>,
 }
 
-impl<B> AppEngine<B>
+impl<B, G> AppEngine<B, G>
 where
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
     B: StateBackend + Send + Sync + 'static,
 {
     pub(crate) fn state_store_context(&self) -> Arc<StateStoreManager<B>> {
@@ -147,7 +156,30 @@ where
             exit(0)
         });
 
+        let jobs = self.jobs.lock();
+
+        let job_results = jobs
+            .expect("Job lock poinsoned!")
+            .drain(..)
+            .map(tokio::spawn)
+            .collect::<Vec<_>>();
+
+        let mut select = select_all(job_results.into_iter());
+
         tracing::debug!("Engine running...");
+
+        loop {
+            let (job_result, _, remaining) = select.await;
+
+            match job_result {
+                Ok(_) => (),
+                Err(e) => {
+                    unimplemented!("Transition engine state on job fail: {}", e)
+                }
+            }
+
+            select = select_all(remaining);
+        }
 
         Ok(()) // Transition engine state.
     }
@@ -175,12 +207,19 @@ where
             engine_state: Default::default(),
             shutdown_signal,
             state_store_manager: Default::default(),
+            jobs: Default::default(),
             _delivery_guarantee: PhantomData,
         })
     }
 
+    pub(crate) fn submit(&self, job: Job) {
+        let mut jobs = self.jobs.lock().expect("Job lock poinsoned.");
+
+        jobs.push(Box::new(job));
+    }
+
     pub(crate) fn input_stream<KS, VS>(
-        self: Arc<AppEngine<B>>,
+        &self,
         topic: String,
     ) -> Result<SerialiserPipeline<KS, VS>, PeridotEngineRuntimeError>
     where

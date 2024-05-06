@@ -7,7 +7,7 @@ use crate::{
         context::EngineContext, queue_manager::queue_metadata::QueueMetadata,
         wrapper::serde::native::NativeBytes,
     },
-    message::sink::{changelog_sink::ChangelogSink, topic_sink::TopicSink},
+    message::sink::topic_sink::{TopicSink, TopicType},
 };
 
 use super::MessageSinkFactory;
@@ -46,6 +46,6 @@ where
             queue_metadata,
             &changlog_topic,
         )
-        .for_changelog()
+        .with_topic_type(TopicType::Changelog)
     }
 }

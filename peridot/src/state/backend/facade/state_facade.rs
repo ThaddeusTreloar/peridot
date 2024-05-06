@@ -114,4 +114,8 @@ where
             .delete(key, self.store_name(), self.partition())
             .await
     }
+
+    fn wake(&self) {
+        self.backend.wake(self.store_name(), self.partition())
+    }
 }

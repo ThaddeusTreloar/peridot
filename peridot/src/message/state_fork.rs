@@ -28,7 +28,7 @@ use crate::{
 use super::{
     sink::{state_sink::StateSink, MessageSink},
     stream::{serialiser::QueueSerialiser, MessageStream},
-    CommitState,
+    StreamState,
 };
 
 type DeserialiserQueue<K, V> = QueueSerialiser<NativeBytes<K>, NativeBytes<V>>;
@@ -64,7 +64,7 @@ pin_project! {
         changelog_start: Option<i64>,
         store_name: String,
         partition: i32,
-        commit_state: CommitState,
+        commit_state: StreamState,
         store_state: StoreState,
         _state_backend: PhantomData<B>,
     }
@@ -146,14 +146,18 @@ where
             ..
         } = self.project();
 
+        if let StreamState::Sleeping = commit_state {
+            *commit_state = Default::default();
+        }
+
         let mut changelog_stream_proj = changelog_stream.as_pin_mut();
 
         // If we have transitioned to a committing state, we can start our
         // sink commit process. Otherwise, we can continue to poll the stream.
-        if let CommitState::Committing = commit_state {
+        if let StreamState::Committing = commit_state {
             tracing::debug!("Committing sink...");
             ready!(state_sink.as_mut().poll_commit(cx)).expect("Failed to close");
-            *commit_state = CommitState::Committed;
+            *commit_state = StreamState::Committed;
         }
 
         if store_state.is_ready() && changelog_stream_proj.is_some() {
@@ -161,7 +165,7 @@ where
         }
 
         if let Some(mut stream) = changelog_stream_proj {
-            if let CommitState::Committed = commit_state {
+            if let StreamState::Committed = commit_state {
                 *commit_state = Default::default();
             }
 
@@ -243,7 +247,7 @@ where
                             Poll::Pending => {
                                 tracing::debug!("State sink pending commit for checkpoint");
 
-                                *commit_state = CommitState::Committing;
+                                *commit_state = StreamState::Committing;
                                 return Poll::Pending;
                             }
                             Poll::Ready(result) => {
@@ -321,8 +325,25 @@ where
                 // We have recieved no messages from upstream, they will have
                 // transitioned to a commit state.
                 // We can transition to a commit state if we haven't already.
-                if let CommitState::Uncommitted = commit_state {
-                    *commit_state = CommitState::Committing;
+                match commit_state {
+                    StreamState::Uncommitted => {
+                        *commit_state = StreamState::Committing;
+                        cx.waker().wake_by_ref();
+                    }
+                    StreamState::Committed => {
+                        // Yield control so that when we wake dependents we will be
+                        // behind any tasks that are pending wake.
+                        cx.waker().wake_by_ref();
+                    }
+                    StreamState::Sleeping => {
+                        // Before we sleep, wake any task that read the state lag
+                        // before being updated for the final time, but got fenced
+                        // from registering a waker while this task was waking
+                        // dependants. Such tasks will now be ahead in the scheduler
+                        // queue.
+                        state_sink.wake_dependants();
+                    }
+                    _ => (),
                 }
 
                 Poll::Pending
@@ -330,7 +351,7 @@ where
             Poll::Ready(Some(message)) => {
                 // If we were waiting for upstream nodes to commit, we can transition
                 // to our default state.
-                if let CommitState::Committed = commit_state {
+                if let StreamState::Committed = commit_state {
                     *commit_state = Default::default();
                 }
 

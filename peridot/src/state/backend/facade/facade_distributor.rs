@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     engine::{
         context::EngineContext, metadata_manager::table_metadata,
-        state_store_manager::StateStoreManager, AppEngine,
+        state_store_manager::StateStoreManager, util::DeliveryGuaranteeType, AppEngine,
     },
     state::backend::{GetView, StateBackend, VersionedStateBackend},
 };
@@ -22,10 +22,13 @@ impl<K, V, B> FacadeDistributor<K, V, B>
 where
     B: StateBackend + Send + Sync + 'static,
 {
-    pub fn new(backend: Arc<AppEngine<B>>, store_name: String) -> Self {
+    pub fn new<G>(engine: &AppEngine<B, G>, store_name: String) -> Self
+    where
+        G: DeliveryGuaranteeType + Send + Sync + 'static,
+    {
         Self {
-            engine_context: backend.engine_context(),
-            state_store_manager: backend.state_store_context(),
+            engine_context: engine.engine_context(),
+            state_store_manager: engine.state_store_context(),
             store_name,
             _key_type: Default::default(),
             _value_type: Default::default(),

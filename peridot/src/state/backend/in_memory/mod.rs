@@ -1,4 +1,9 @@
-use std::borrow::{Borrow, BorrowMut};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    collections::HashMap,
+    sync::atomic::AtomicI64,
+    task::Waker,
+};
 
 use dashmap::{mapref::one::Ref, DashMap};
 use serde::{de::DeserializeOwned, Serialize};
@@ -12,7 +17,13 @@ use super::{Checkpoint, StateBackend};
 pub struct InMemoryStateBackend {
     store: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
     checkpoint: DashMap<String, Checkpoint>,
-    store_time: PeridotTimestamp,
+    // See notes here about compare and swap operations:
+    // https://doc.rust-lang.org/std/sync/atomic/
+    // Certain architectures may not support this implementation
+    store_times: DashMap<String, AtomicI64>,
+    // TODO: must ensure that these waker are woken, when the parent
+    // sink is polled and returns pending.
+    wakers: DashMap<String, Vec<Waker>>,
 }
 
 impl InMemoryStateBackend {
@@ -32,6 +43,46 @@ impl InMemoryStateBackend {
             Some(state) => state,
         }
     }
+
+    fn update_store_time(&self, store_name: &str, partition: i32, time: i64) {
+        let key = Self::derive_state_key(store_name, partition);
+
+        match self.store_times.get(&key) {
+            Some(store_time) => {
+                store_time.fetch_max(time, std::sync::atomic::Ordering::SeqCst);
+            }
+            None => {
+                self.store_times.insert(key, AtomicI64::from(time));
+            }
+        };
+    }
+
+    fn get_store_time(&self, store_name: &str, partition: i32) -> i64 {
+        let key = Self::derive_state_key(store_name, partition);
+
+        self.store_times
+            .get(&key)
+            .unwrap()
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn insert_waker(&self, store_name: &str, partition: i32, waker: Waker) {
+        let key = Self::derive_state_key(store_name, partition);
+
+        match self.wakers.get_mut(&key) {
+            Some(mut wakers) => wakers.push(waker),
+            None => todo!(""),
+        }
+    }
+
+    fn wake_all(&self, store_name: &str, partition: i32) {
+        let key = Self::derive_state_key(store_name, partition);
+
+        match self.wakers.get_mut(&key) {
+            Some(mut wakers) => wakers.drain(..).for_each(|w| w.wake()),
+            None => todo!(""),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -40,6 +91,10 @@ pub enum InMemoryStateBackendError {}
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
 
+    fn wake(&self, topic: &str, partition: i32) {
+        self.wake_all(topic, partition);
+    }
+
     fn with_source_topic_name_and_partition(
         _topic_name: &str,
         _partition: i32,
@@ -47,8 +102,13 @@ impl StateBackend for InMemoryStateBackend {
         Ok(Default::default())
     }
 
-    fn get_state_store_time(&self) -> PeridotTimestamp {
-        self.store_time.clone()
+    fn get_state_store_time(&self, store_name: &str, partition: i32) -> PeridotTimestamp {
+        //self.store_time.clone()
+        todo!("")
+    }
+
+    fn poll_lag(&self, store_name: &str, partition: i32, waker: Waker) -> bool {
+        todo!("")
     }
 
     fn get_state_store_checkpoint(&self, store_name: &str, partition: i32) -> Option<Checkpoint> {
@@ -128,6 +188,9 @@ impl StateBackend for InMemoryStateBackend {
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
         let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
+
+        // compute lag
+        // if lag is acceptable, drain and wake wakers.
 
         store.insert(key_bytes, value_byte);
 

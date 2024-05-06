@@ -7,7 +7,7 @@ use crate::{
         context::EngineContext, queue_manager::queue_metadata::QueueMetadata,
         wrapper::serde::PeridotSerializer,
     },
-    message::sink::{changelog_sink::ChangelogSink, topic_sink::TopicSink},
+    message::sink::topic_sink::TopicSink,
 };
 
 use super::MessageSinkFactory;

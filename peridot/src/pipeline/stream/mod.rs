@@ -39,59 +39,8 @@ pub trait PipelineStream {
     ) -> Poll<Option<PipelineStage<Self::MStream>>>;
 }
 
-pub trait PipelineStreamExt: PipelineStream {
-    fn map<F, E, R>(self, f: F) -> MapPipeline<Self, F, E, R>
-    where
-        F: Fn(E) -> R,
-        E: FromMessage<Self::KeyType, Self::ValueType>,
-        R: PatchMessage<Self::KeyType, Self::ValueType>,
-        Self: Sized,
-    {
-        MapPipeline::new(self, f)
-    }
-
-    fn forward<SF>(self, sink: SF) -> PipelineForward<Self, SF>
-    where
-        SF: MessageSinkFactory<Self::KeyType, Self::ValueType> + Send + 'static,
-        Self::KeyType: Send + 'static,
-        Self::ValueType: Send + 'static,
-        Self: Sized,
-    {
-        PipelineForward::new(self, sink)
-    }
-
-    fn fork<SF, G>(self, sink_factory: SF) -> PipelineFork<Self, SF, G>
-    where
-        Self: Sized,
-    {
-        PipelineFork::new(self, sink_factory)
-    }
-
-    fn count() {}
-    fn filter() {}
-    fn fold() {}
-
-    fn join<T, C>(self, table: T, combiner: C) -> JoinPipeline<Self, T, C>
-    where
-        T: GetView + Send + 'static,
-        C: Combiner<Self::ValueType, T::ValueType>,
-        Self::KeyType: PartialEq<T::KeyType>,
-        Self: Sized,
-    {
-        JoinPipeline::new(self, table, combiner)
-    }
-    /*
-    fn join_by<T, J, C>(self, table: T, joiner: J, combiner: C) -> JoinBy<Self, T, J, C>
-    where
-        T: GetViewDistributor + Send + 'static,
-        J: Fn(&Self::KeyType, &T::KeyType) -> bool,
-        C: Fn(&Self::ValueType, &T::ValueType) -> C::Output,
-        Self: Sized,
-    {
-        JoinBy::new(self, table, joiner, combiner)
-    } */
-
-    fn reduce() {}
-}
+// TODO: consider removing this as all methods have the nearly identical logic.
+// The methods have been remove for now.
+pub trait PipelineStreamExt: PipelineStream {}
 
 impl<P> PipelineStreamExt for P where P: PipelineStream {}

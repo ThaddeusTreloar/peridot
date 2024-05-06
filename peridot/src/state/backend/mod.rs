@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, task::Waker};
 
 use futures::Future;
 use serde::{de::DeserializeOwned, Serialize};
@@ -77,12 +77,17 @@ where
 {
     type Error: std::error::Error;
 
+    fn wake(&self, topic: &str, partition: i32);
+
     fn with_source_topic_name_and_partition(
         topic_name: &str,
         partition: i32,
     ) -> Result<Self, Self::Error>;
 
-    fn get_state_store_time(&self) -> PeridotTimestamp;
+    fn get_state_store_time(&self, store_name: &str, partition: i32) -> PeridotTimestamp;
+
+    // TODO: consider revising
+    fn poll_lag(&self, store_name: &str, partition: i32, waker: Waker) -> bool;
 
     fn get_state_store_checkpoint(&self, store_name: &str, partition: i32) -> Option<Checkpoint>;
 
@@ -213,6 +218,8 @@ pub trait WriteableStateView {
         self: Arc<Self>,
         range: Vec<(Self::KeyType, Self::ValueType)>,
     ) -> Result<(), Self::Error>;
+
+    fn wake(&self);
 
     async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), Self::Error>;
 }

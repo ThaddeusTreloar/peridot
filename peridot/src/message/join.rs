@@ -8,6 +8,7 @@ use std::{
 use futures::{Future, FutureExt};
 use pin_project_lite::pin_project;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tracing::Level;
 
 use crate::{
     message::types::PatchMessage,
@@ -65,6 +66,8 @@ where
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<super::types::Message<Self::KeyType, Self::ValueType>>> {
+        let span = tracing::span!(Level::TRACE, "->InnerJoin::poll_next",).entered();
+
         let this = self.project();
 
         if this.state_future.is_none() {
@@ -91,6 +94,8 @@ where
                 let _ = this.state_future.take();
 
                 return Poll::Ready(Some(output_message));
+            } else {
+                tracing::debug!("Dropped message for offset: {}", message.offset());
             }
 
             let _ = this.state_future.take();

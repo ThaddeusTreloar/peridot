@@ -5,18 +5,18 @@ use crate::{
         queue_manager::queue_metadata::QueueMetadata,
         wrapper::serde::{PeridotSerializer, PeridotStatefulSerializer},
     },
-    message::sink::print_sink::PrintSink,
+    message::sink::debug_sink::DebugSink,
 };
 
 use super::{DynamicSerialiserSinkFactory, MessageSinkFactory};
 
 #[derive(Default)]
-pub struct PrintSinkFactory<KS, VS> {
+pub struct DebugSinkFactory<KS, VS> {
     _key_ser_type: PhantomData<KS>,
     _value_ser_type: PhantomData<VS>,
 }
 
-impl<KS, VS> PrintSinkFactory<KS, VS> {
+impl<KS, VS> DebugSinkFactory<KS, VS> {
     pub fn new() -> Self {
         Self {
             _key_ser_type: PhantomData,
@@ -25,16 +25,16 @@ impl<KS, VS> PrintSinkFactory<KS, VS> {
     }
 }
 
-impl<KS, VS> MessageSinkFactory<KS::Input, VS::Input> for PrintSinkFactory<KS, VS>
+impl<KS, VS> MessageSinkFactory<KS::Input, VS::Input> for DebugSinkFactory<KS, VS>
 where
     KS: PeridotSerializer,
     KS::Input: Display,
     VS: PeridotSerializer,
     VS::Input: Display,
 {
-    type SinkType = PrintSink<KS, VS>;
+    type SinkType = DebugSink<KS, VS>;
 
     fn new_sink(&self, queue_metadata: QueueMetadata) -> Self::SinkType {
-        PrintSink::from_queue_metadata(queue_metadata)
+        DebugSink::from_queue_metadata(queue_metadata)
     }
 }

@@ -11,7 +11,7 @@ where
     F: FnOnce(I) -> R,
     I: PipelineStream,
     R: PipelineStream,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     app: &'a PeridotApp<B, G>,
     source_topic: String,
@@ -25,7 +25,7 @@ where
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
     R::MStream: Send + 'static,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, source_topic: String, handler: F, input: I) -> Self {
         Self {
@@ -42,7 +42,7 @@ where
     F: FnOnce(I) -> R,
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
     B: StateBackend + Send + Sync + 'static,
 {
     type G = G;

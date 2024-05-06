@@ -72,30 +72,19 @@ struct Client {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    init_tracing(LevelFilter::DEBUG);
+    init_tracing(LevelFilter::TRACE);
 
-    let mut client_config = ClientConfig::new();
+    let mut peridot_config = PeridotConfigBuilder::new();
 
-    let group = "rust-test35";
-    let group_instance = "peridot-instance-1";
-
-    client_config
+    peridot_config
         .set("bootstrap.servers", "kafka1:9092,kafka2:9093,kafka3:9094")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
         .set("application.id", "app-message-closures")
-        .set("group.id", group)
-        .set("group.instance.id", group_instance)
-        .set("auto.offset.reset", "earliest")
-        //.set("statistics.interval.ms", "1")
-        .set_log_level(RDKafkaLogLevel::Error);
+        .set("auto.offset.reset", "earliest");
 
     let app = AppBuilder::new()
-        .with_config(
-            PeridotConfigBuilder::from(&client_config)
-                .build()
-                .expect("Failed to build config."),
-        )
+        .with_config(peridot_config.build()?)
         .build()
         .expect("Failed to build app.");
 
@@ -103,7 +92,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .join(&table, CombinedValues)
-        .into_debug::<String, Json<CombinedValues>>();
+        .into_topic::<String, Json<CombinedValues>>("genericTopic");
 
     table.finish();
 

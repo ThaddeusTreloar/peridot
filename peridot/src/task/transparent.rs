@@ -10,7 +10,7 @@ pub struct TransparentTask<'a, R, B, G>
 where
     R: PipelineStream,
     B: StateBackend,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     app: &'a PeridotApp<B, G>,
     source_topic: String,
@@ -21,7 +21,7 @@ impl<'a, R, B, G> TransparentTask<'a, R, B, G>
 where
     R: PipelineStream + 'static,
     B: StateBackend,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, source_topic: &str, handler: R) -> Self {
         Self {
@@ -37,7 +37,7 @@ where
     R: PipelineStream + Send + 'static,
     R::MStream: Send,
     B: StateBackend + Send + Sync + 'static,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     type G = G;
     type R = R;

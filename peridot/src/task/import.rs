@@ -12,7 +12,7 @@ use super::Task;
 pub struct ImportTask<'a, S, B, G>
 where
     B: StateBackend,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     app: &'a PeridotApp<B, G>,
     imports: Vec<S>,
@@ -22,7 +22,7 @@ impl<'a, S, B, G> ImportTask<'a, S, B, G>
 where
     S: futures::Stream,
     B: StateBackend,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, imports: Vec<S>) -> Self {
         Self { app, imports }
@@ -51,7 +51,7 @@ where
 pub struct IntegratedImportTask<'a, S, B, G>
 where
     B: StateBackend,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     app: &'a PeridotApp<B, G>,
     imports: Vec<S>,
@@ -60,7 +60,7 @@ where
 impl<'a, S, B, G> IntegratedImportTask<'a, S, B, G>
 where
     B: StateBackend,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, imports: Vec<S>) -> Self {
         Self { app, imports }

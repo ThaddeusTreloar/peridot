@@ -1,5 +1,5 @@
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+use tracing_subscriber::{fmt::format::FmtSpan, prelude::__tracing_subscriber_SubscriberExt};
 
 pub fn init_tracing(log_level: LevelFilter) {
     let fmt_layer = tracing_subscriber::fmt::layer()

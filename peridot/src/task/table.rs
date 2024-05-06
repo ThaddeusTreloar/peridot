@@ -15,6 +15,7 @@ use crate::{
     },
     pipeline::{
         fork::PipelineFork,
+        forward::PipelineForward,
         sink::{
             changelog_sink::ChangelogSinkFactory, noop_sink::NoopSinkFactory,
             state_sink::StateSinkFactory,
@@ -39,7 +40,7 @@ type TableDownstream<P, B, K, V> =
 #[must_use = "Tables do not run unless they are finished or they have downsream tasks."]
 pub struct TableTask<'a, P, B, G>
 where
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
     P: PipelineStream + Send + 'static,
     P::MStream: Send + 'static,
     P::KeyType: Clone + Serialize + Send + 'static,
@@ -55,7 +56,7 @@ where
 
 impl<'a, P, B, G> TableTask<'a, P, B, G>
 where
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
     P::KeyType: Clone + Serialize + Send + 'static,
@@ -78,11 +79,11 @@ where
         let changelog_sink_factory =
             ChangelogSinkFactory::new(&store_name, app.engine().engine_context());
 
-        let changelog_output = stream_queue.fork::<_, ExactlyOnce>(changelog_sink_factory);
+        let changelog_output = PipelineFork::new(stream_queue, changelog_sink_factory);
 
         let backend_sink_factory =
             StateSinkFactory::<B, P::KeyType, P::ValueType>::from_state_store_manager(
-                app.engine_arc().state_store_context(),
+                app.engine().state_store_context(),
                 &store_name,
                 &source_topic,
             );
@@ -116,12 +117,12 @@ where
     B::Error: Send,
     P::KeyType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn finish(self) {
         let sink_factory = NoopSinkFactory::<Json<P::KeyType>, Json<P::ValueType>>::new();
         let PipelineParts(app, _, output) = self.into_parts();
-        let job = output.forward(sink_factory);
+        let job = PipelineForward::<_, _, G>::new(output, sink_factory);
         app.job(Box::pin(job));
     }
 }
@@ -133,7 +134,7 @@ where
     B::Error: Send,
     P::KeyType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     type G = G;
     type B = B;
@@ -164,7 +165,7 @@ where
     B::Error: Send,
     P::KeyType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     P::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
-    G: DeliveryGuaranteeType,
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     type Error = B::Error;
     type KeyType = P::KeyType;
@@ -174,9 +175,7 @@ where
     fn get_view_distributor(
         &self,
     ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
-        let engine = self.app.engine_arc().clone();
-
-        FacadeDistributor::new(engine, self.name.clone())
+        FacadeDistributor::new(self.app.engine(), self.name.clone())
     }
 }
 
