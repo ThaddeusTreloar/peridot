@@ -46,6 +46,12 @@ impl PeridotConfig {
         self
     }
 
+    pub(crate) fn without_client_statistics(mut self) -> PeridotConfig {
+        self.client_config.set("statistics.interval.ms", "0");
+
+        self
+    }
+
     pub fn new_client_config(&self) -> ClientConfig {
         self.client_config.clone()
     }

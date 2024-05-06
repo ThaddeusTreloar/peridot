@@ -57,7 +57,7 @@ pub enum ClientManagerError {
 
 impl ClientManager {
     pub(crate) fn from_config(config: &PeridotConfig) -> Result<Self, ClientManagerError> {
-        let context = PeridotConsumerContext::from_config(config);
+        let context = PeridotConsumerContext::default();
 
         let consumer = config
             .client_config()

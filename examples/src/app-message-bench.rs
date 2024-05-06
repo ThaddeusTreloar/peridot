@@ -51,6 +51,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("group.id", group)
         .set("group.instance.id", group_instance)
         .set("auto.offset.reset", "earliest")
+        .set("statistics.interval.ms", "50")
         .set_log_level(RDKafkaLogLevel::Error);
 
     let app = AppBuilder::new()

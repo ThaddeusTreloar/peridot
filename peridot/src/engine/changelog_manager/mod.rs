@@ -87,11 +87,11 @@ impl ChangelogManager {
     pub(crate) fn from_config(config: &PeridotConfig) -> Result<Self, ChangelogManagerError> {
         let config = config.clone().with_earliest_offset_reset();
 
-        let context = PeridotConsumerContext::from_config(&config);
+        let context = PeridotConsumerContext::default();
 
         let consumer = config
             .client_config()
-            .create_with_context(context.clone())
+            .create_with_context(context)
             .map_err(ChangelogManagerError::CreateConsumerError)?;
 
         Ok(Self {

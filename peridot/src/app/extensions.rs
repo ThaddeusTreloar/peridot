@@ -11,7 +11,7 @@ use rdkafka::{
     ClientContext,
 };
 use tokio::sync::broadcast::{channel, Receiver, Sender};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use super::config::PeridotConfig;
 
@@ -93,7 +93,6 @@ pub struct PeridotConsumerContext {
     pre_rebalance_waker: RebalanceSender,
     post_rebalance_waker: RebalanceSender,
     commit_waker: Sender<Commit>,
-    max_poll_interval: Timeout,
 }
 
 impl Clone for PeridotConsumerContext {
@@ -102,12 +101,27 @@ impl Clone for PeridotConsumerContext {
             pre_rebalance_waker: self.pre_rebalance_waker.clone(),
             post_rebalance_waker: self.post_rebalance_waker.clone(),
             commit_waker: self.commit_waker.clone(),
-            max_poll_interval: self.max_poll_interval,
         }
     }
 }
 
-impl ClientContext for PeridotConsumerContext {}
+impl ClientContext for PeridotConsumerContext {
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        info!("Stats...");
+        statistics.topics.iter().for_each(|(topic, t_stats)| {
+            t_stats.partitions.iter().for_each(|(p, p_stat)| {
+                info!(
+                    "LSO, topic: {}, partition: {}, offset: {}",
+                    topic, p, p_stat.ls_offset
+                );
+                info!(
+                    "HWM, topic: {}, partition: {}, offset: {}",
+                    topic, p, p_stat.hi_offset
+                );
+            })
+        })
+    }
+}
 
 impl Default for PeridotConsumerContext {
     fn default() -> Self {
@@ -119,24 +133,11 @@ impl Default for PeridotConsumerContext {
             pre_rebalance_waker,
             post_rebalance_waker,
             commit_waker, // The default max_poll_interval is 5 minutes
-            max_poll_interval: Timeout::After(Duration::from_millis(300000)),
         }
     }
 }
 
 impl PeridotConsumerContext {
-    pub fn from_config(config: &PeridotConfig) -> Self {
-        let mut this = Self::default();
-
-        if let Some(interval) = config.get("max.poll.interval.ms") {
-            this.max_poll_interval = Timeout::After(Duration::from_millis(
-                interval.parse().expect("Invalid max.poll.interval.ms"),
-            ));
-        }
-
-        this
-    }
-
     pub fn wakers(&self) -> ContextWakers {
         ContextWakers {
             pre_rebalance_waker: self.pre_rebalance_waker.subscribe(),
@@ -235,9 +236,5 @@ impl ConsumerContext for PeridotConsumerContext {
                 error!("Failed to commit offsets: {}", e);
             }
         }
-    }
-
-    fn main_queue_min_poll_interval(&self) -> Timeout {
-        self.max_poll_interval
     }
 }

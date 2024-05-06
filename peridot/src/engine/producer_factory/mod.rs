@@ -49,7 +49,9 @@ impl ProducerFactory {
         // At a later date we can review this approach.
         let mut config = self.config.new_client_config();
 
-        config.set(TRANSACTIONAL_ID, transaction_id);
+        config
+            .set(TRANSACTIONAL_ID, transaction_id)
+            .set("statistics.interval.ms", "0");
 
         let producer = FutureProducer::from_config(&config)
             .map_err(|err| ProducerFactoryError::ProducerCreationError { err })?;

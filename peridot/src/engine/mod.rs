@@ -185,8 +185,6 @@ where
     }
 
     pub fn from_config(config: &PeridotConfig) -> Result<Self, PeridotEngineCreationError> {
-        let context = PeridotConsumerContext::from_config(config);
-
         let engine_context = EngineContext {
             config: config.clone(),
             admin_manager: AdminManager::new(config)?,
