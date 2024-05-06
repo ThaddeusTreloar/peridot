@@ -73,8 +73,8 @@ use peridot::prelude::*;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct Client {
-    owner_type: String,
-    owner: String,
+    name: String,
+    occupation: String,
 }
 
 #[tokio::main]
