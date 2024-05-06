@@ -82,7 +82,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut peridot_config = PeridotConfigBuilder::new();
 
     peridot_config
-        .set("bootstrap.servers", "kafka1:9092,kafka2:9093,kafka3:9094")
+        .set("bootstrap.servers", "kafka1:9092,kafka2:9093,kafka3:9094");
 
     ... some normal kafka configuration ...
 
