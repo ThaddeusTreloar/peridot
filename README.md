@@ -68,46 +68,6 @@ Configs:
 
 ## Example
 
-Tasks can be created with pipeline templates as such:
-```
-use peridot::prelude::*;
-
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-struct Client {
-    owner_type: String,
-    owner: String,
-}
-
-fn partial_task(
-    input: impl PipelineStream<KeyType = String, ValueType = ChangeOfAddress> + Send,
-) -> impl PipelineStream<KeyType = String, ValueType = usize> + Send
-{
-    input.map(|KeyValue(key, value)| {
-        KeyValue(key, value.len())
-    })
-}
-
-
-#[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
-    let mut client_config = ClientConfig::new();
-
-    ... some normal kafka configuration ...
-
-    let app = PeridotApp::from_client_config(&client_config)?;
-
-    app.task::<String, Json<Client>>("clientTopic")
-        .and_then(partial_task)
-        .into_topic::<String, Json<usize>>("genericTopic");
-
-    app.run().await?;
-
-    Ok(())
-}
-```
-
-You can also use closures directly:
-
 ```
 use peridot::prelude::*;
 
@@ -119,17 +79,21 @@ struct Client {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let mut client_config = ClientConfig::new();
+    let mut peridot_config = PeridotConfigBuilder::new();
+
+    peridot_config
+        .set("bootstrap.servers", "kafka1:9092,kafka2:9093,kafka3:9094")
 
     ... some normal kafka configuration ...
 
-    let app = PeridotApp::from_client_config(&client_config)?;
+    let app = AppBuilder::new()
+        .with_config(peridot_config.build()?)
+        .build()
+        .expect("Failed to build app.");
 
     app.task::<String, Json<Client>>("clientTopic")
-        .map(
-            |(key, value)| (key, value.len())
-        )
-        .into_topic::<String, Json<usize>>("genericTopic");
+        .map(|(key, value)| (key, value.len()))
+        .into_topic::<String, Json<u64>>("genericTopic");
 
     app.run().await?;
 
