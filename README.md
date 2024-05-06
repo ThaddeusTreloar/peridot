@@ -88,8 +88,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = AppBuilder::new()
         .with_config(peridot_config.build()?)
-        .build()
-        .expect("Failed to build app.");
+        .build()?;
 
     app.task::<String, Json<Client>>("clientTopic")
         .map(|(key, value)| (key, value.len()))
