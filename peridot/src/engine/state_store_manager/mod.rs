@@ -88,6 +88,26 @@ where
         Ok(())
     }
 
+    pub(crate) fn create_state_store_for_topic(
+        &self,
+        source_topic: &str,
+        state_name: &str,
+        partition: i32,
+    ) -> Result<(), StateStoreManagerError> {
+        tracing::debug!(
+            "Created state store for source: {}, partition: {}",
+            source_topic,
+            partition
+        );
+
+        match self.state_stores.get(&(source_topic.to_owned(), partition)) {
+            None => panic!("Partition store doesn't exist"),
+            Some(store) => store.init_state(source_topic, state_name, partition),
+        };
+
+        Ok(())
+    }
+
     pub(crate) fn create_state_store_if_not_exists(
         &self,
         source_topic: &str,

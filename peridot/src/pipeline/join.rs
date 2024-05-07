@@ -9,7 +9,7 @@ use crate::{
         join::{Combiner, JoinMessage},
         stream::PipelineStage,
     },
-    state::backend::{GetView, GetViewDistributor, StateBackend},
+    state::backend::{view::GetView, view::GetViewDistributor, StateBackend},
 };
 
 use super::stream::PipelineStream;

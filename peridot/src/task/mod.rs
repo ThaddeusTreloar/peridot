@@ -25,7 +25,8 @@ use crate::{
     },
     state::backend::{
         facade::{FacadeDistributor, StateFacade},
-        GetViewDistributor, StateBackend,
+        view::GetViewDistributor,
+        StateBackend,
     },
 };
 

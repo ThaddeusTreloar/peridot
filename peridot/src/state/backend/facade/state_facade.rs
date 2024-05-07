@@ -1,9 +1,18 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::info;
 
-use crate::state::backend::{Checkpoint, ReadableStateView, StateBackend, WriteableStateView};
+use crate::{
+    message::types::Message,
+    state::backend::{
+        view::{ReadableStateView, WriteableStateView},
+        Checkpoint, StateBackend,
+    },
+};
 
 pub struct StateFacade<K, V, B> {
     backend: Arc<B>,
@@ -56,6 +65,11 @@ where
             .await
     }
 
+    fn poll_time(&self, time: i64, cx: &mut Context<'_>) -> Poll<i64> {
+        self.backend
+            .poll_time(self.store_name(), self.partition, time, cx)
+    }
+
     fn get_checkpoint(&self) -> Result<Option<Checkpoint>, Self::Error> {
         let checkpoint = self
             .backend
@@ -76,36 +90,46 @@ where
     type KeyType = K;
     type ValueType = V;
 
-    fn create_checkpoint(&self, offset: i64) -> Result<(), Self::Error> {
-        tracing::debug!(
-            "Creating checkpoint at offset: {}, for state: {}, partition: {}",
-            offset,
-            self.store_name(),
-            self.partition()
-        );
-
-        self.backend
-            .create_checkpoint(self.store_name(), self.partition(), offset);
-
-        Ok(())
-    }
-
     async fn put(
         self: Arc<Self>,
-        key: Self::KeyType,
-        value: Self::ValueType,
+        message: Message<Self::KeyType, Self::ValueType>,
     ) -> Result<(), Self::Error> {
         self.backend
-            .put(key, value, self.store_name(), self.partition())
+            .put(
+                message.key,
+                message.value,
+                self.store_name(),
+                self.partition(),
+                message.offset,
+                message.timestamp.into(),
+            )
             .await
     }
 
     async fn put_range(
         self: Arc<Self>,
-        range: Vec<(Self::KeyType, Self::ValueType)>,
+        range: Vec<Message<Self::KeyType, Self::ValueType>>,
     ) -> Result<(), Self::Error> {
+        if range.is_empty() {
+            return Ok(());
+        }
+
+        let offset = range
+            .iter()
+            .map(|m| m.offset())
+            .reduce(std::cmp::max)
+            .unwrap();
+
+        let timestamp = range
+            .iter()
+            .map(|m| Into::<i64>::into(m.timestamp()))
+            .reduce(std::cmp::max)
+            .unwrap();
+
+        let data = range.into_iter().map(|m| (m.key, m.value)).collect();
+
         self.backend
-            .put_range(range, self.store_name(), self.partition())
+            .put_range(data, self.store_name(), self.partition(), offset, timestamp)
             .await
     }
 
@@ -117,5 +141,9 @@ where
 
     fn wake(&self) {
         self.backend.wake(self.store_name(), self.partition())
+    }
+
+    fn wake_all(&self) {
+        self.backend.wake_all(self.store_name(), self.partition())
     }
 }

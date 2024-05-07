@@ -5,7 +5,7 @@ use crate::{
         context::EngineContext, metadata_manager::table_metadata,
         state_store_manager::StateStoreManager, util::DeliveryGuaranteeType, AppEngine,
     },
-    state::backend::{GetView, StateBackend, VersionedStateBackend},
+    state::backend::{view::GetView, StateBackend, VersionedStateBackend},
 };
 
 use super::StateFacade;

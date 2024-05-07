@@ -2,10 +2,13 @@ use std::{
     borrow::{Borrow, BorrowMut},
     collections::HashMap,
     sync::atomic::AtomicI64,
-    task::Waker,
+    task::{Context, Poll, Waker},
 };
 
-use dashmap::{mapref::one::Ref, DashMap};
+use dashmap::{
+    mapref::one::{Ref, RefMut},
+    DashMap,
+};
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::info;
 
@@ -13,9 +16,60 @@ use crate::message::types::PeridotTimestamp;
 
 use super::{Checkpoint, StateBackend};
 
+struct TimestampedWaker {
+    time: i64,
+    waker: Waker,
+}
+
+impl TimestampedWaker {
+    fn new(time: i64, waker: Waker) -> Self {
+        Self { time, waker }
+    }
+
+    fn wake(self) {
+        self.waker.wake()
+    }
+
+    fn wake_by_ref(&self) {
+        self.waker.wake_by_ref()
+    }
+}
+
+impl PartialEq<Self> for TimestampedWaker {
+    fn eq(&self, other: &Self) -> bool {
+        self.time == other.time
+    }
+}
+
+impl Eq for TimestampedWaker {}
+
+impl PartialOrd<Self> for TimestampedWaker {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TimestampedWaker {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.time.cmp(&other.time)
+    }
+}
+
+impl PartialEq<i64> for TimestampedWaker {
+    fn eq(&self, other: &i64) -> bool {
+        &self.time == other
+    }
+}
+
+impl PartialOrd<i64> for TimestampedWaker {
+    fn partial_cmp(&self, other: &i64) -> Option<std::cmp::Ordering> {
+        Some(self.time.cmp(other))
+    }
+}
+
 #[derive(Default)]
 pub struct InMemoryStateBackend {
-    store: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
+    stores: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
     checkpoint: DashMap<String, Checkpoint>,
     // See notes here about compare and swap operations:
     // https://doc.rust-lang.org/std/sync/atomic/
@@ -23,7 +77,7 @@ pub struct InMemoryStateBackend {
     store_times: DashMap<String, AtomicI64>,
     // TODO: must ensure that these waker are woken, when the parent
     // sink is polled and returns pending.
-    wakers: DashMap<String, Vec<Waker>>,
+    wakers: DashMap<String, Vec<TimestampedWaker>>,
 }
 
 impl InMemoryStateBackend {
@@ -31,17 +85,84 @@ impl InMemoryStateBackend {
         format!("{}-{}", store_name, partition)
     }
 
-    fn get_state_store(&self, state_key: &str) -> Ref<String, DashMap<Vec<u8>, Vec<u8>>> {
-        match self.store.get(state_key) {
+    fn create_state_store(&self, state_key: &str) {
+        match self.stores.get(state_key) {
             None => {
-                self.store.insert(state_key.to_owned(), Default::default());
+                self.store_times
+                    .insert(state_key.to_owned(), AtomicI64::from(0));
 
-                self.store
-                    .get(state_key)
-                    .expect("THIS SHOULD BE IMPOSSIBLE.")
+                self.wakers.insert(state_key.to_owned(), Default::default());
+
+                self.stores.insert(state_key.to_owned(), Default::default());
+
+                self.checkpoint
+                    .insert(state_key.to_owned(), Default::default());
             }
+            Some(_) => (),
+        }
+    }
+
+    fn get_state_store(&self, state_key: &str) -> Ref<String, DashMap<Vec<u8>, Vec<u8>>> {
+        match self.stores.get(state_key) {
+            None => panic!("State store doesn't exists"),
             Some(state) => state,
         }
+    }
+
+    fn get_mut_store(
+        &self,
+        store_name: &str,
+        partition: i32,
+    ) -> RefMut<'_, String, DashMap<Vec<u8>, Vec<u8>>> {
+        let key = Self::derive_state_key(store_name, partition);
+
+        self.stores.get_mut(&key).unwrap()
+    }
+
+    fn get_mut_wakers(
+        &self,
+        store_name: &str,
+        partition: i32,
+    ) -> RefMut<'_, String, Vec<TimestampedWaker>> {
+        let key = Self::derive_state_key(store_name, partition);
+
+        self.wakers.get_mut(&key).unwrap()
+    }
+
+    fn get_mut_store_times(
+        &self,
+        store_name: &str,
+        partition: i32,
+    ) -> RefMut<'_, String, AtomicI64> {
+        let key = Self::derive_state_key(store_name, partition);
+
+        self.store_times.get_mut(&key).unwrap()
+    }
+
+    fn get_store(
+        &self,
+        store_name: &str,
+        partition: i32,
+    ) -> Ref<'_, String, DashMap<Vec<u8>, Vec<u8>>> {
+        let key = Self::derive_state_key(store_name, partition);
+
+        self.stores.get(&key).unwrap()
+    }
+
+    fn get_wakers(
+        &self,
+        store_name: &str,
+        partition: i32,
+    ) -> Ref<'_, String, Vec<TimestampedWaker>> {
+        let key = Self::derive_state_key(store_name, partition);
+
+        self.wakers.get(&key).unwrap()
+    }
+
+    fn get_store_times(&self, store_name: &str, partition: i32) -> Ref<'_, String, AtomicI64> {
+        let key = Self::derive_state_key(store_name, partition);
+
+        self.store_times.get(&key).unwrap()
     }
 
     fn update_store_time(&self, store_name: &str, partition: i32, time: i64) {
@@ -49,7 +170,8 @@ impl InMemoryStateBackend {
 
         match self.store_times.get(&key) {
             Some(store_time) => {
-                store_time.fetch_max(time, std::sync::atomic::Ordering::SeqCst);
+                let old = store_time.fetch_max(time, std::sync::atomic::Ordering::SeqCst);
+                tracing::debug!("Updating store time: old: {}, new: {}", old, time);
             }
             None => {
                 self.store_times.insert(key, AtomicI64::from(time));
@@ -57,29 +179,16 @@ impl InMemoryStateBackend {
         };
     }
 
-    fn get_store_time(&self, store_name: &str, partition: i32) -> i64 {
+    fn store_waker(&self, store_name: &str, partition: i32, time: i64, waker: Waker) {
         let key = Self::derive_state_key(store_name, partition);
 
-        self.store_times
-            .get(&key)
-            .unwrap()
-            .load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    fn insert_waker(&self, store_name: &str, partition: i32, waker: Waker) {
-        let key = Self::derive_state_key(store_name, partition);
-
+        tracing::debug!(
+            "Storing waker for store_name: {}, partition: {}",
+            store_name,
+            partition
+        );
         match self.wakers.get_mut(&key) {
-            Some(mut wakers) => wakers.push(waker),
-            None => todo!(""),
-        }
-    }
-
-    fn wake_all(&self, store_name: &str, partition: i32) {
-        let key = Self::derive_state_key(store_name, partition);
-
-        match self.wakers.get_mut(&key) {
-            Some(mut wakers) => wakers.drain(..).for_each(|w| w.wake()),
+            Some(mut wakers) => wakers.push(TimestampedWaker::new(time, waker)),
             None => todo!(""),
         }
     }
@@ -91,8 +200,37 @@ pub enum InMemoryStateBackendError {}
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
 
-    fn wake(&self, topic: &str, partition: i32) {
-        self.wake_all(topic, partition);
+    fn wake(&self, store_name: &str, partition: i32) {
+        tracing::debug!("Waking dependencies...");
+        let key = Self::derive_state_key(store_name, partition);
+        let state_time = self.get_state_store_time(store_name, partition);
+
+        match self.wakers.get_mut(&key) {
+            Some(mut wakers) => {
+                // TODO: tracking stabilisation of:
+                //  - https://github.com/rust-lang/rust/issues/43244https://doc.rust-lang.org/std/vec/struct.Vec.html#method.extract_if
+                //  - https://github.com/rust-lang/rust/issues/43244
+                // change logic to this when api stablised.
+                wakers
+                    .iter()
+                    .filter(|w| *w <= &state_time)
+                    .for_each(|w| w.wake_by_ref());
+
+                wakers.retain(|w| w > &state_time);
+            }
+            None => todo!(""),
+        }
+    }
+
+    fn wake_all(&self, store_name: &str, partition: i32) {
+        tracing::debug!("Waking all dependencies...");
+
+        let key = Self::derive_state_key(store_name, partition);
+
+        match self.wakers.get_mut(&key) {
+            Some(mut wakers) => wakers.drain(..).for_each(|w| w.wake()),
+            None => todo!(""),
+        }
     }
 
     fn with_source_topic_name_and_partition(
@@ -102,17 +240,44 @@ impl StateBackend for InMemoryStateBackend {
         Ok(Default::default())
     }
 
-    fn get_state_store_time(&self, store_name: &str, partition: i32) -> PeridotTimestamp {
-        //self.store_time.clone()
-        todo!("")
+    fn init_state(
+        &self,
+        _topic_name: &str,
+        store_name: &str,
+        partition: i32,
+    ) -> Result<(), Self::Error> {
+        let state_key = Self::derive_state_key(store_name, partition);
+
+        self.create_state_store(&state_key);
+
+        Ok(())
     }
 
-    fn poll_lag(&self, store_name: &str, partition: i32, waker: Waker) -> bool {
-        todo!("")
+    fn get_state_store_time(&self, store_name: &str, partition: i32) -> i64 {
+        let key = Self::derive_state_key(store_name, partition);
+
+        match self.store_times.get(&key) {
+            Some(time) => time.load(std::sync::atomic::Ordering::SeqCst),
+            None => 0,
+        }
+    }
+
+    fn poll_time(&self, store: &str, partition: i32, time: i64, cx: &mut Context<'_>) -> Poll<i64> {
+        let state_time = self.get_state_store_time(store, partition);
+
+        if state_time >= time {
+            Poll::Ready(state_time)
+        } else {
+            let waker = cx.waker().clone();
+
+            self.store_waker(store, partition, time, waker);
+
+            Poll::Pending
+        }
     }
 
     fn get_state_store_checkpoint(&self, store_name: &str, partition: i32) -> Option<Checkpoint> {
-        let checkpoint_name = format!("{}-{}", store_name, partition);
+        let checkpoint_name = Self::derive_state_key(store_name, partition);
 
         Some(self.checkpoint.get(&checkpoint_name)?.clone())
     }
@@ -123,7 +288,7 @@ impl StateBackend for InMemoryStateBackend {
         partition: i32,
         offset: i64,
     ) -> Result<(), Self::Error> {
-        let checkpoint_name = format!("{}-{}", store_name, partition);
+        let checkpoint_name = Self::derive_state_key(store_name, partition);
 
         match self.checkpoint.get_mut(&checkpoint_name) {
             None => {
@@ -177,6 +342,8 @@ impl StateBackend for InMemoryStateBackend {
         value: V,
         store_name: &str,
         partition: i32,
+        offset: i64,
+        timestamp: i64,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
@@ -189,10 +356,10 @@ impl StateBackend for InMemoryStateBackend {
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
         let value_byte = bincode::serialize(&value).expect("Failed to serialize value");
 
-        // compute lag
-        // if lag is acceptable, drain and wake wakers.
-
         store.insert(key_bytes, value_byte);
+
+        self.update_store_time(store_name, partition, timestamp);
+        self.create_checkpoint(store_name, partition, offset);
 
         Ok(())
     }
@@ -202,6 +369,8 @@ impl StateBackend for InMemoryStateBackend {
         range: Vec<(K, V)>,
         store_name: &str,
         partition: i32,
+        offset: i64,
+        timestamp: i64,
     ) -> Result<(), Self::Error>
     where
         K: Serialize + Send,
@@ -209,7 +378,7 @@ impl StateBackend for InMemoryStateBackend {
     {
         let state_key = Self::derive_state_key(store_name, partition);
 
-        self.store
+        self.stores
             .iter()
             .for_each(|e| tracing::debug!("Key in stores: {}", e.key()));
 
@@ -221,6 +390,9 @@ impl StateBackend for InMemoryStateBackend {
 
             store.insert(key_bytes, value_byte);
         }
+
+        self.update_store_time(store_name, partition, timestamp);
+        self.create_checkpoint(store_name, partition, offset);
 
         Ok(())
     }
@@ -246,7 +418,7 @@ impl StateBackend for InMemoryStateBackend {
     {
         let state_key = Self::derive_state_key(store_name, partition);
 
-        if let Some(store) = self.store.get(&state_key) {
+        if let Some(store) = self.stores.get(&state_key) {
             store.clear()
         }
 

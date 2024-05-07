@@ -21,7 +21,9 @@ use crate::{
         sink::{MessageSink, NonCommittingSink},
         types::{Message, TryFromOwnedMessage},
     },
-    state::backend::{facade::StateFacade, ReadableStateView, StateBackend, WriteableStateView},
+    state::backend::{
+        facade::StateFacade, view::ReadableStateView, view::WriteableStateView, StateBackend,
+    },
 };
 
 type PendingCommit<E> = Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>;
@@ -68,7 +70,11 @@ where
             .map(|r| r.map(|c| c.offset))
     }
 
-    pub fn wake_dependants(&self) {
+    pub fn wake_all(&self) {
+        self.state_facade.wake_all();
+    }
+
+    pub fn wake(&self) {
         self.state_facade.wake();
     }
 }
@@ -117,32 +123,10 @@ where
 
         if this.pending_commit.is_none() {
             if this.buffer.is_empty() {
-                debug!("Nothing to commit...");
-
-                if this
-                    .state_facade
-                    .get_checkpoint()
-                    .expect("Error while checking checkpoint.")
-                    .is_none()
-                {
-                    let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
-
-                    debug!(
-                        "Checkpointing state store: {}-{} with offset: {}",
-                        this.state_facade.store_name(),
-                        this.state_facade.partition(),
-                        offset
-                    );
-
-                    this.state_facade
-                        .create_checkpoint(*offset)
-                        .expect("Failed to store commit.");
-                }
-
                 return Poll::Ready(Ok(()));
             }
 
-            let range: Vec<(K, V)> = this.buffer.drain(..).map(|m| (m.key, m.value)).collect();
+            let range = this.buffer.drain(..).collect();
 
             let facade = this.state_facade.clone();
 
@@ -158,17 +142,6 @@ where
 
             let _ = this.pending_commit.take();
         }
-
-        let offset = std::cmp::max(this.highest_offset, this.highest_committed_offset);
-
-        tracing::debug!("Checkpointing state store.");
-
-        this.state_facade
-            .create_checkpoint(*offset)
-            .expect("Failed to store commit.");
-
-        // Check lag,
-        //
 
         Poll::Ready(Ok(()))
     }

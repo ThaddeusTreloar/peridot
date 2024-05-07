@@ -7,6 +7,28 @@ pub enum PeridotTimestamp {
     ConsumptionTime(i64),
 }
 
+impl From<&PeridotTimestamp> for i64 {
+    fn from(value: &PeridotTimestamp) -> Self {
+        match value {
+            PeridotTimestamp::NotAvailable => 0,
+            PeridotTimestamp::CreateTime(ts) => *ts,
+            PeridotTimestamp::IngestionTime(ts) => *ts,
+            PeridotTimestamp::ConsumptionTime(ts) => *ts,
+        }
+    }
+}
+
+impl From<PeridotTimestamp> for i64 {
+    fn from(value: PeridotTimestamp) -> Self {
+        match value {
+            PeridotTimestamp::NotAvailable => 0,
+            PeridotTimestamp::CreateTime(ts) => ts,
+            PeridotTimestamp::IngestionTime(ts) => ts,
+            PeridotTimestamp::ConsumptionTime(ts) => ts,
+        }
+    }
+}
+
 impl From<i64> for PeridotTimestamp {
     fn from(ts: i64) -> Self {
         Self::ConsumptionTime(ts)

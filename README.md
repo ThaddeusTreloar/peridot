@@ -20,6 +20,8 @@ Below is a list of the features currently being architected:
 - 🚧 Unified Service layer API 
 - 🚧 Event time processing
 - 🚧 Import/Export integration API for any types that implement futures::Stream 
+- ❌ Paralell operations
+- ❌ Async operations
 - ❌ Timestamp extraction
 - ❌ Feature complete DSL operations (akin to Kafka Streams DSL, Joins, Aggregations, etc)
 - ❌ Windowed operations (Stream-Stream Joins)

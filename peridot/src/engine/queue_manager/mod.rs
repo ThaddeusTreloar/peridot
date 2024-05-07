@@ -220,6 +220,16 @@ where
                 .create_state_store_if_not_exists(&topic, partition)
                 .expect("Failed to create state store.");
 
+            this.engine_context
+                .metadata_manager
+                .get_tables_for_topic(&topic)
+                .into_iter()
+                .for_each(|state_name| {
+                    this.state_store_manager
+                        .create_state_store_for_topic(&topic, &state_name, partition)
+                        .expect("Failed to build state store for topic.")
+                });
+
             let changelog_queues: Vec<(String, StreamPeridotPartitionQueue)> = this
                 .engine_context
                 .metadata_manager

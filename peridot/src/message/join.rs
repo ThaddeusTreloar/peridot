@@ -7,12 +7,13 @@ use std::{
 
 use futures::{Future, FutureExt};
 use pin_project_lite::pin_project;
+use rdkafka::message;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tracing::Level;
+use tracing::{info, Level};
 
 use crate::{
     message::types::PatchMessage,
-    state::backend::{facade::StateFacade, ReadableStateView, StateBackend},
+    state::backend::{facade::StateFacade, view::ReadableStateView, StateBackend},
 };
 
 use super::{
@@ -31,6 +32,8 @@ pin_project! {
         stream: M,
         state: Arc<StateFacade<M::KeyType, R, B>>,
         combiner: Arc<C>,
+        cached_state_time: i64,
+        waiting_message: Option<Message<M::KeyType, M::ValueType>>,
         state_future: Option<Pin<Box<JoinMessageFuture<R, B::Error, M::KeyType, M::ValueType>>>>
     }
 }
@@ -46,6 +49,8 @@ where
             stream,
             state: Arc::new(state),
             combiner,
+            cached_state_time: 0,
+            waiting_message: None,
             state_future: None,
         }
     }
@@ -68,13 +73,42 @@ where
     ) -> std::task::Poll<Option<super::types::Message<Self::KeyType, Self::ValueType>>> {
         let span = tracing::span!(Level::TRACE, "->InnerJoin::poll_next",).entered();
 
-        let this = self.project();
+        let mut this = self.project();
 
         if this.state_future.is_none() {
-            let message = match ready!(this.stream.poll_next(cx)) {
-                None => return Poll::Ready(None),
-                Some(msg) => msg,
+            let message = match this.waiting_message.take() {
+                Some(message) => message,
+                None => match ready!(this.stream.poll_next(cx)) {
+                    None => return Poll::Ready(None),
+                    Some(msg) => msg,
+                },
             };
+
+            // TODO: Maybe optimise this by having the message interface provide
+            // timestamp directly.
+            if *this.cached_state_time < message.timestamp().into() {
+                tracing::debug!(
+                    "chached time outdated: cached_state_time: {}, message_time: {:?}",
+                    this.cached_state_time,
+                    message.timestamp()
+                );
+
+                match this.state.poll_time(message.timestamp().into(), cx) {
+                    Poll::Pending => {
+                        info!("state_time not caught up, sleeping...");
+                        let _ = this.waiting_message.replace(message);
+                        return Poll::Pending;
+                    }
+                    Poll::Ready(time) => {
+                        info!(
+                            "state_time caught up, new_state_time: {}, message_time: {:?}",
+                            time,
+                            message.timestamp()
+                        );
+                        *this.cached_state_time = time;
+                    }
+                };
+            }
 
             let join_future = Box::pin(JoinMessageFuture::new(this.state.clone(), message));
 
@@ -95,7 +129,10 @@ where
 
                 return Poll::Ready(Some(output_message));
             } else {
-                tracing::debug!("Dropped message for offset: {}", message.offset());
+                tracing::debug!(
+                    "Dropped message, no RHS in table, offset: {}",
+                    message.offset()
+                );
             }
 
             let _ = this.state_future.take();

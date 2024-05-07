@@ -106,7 +106,7 @@ impl EngineContext {
             .get_changelog_topic_for_store(store_name)
     }
 
-    pub(crate) fn register_state_store(
+    pub(crate) fn register_topic_store(
         &self,
         source_topic: &str,
         store_name: &str,

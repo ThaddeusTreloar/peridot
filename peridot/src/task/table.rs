@@ -25,7 +25,8 @@ use crate::{
     },
     state::backend::{
         facade::{FacadeDistributor, StateFacade},
-        GetViewDistributor, StateBackend,
+        view::GetViewDistributor,
+        StateBackend,
     },
 };
 
@@ -73,7 +74,7 @@ where
         let table_metadata = app
             .engine()
             .engine_context()
-            .register_state_store(&source_topic, &store_name)
+            .register_topic_store(&source_topic, &store_name)
             .expect("Failed to register table.");
 
         let changelog_sink_factory =

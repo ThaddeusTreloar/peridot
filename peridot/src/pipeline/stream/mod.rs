@@ -18,7 +18,6 @@ use crate::{
         fork::PipelineFork, forward::PipelineForward, join::JoinPipeline, join_by::JoinBy,
         map::MapPipeline, sink::MessageSinkFactory,
     },
-    state::backend::{GetView, GetViewDistributor},
 };
 
 //pub mod import;

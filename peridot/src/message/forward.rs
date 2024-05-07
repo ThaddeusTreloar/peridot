@@ -66,6 +66,7 @@ where
 {
     type Output = Result<(), ForwarderError>;
 
+    // TODO: changelog specific fork that injects the changelog offset into the packet
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let ForwardProjection {
             mut message_stream,

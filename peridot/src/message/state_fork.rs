@@ -21,7 +21,10 @@ use crate::{
         queue_manager::partition_queue::StreamPeridotPartitionQueue,
         wrapper::serde::native::NativeBytes,
     },
-    message::types::{Message, TryFromOwnedMessage},
+    message::{
+        types::{Message, TryFromOwnedMessage},
+        BATCH_SIZE,
+    },
     state::{self, backend::StateBackend},
 };
 
@@ -146,10 +149,6 @@ where
             ..
         } = self.project();
 
-        if let StreamState::Sleeping = commit_state {
-            *commit_state = Default::default();
-        }
-
         let mut changelog_stream_proj = changelog_stream.as_pin_mut();
 
         // If we have transitioned to a committing state, we can start our
@@ -221,7 +220,7 @@ where
                 let _ = changelog_start.replace(beginning_offset);
             }
 
-            for _ in 0..1024 {
+            for _ in 0..BATCH_SIZE {
                 match stream.as_mut().poll_next(cx) {
                     Poll::Ready(None) => {
                         panic!("Changelog stream closed before state store rebuilt.")
@@ -241,10 +240,10 @@ where
                             engine_context.get_changelog_consumer_position(store_name, *partition);
 
                         tracing::debug!("Checkpointing consumer position offset: {} for store: {}, partition: {}", consumer_position, store_name, partition);
-                        state_sink.checkpoint_changelog_position(consumer_position);
 
                         match state_sink.as_mut().poll_commit(cx) {
                             Poll::Pending => {
+                                // Handle potential sleeping state.
                                 tracing::debug!("State sink pending commit for checkpoint");
 
                                 *commit_state = StreamState::Committing;
@@ -264,7 +263,7 @@ where
                                 match checkpoint.cmp(&std::cmp::max(watermarks.high(), 0)) {
                                     Ordering::Equal => {
                                         tracing::debug!(
-                                            "checkpoint: {} caught up to high watermark: {}",
+                                            "checkpoint: {} caught up to changelog high watermark: {}",
                                             checkpoint,
                                             watermarks.high()
                                         );
@@ -331,17 +330,21 @@ where
                         cx.waker().wake_by_ref();
                     }
                     StreamState::Committed => {
+                        tracing::debug!("Transitioning to sleeping...");
+                        *commit_state = StreamState::Sleeping;
+
                         // Yield control so that when we wake dependents we will be
                         // behind any tasks that are pending wake.
                         cx.waker().wake_by_ref();
                     }
                     StreamState::Sleeping => {
+                        tracing::debug!("Entering sleep, waking all dependents...");
                         // Before we sleep, wake any task that read the state lag
                         // before being updated for the final time, but got fenced
                         // from registering a waker while this task was waking
                         // dependants. Such tasks will now be ahead in the scheduler
                         // queue.
-                        state_sink.wake_dependants();
+                        state_sink.wake_all();
                     }
                     _ => (),
                 }
@@ -351,7 +354,7 @@ where
             Poll::Ready(Some(message)) => {
                 // If we were waiting for upstream nodes to commit, we can transition
                 // to our default state.
-                if let StreamState::Committed = commit_state {
+                if let StreamState::Committed | StreamState::Sleeping = commit_state {
                     *commit_state = Default::default();
                 }
 
