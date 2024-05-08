@@ -24,6 +24,7 @@ use crate::{
         wrapper::serde::native::NativeBytes,
     },
     message::{
+        stream::MessageStreamPoll,
         types::{Message, TryFromOwnedMessage},
         BATCH_SIZE,
     },
@@ -386,7 +387,7 @@ where
         // and we will begin polling upstream nodes until they yield Poll::Ready
         // at which point we know that they have either committed or aborted.
         match message_stream.as_mut().poll_next(cx) {
-            Poll::Ready(None) => {
+            Poll::Ready(MessageStreamPoll::Closed) => {
                 tracing::debug!("No Messages left for stream, finishing...");
                 ready!(state_sink.as_mut().poll_close(cx)).expect("Failed to close");
                 Poll::Ready(None)
@@ -425,7 +426,7 @@ where
 
                 Poll::Pending
             }
-            Poll::Ready(Some(message)) => {
+            Poll::Ready(MessageStreamPoll::Message(message)) => {
                 // If we were waiting for upstream nodes to commit, we can transition
                 // to our default state.
                 if let StreamState::Committed | StreamState::Sleeping = commit_state {
@@ -437,6 +438,14 @@ where
                     .as_mut()
                     .start_send(message)
                     .expect("Failed to send message to sink.");
+
+                Poll::Ready(Some(message))
+            }
+            Poll::Ready(MessageStreamPoll::Commit(Ok(()))) => {
+                if let StreamState::Uncommitted = commit_state {
+                    *commit_state = StreamState::Committing;
+                    cx.waker().wake_by_ref();
+                }
 
                 Poll::Ready(Some(message))
             }

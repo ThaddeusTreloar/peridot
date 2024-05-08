@@ -10,6 +10,7 @@ pub mod state_fork;
 pub mod stream;
 pub mod types;
 
+// Derive from partition_nodes/max_producer_msg
 const BATCH_SIZE: usize = 65535;
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -19,10 +20,12 @@ pub(crate) enum StreamState {
     Committing,
     Committed,
     Sleeping,
+    Closing,
+    CommittingClosing,
 }
 
 impl StreamState {
     fn is_committing(&self) -> bool {
-        *self == StreamState::Committing
+        *self == StreamState::Committing || *self == StreamState::CommittingClosing
     }
 }

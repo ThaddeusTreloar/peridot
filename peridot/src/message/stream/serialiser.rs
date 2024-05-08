@@ -10,13 +10,13 @@ use tracing::error;
 
 use crate::{
     engine::{
-        queue_manager::partition_queue::StreamPeridotPartitionQueue,
+        queue_manager::partition_queue::{QueueStreamPoll, StreamPeridotPartitionQueue},
         wrapper::serde::PeridotDeserializer,
     },
     message::types::{Message, TryFromOwnedMessage},
 };
 
-use super::MessageStream;
+use super::{MessageStream, MessageStreamPoll};
 
 pin_project! {
     pub struct QueueSerialiser<KS, VS> {
@@ -54,23 +54,28 @@ where
     fn poll_next(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Message<KS::Output, VS::Output>>> {
+    ) -> Poll<MessageStreamPoll<KS::Output, VS::Output>> {
         let this = self.project();
 
-        let raw_msg = match this.input.poll_next(cx) {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(None) => return Poll::Ready(None),
-            Poll::Ready(Some(val)) => val,
-        };
-
-        let msg = match <Message<KS::Output, VS::Output> as TryFromOwnedMessage<KS, VS>>::try_from_owned_message(raw_msg) {
-            Err(e) => {
-                error!("Failed to deser msg: {}", e);
-                None
-            }
-            Ok(m) => Some(m)
-        };
-
-        Poll::Ready(msg)
+        match this.input.poll_next(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(MessageStreamPoll::Closed),
+            Poll::Ready(Some(poll)) => match poll {
+                QueueStreamPoll::Commit(_) => Poll::Ready(MessageStreamPoll::Commit(Ok(()))),
+                QueueStreamPoll::Message(raw_msg) => {
+                    match <Message<KS::Output, VS::Output> as TryFromOwnedMessage<
+                        KS,
+                        VS,
+                    >>::try_from_owned_message(raw_msg)
+                    {
+                        Err(e) => {
+                            todo!("decide on behaviour");
+                            panic!("Failed to deser msg: {}", e);
+                        }
+                        Ok(m) => Poll::Ready(MessageStreamPoll::Message(m)),
+                    }
+                }
+            },
+        }
     }
 }

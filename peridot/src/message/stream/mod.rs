@@ -15,7 +15,7 @@ use super::{
 
 //pub mod import;
 pub mod serialiser;
-pub mod transparent;
+//pub mod transparent;
 
 pub type ChannelStream<K, V> = UnboundedReceiver<Message<K, V>>;
 pub type ChannelSink<K, V> = UnboundedSender<Message<K, V>>;
@@ -32,7 +32,7 @@ pub trait MessageStream {
     fn poll_next(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>>;
+    ) -> Poll<MessageStreamPoll<Self::KeyType, Self::ValueType>>;
 }
 
 pub trait MessageStreamExt: MessageStream {}
@@ -62,14 +62,11 @@ where
     }
 }
 
-impl<K, V> MessageStream for ChannelStream<K, V> {
-    type KeyType = K;
-    type ValueType = V;
+#[derive(Debug, thiserror::Error)]
+pub enum MessageCommitError {}
 
-    fn poll_next(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
-        unimplemented!("")
-    }
+pub(crate) enum MessageStreamPoll<K, V> {
+    Commit(Result<(), MessageCommitError>),
+    Message(Message<K, V>),
+    Closed,
 }

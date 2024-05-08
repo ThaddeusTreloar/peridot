@@ -9,14 +9,22 @@ use futures::{Future, Stream};
 use parking_lot::Mutex;
 use pin_project_lite::pin_project;
 use rdkafka::{consumer::base_consumer::PartitionQueue, message::OwnedMessage};
-use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+use tokio::{
+    sync::broadcast::error::{RecvError, TryRecvError},
+    time::Instant,
+};
 use tracing::info;
 
-use crate::app::extensions::{OwnedRebalance, PeridotConsumerContext, RebalanceReceiver};
+use crate::{
+    app::extensions::{OwnedRebalance, PeridotConsumerContext, RebalanceReceiver},
+    message::stream::MessageStreamPoll,
+};
 
 pub mod queue_service;
 
 pub(super) type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
+
+pub const COMMIT_INTERVAL: u128 = 100;
 
 pin_project! {
     #[project = QueueProjection]
@@ -25,6 +33,7 @@ pin_project! {
         partition_queue: PeridotPartitionQueue,
         source_topic: String,
         partition: i32,
+        interval: Option<Instant>,
         // TODO: maybe remove rebalance waker as due to consumer behaviour when splitting
         // partition queues, we have to split partition queues before our first call to Consumer::poll.
         // Therefore, if we drop a partition queue, there is a possibility that the consumer may buffer
@@ -62,12 +71,18 @@ impl StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
+            interval: None,
         }
     }
 }
 
+pub enum QueueStreamPoll {
+    Commit(i64),
+    Message(OwnedMessage),
+}
+
 impl Stream for StreamPeridotPartitionQueue {
-    type Item = OwnedMessage;
+    type Item = QueueStreamPoll;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -86,7 +101,12 @@ impl Stream for StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
+            interval,
         } = self.project();
+
+        if interval.is_none() {
+            let _ = interval.replace(Instant::now());
+        }
 
         //tracing::debug!("Checking rebalances for topic: {} partition: {}", source_topic, partition);
         //match pre_rebalance_waker.try_recv() {
@@ -107,8 +127,18 @@ impl Stream for StreamPeridotPartitionQueue {
             partition
         );
 
+        if let Some(interval) = interval {
+            if interval.elapsed().as_millis() > COMMIT_INTERVAL {
+                let next_offset = (); // Get consumer cursor
+
+                todo!("Queue commit");
+
+                return Poll::Ready(Some(QueueStreamPoll::Commit(0)));
+            }
+        }
+
         match partition_queue.poll(Duration::from_millis(0)) {
-            Some(Ok(message)) => Poll::Ready(Option::Some(message.detach())),
+            Some(Ok(message)) => Poll::Ready(Some(QueueStreamPoll::Message(message.detach()))),
             Some(Err(e)) => panic!("Failed to get message from upstream: {}", e),
             None => {
                 waker.lock().replace(cx.waker().clone());
