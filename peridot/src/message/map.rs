@@ -2,14 +2,14 @@ use std::{
     marker::PhantomData,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
+    task::{ready, Context, Poll},
 };
 
 use crate::message::types::{FromMessage, Message, PatchMessage};
 
 use pin_project_lite::pin_project;
 
-use super::stream::MessageStream;
+use super::stream::{MessageStream, MessageStreamPoll};
 
 pin_project! {
     pub struct MapMessage<M, F, E, R> {
@@ -46,22 +46,21 @@ where
     fn poll_next(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
+    ) -> Poll<MessageStreamPoll<Self::KeyType, Self::ValueType>> {
         let this = self.project();
-        let next = this.stream.poll_next(cx);
 
-        let msg = match next {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(None) => return Poll::Ready(None),
-            Poll::Ready(Some(msg)) => msg,
-        };
+        match ready!(this.stream.poll_next(cx)) {
+            MessageStreamPoll::Closed => Poll::Ready(MessageStreamPoll::Closed),
+            MessageStreamPoll::Commit(val) => Poll::Ready(MessageStreamPoll::Commit(val)),
+            MessageStreamPoll::Message(message) => {
+                let (extractor, partial_message) = E::from_message(message);
 
-        let (extractor, partial_message) = E::from_message(msg);
+                let map_result = (this.callback)(extractor);
 
-        let map_result = (this.callback)(extractor);
+                let patched_message = map_result.patch(partial_message);
 
-        let patched_message = map_result.patch(partial_message);
-
-        Poll::Ready(Some(patched_message))
+                Poll::Ready(MessageStreamPoll::Message(patched_message))
+            }
+        }
     }
 }

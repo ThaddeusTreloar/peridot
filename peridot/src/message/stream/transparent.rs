@@ -8,7 +8,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::message::types::Message;
 
-use super::MessageStream;
+use super::{MessageStream, MessageStreamPoll};
 
 pin_project! {
     pub struct TransparentQueue<K, V> {
@@ -33,7 +33,10 @@ impl<K, V> MessageStream for TransparentQueue<K, V> {
     type KeyType = K;
     type ValueType = V;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Message<K, V>>> {
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<MessageStreamPoll<Self::KeyType, Self::ValueType>> {
         let mut this = self.project();
 
         match this.input.poll_recv(cx) {

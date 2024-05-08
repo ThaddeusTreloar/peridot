@@ -22,7 +22,7 @@ use crate::{
 
 //pub mod import;
 pub mod serialiser;
-pub mod transparent;
+//pub mod transparent;
 
 pub type ChannelStreamPipeline<K, V> = UnboundedReceiver<(QueueMetadata, ChannelStream<K, V>)>;
 pub type ChannelSinkPipeline<K, V> = UnboundedSender<(QueueMetadata, ChannelStream<K, V>)>;
