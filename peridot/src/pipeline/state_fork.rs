@@ -123,6 +123,9 @@ where
                         message_stream,
                         message_sink,
                         engine_context.clone(),
+                        metadata
+                            .clone_stream_state(store_name)
+                            .expect("Now stream state"),
                         store_name.clone(),
                         metadata.partition(),
                     );

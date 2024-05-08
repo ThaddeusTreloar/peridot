@@ -141,15 +141,12 @@ impl ChangelogManager {
                 }
             };
 
-            let mut tpl = self
-                .consumer
-                .assignment()
-                .expect("Failed to get existing assignment.");
+            let mut tpl = TopicPartitionList::new();
 
             tpl.add_partition(changelog_topic, partition);
 
             self.consumer
-                .assign(&tpl)
+                .incremental_assign(&tpl)
                 .expect("Failed to assign partition.");
 
             tracing::debug!(
@@ -326,5 +323,9 @@ impl ChangelogManager {
                 -1
             }
         }
+    }
+
+    pub(super) fn get_lso(&self, changelog_topic: &str, partition: i32) -> Option<i64> {
+        self.consumer.context().get_lso(changelog_topic, partition)
     }
 }

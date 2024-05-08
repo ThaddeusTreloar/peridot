@@ -72,7 +72,7 @@ struct Client {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    init_tracing(LevelFilter::TRACE);
+    init_tracing(LevelFilter::DEBUG);
 
     let mut peridot_config = PeridotConfigBuilder::new();
 

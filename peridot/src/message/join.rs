@@ -17,6 +17,7 @@ use crate::{
 };
 
 use super::{
+    state_fork::{StoreState, StoreStateCell},
     stream::MessageStream,
     types::{FromMessage, KeyValue, Message, PartialMessage, Value},
 };
@@ -33,6 +34,7 @@ pin_project! {
         state: Arc<StateFacade<M::KeyType, R, B>>,
         combiner: Arc<C>,
         cached_state_time: i64,
+        store_state: Arc<StoreStateCell>,
         waiting_message: Option<Message<M::KeyType, M::ValueType>>,
         state_future: Option<Pin<Box<JoinMessageFuture<R, B::Error, M::KeyType, M::ValueType>>>>
     }
@@ -41,15 +43,20 @@ pin_project! {
 impl<M, C, B, R> JoinMessage<M, C, B, R>
 where
     M: MessageStream,
-    B: StateBackend,
+    M::KeyType: Clone + Serialize + Send + Sync + 'static,
+    R: DeserializeOwned + Send + Sync + 'static,
+    B: StateBackend + Sync + 'static,
     C: Combiner<M::ValueType, R>,
 {
     pub(crate) fn new(stream: M, state: StateFacade<M::KeyType, R, B>, combiner: Arc<C>) -> Self {
+        let store_state = state.get_stream_state().unwrap();
+
         Self {
             stream,
             state: Arc::new(state),
             combiner,
             cached_state_time: 0,
+            store_state,
             waiting_message: None,
             state_future: None,
         }
@@ -86,7 +93,9 @@ where
 
             // TODO: Maybe optimise this by having the message interface provide
             // timestamp directly.
-            if *this.cached_state_time < message.timestamp().into() {
+            if *this.cached_state_time < message.timestamp().into()
+                && this.store_state.load() != StoreState::Sleeping
+            {
                 tracing::debug!(
                     "chached time outdated: cached_state_time: {}, message_time: {:?}",
                     this.cached_state_time,
@@ -144,11 +153,11 @@ where
     }
 }
 
-type inner_fetch<R, E> = Pin<Box<dyn Future<Output = Result<Option<R>, E>> + Send>>;
+type InnerFetch<R, E> = Pin<Box<dyn Future<Output = Result<Option<R>, E>> + Send>>;
 
 pin_project! {
     struct JoinMessageFuture<R, E, K, V> {
-        state_fetch: inner_fetch<R, E>,
+        state_fetch: InnerFetch<R, E>,
         message: Option<Message<K, V>>,
     }
 }

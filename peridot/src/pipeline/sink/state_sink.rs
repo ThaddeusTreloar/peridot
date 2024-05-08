@@ -56,6 +56,7 @@ where
 
         let facade = StateFacade::new(
             state_store,
+            self.state_store_manager.clone(),
             self.store_name.clone(),
             queue_metadata.partition(),
         );

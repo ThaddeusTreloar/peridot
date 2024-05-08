@@ -10,7 +10,7 @@ use pin_project_lite::pin_project;
 use rdkafka::{
     consumer::Consumer,
     error::KafkaError,
-    producer::{FutureProducer, Producer},
+    producer::{self, FutureProducer, Producer},
     Offset, TopicPartitionList,
 };
 use tokio::time::Instant;
@@ -77,7 +77,7 @@ where
         } = self.project();
 
         let span = tracing::span!(
-            Level::TRACE,
+            Level::DEBUG,
             "Forward::poll",
             topic = queue_metadata.source_topic(),
             partition = queue_metadata.partition()

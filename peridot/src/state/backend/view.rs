@@ -6,7 +6,10 @@ use std::{
 use futures::Future;
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::message::types::{Message, PeridotTimestamp};
+use crate::message::{
+    state_fork::StoreStateCell,
+    types::{Message, PeridotTimestamp},
+};
 
 use super::{
     checkpoint::Checkpoint,
@@ -51,6 +54,8 @@ pub trait ReadableStateView {
     fn poll_time(&self, time: i64, cx: &mut Context<'_>) -> Poll<i64>;
 
     fn get_checkpoint(&self) -> Result<Option<Checkpoint>, Self::Error>;
+
+    fn get_stream_state(&self) -> Option<Arc<StoreStateCell>>;
 }
 
 #[trait_variant::make(Send)]

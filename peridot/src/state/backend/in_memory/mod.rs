@@ -75,9 +75,6 @@ pub struct InMemoryStateBackend {
     // https://doc.rust-lang.org/std/sync/atomic/
     // Certain architectures may not support this implementation
     store_times: DashMap<String, AtomicI64>,
-    // TODO: must ensure that these waker are woken, when the parent
-    // sink is polled and returns pending.
-    wakers: DashMap<String, Vec<TimestampedWaker>>,
 }
 
 impl InMemoryStateBackend {
@@ -90,8 +87,6 @@ impl InMemoryStateBackend {
             None => {
                 self.store_times
                     .insert(state_key.to_owned(), AtomicI64::from(0));
-
-                self.wakers.insert(state_key.to_owned(), Default::default());
 
                 self.stores.insert(state_key.to_owned(), Default::default());
 
@@ -119,16 +114,6 @@ impl InMemoryStateBackend {
         self.stores.get_mut(&key).unwrap()
     }
 
-    fn get_mut_wakers(
-        &self,
-        store_name: &str,
-        partition: i32,
-    ) -> RefMut<'_, String, Vec<TimestampedWaker>> {
-        let key = Self::derive_state_key(store_name, partition);
-
-        self.wakers.get_mut(&key).unwrap()
-    }
-
     fn get_mut_store_times(
         &self,
         store_name: &str,
@@ -147,16 +132,6 @@ impl InMemoryStateBackend {
         let key = Self::derive_state_key(store_name, partition);
 
         self.stores.get(&key).unwrap()
-    }
-
-    fn get_wakers(
-        &self,
-        store_name: &str,
-        partition: i32,
-    ) -> Ref<'_, String, Vec<TimestampedWaker>> {
-        let key = Self::derive_state_key(store_name, partition);
-
-        self.wakers.get(&key).unwrap()
     }
 
     fn get_store_times(&self, store_name: &str, partition: i32) -> Ref<'_, String, AtomicI64> {
@@ -178,20 +153,6 @@ impl InMemoryStateBackend {
             }
         };
     }
-
-    fn store_waker(&self, store_name: &str, partition: i32, time: i64, waker: Waker) {
-        let key = Self::derive_state_key(store_name, partition);
-
-        tracing::debug!(
-            "Storing waker for store_name: {}, partition: {}",
-            store_name,
-            partition
-        );
-        match self.wakers.get_mut(&key) {
-            Some(mut wakers) => wakers.push(TimestampedWaker::new(time, waker)),
-            None => todo!(""),
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -199,39 +160,6 @@ pub enum InMemoryStateBackendError {}
 
 impl StateBackend for InMemoryStateBackend {
     type Error = InMemoryStateBackendError;
-
-    fn wake(&self, store_name: &str, partition: i32) {
-        tracing::debug!("Waking dependencies...");
-        let key = Self::derive_state_key(store_name, partition);
-        let state_time = self.get_state_store_time(store_name, partition);
-
-        match self.wakers.get_mut(&key) {
-            Some(mut wakers) => {
-                // TODO: tracking stabilisation of:
-                //  - https://github.com/rust-lang/rust/issues/43244https://doc.rust-lang.org/std/vec/struct.Vec.html#method.extract_if
-                //  - https://github.com/rust-lang/rust/issues/43244
-                // change logic to this when api stablised.
-                wakers
-                    .iter()
-                    .filter(|w| *w <= &state_time)
-                    .for_each(|w| w.wake_by_ref());
-
-                wakers.retain(|w| w > &state_time);
-            }
-            None => todo!(""),
-        }
-    }
-
-    fn wake_all(&self, store_name: &str, partition: i32) {
-        tracing::debug!("Waking all dependencies...");
-
-        let key = Self::derive_state_key(store_name, partition);
-
-        match self.wakers.get_mut(&key) {
-            Some(mut wakers) => wakers.drain(..).for_each(|w| w.wake()),
-            None => todo!(""),
-        }
-    }
 
     fn with_source_topic_name_and_partition(
         _topic_name: &str,
@@ -259,20 +187,6 @@ impl StateBackend for InMemoryStateBackend {
         match self.store_times.get(&key) {
             Some(time) => time.load(std::sync::atomic::Ordering::SeqCst),
             None => 0,
-        }
-    }
-
-    fn poll_time(&self, store: &str, partition: i32, time: i64, cx: &mut Context<'_>) -> Poll<i64> {
-        let state_time = self.get_state_store_time(store, partition);
-
-        if state_time >= time {
-            Poll::Ready(state_time)
-        } else {
-            let waker = cx.waker().clone();
-
-            self.store_waker(store, partition, time, waker);
-
-            Poll::Pending
         }
     }
 

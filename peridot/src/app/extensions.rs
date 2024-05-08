@@ -1,8 +1,9 @@
 pub(crate) type RebalanceSender = Sender<OwnedRebalance>;
 pub(crate) type RebalanceReceiver = Receiver<OwnedRebalance>;
 
-use std::{fmt::Display, time::Duration};
+use std::{collections::HashMap, fmt::Display, time::Duration};
 
+use dashmap::DashMap;
 use rdkafka::{
     consumer::ConsumerContext,
     error::KafkaError,
@@ -93,6 +94,7 @@ pub struct PeridotConsumerContext {
     pre_rebalance_waker: RebalanceSender,
     post_rebalance_waker: RebalanceSender,
     commit_waker: Sender<Commit>,
+    topic_lso: DashMap<String, DashMap<i32, i64>>,
 }
 
 impl Clone for PeridotConsumerContext {
@@ -101,25 +103,35 @@ impl Clone for PeridotConsumerContext {
             pre_rebalance_waker: self.pre_rebalance_waker.clone(),
             post_rebalance_waker: self.post_rebalance_waker.clone(),
             commit_waker: self.commit_waker.clone(),
+            topic_lso: Default::default(),
         }
     }
 }
 
 impl ClientContext for PeridotConsumerContext {
     fn stats(&self, statistics: rdkafka::Statistics) {
-        info!("Stats...");
         statistics.topics.iter().for_each(|(topic, t_stats)| {
-            t_stats.partitions.iter().for_each(|(p, p_stat)| {
-                info!(
-                    "LSO, topic: {}, partition: {}, offset: {}",
-                    topic, p, p_stat.ls_offset
-                );
-                info!(
-                    "HWM, topic: {}, partition: {}, offset: {}",
-                    topic, p, p_stat.hi_offset
-                );
-            })
+            t_stats
+                .partitions
+                .iter()
+                .filter(|(p, _)| p >= &&0)
+                .filter(|(_, stat)| stat.ls_offset >= 0)
+                .for_each(|(p, p_stat)| {
+                    //info!(
+                    //    "Set lso, topic:{}, partition: {}, offset: {}",
+                    //    topic, p, p_stat.ls_offset
+                    //);
+                    //info!(
+                    //    "Set hwm, topic:{}, partition: {}, offset: {}",
+                    //    topic, p, p_stat.hi_offset
+                    //);
+                    self.set_lso(topic, *p, p_stat.ls_offset);
+                })
         })
+    }
+
+    fn log(&self, level: rdkafka::config::RDKafkaLogLevel, fac: &str, log_message: &str) {
+        let _ = log_message;
     }
 }
 
@@ -132,7 +144,8 @@ impl Default for PeridotConsumerContext {
         PeridotConsumerContext {
             pre_rebalance_waker,
             post_rebalance_waker,
-            commit_waker, // The default max_poll_interval is 5 minutes
+            commit_waker,
+            topic_lso: Default::default(),
         }
     }
 }
@@ -168,6 +181,29 @@ impl PeridotConsumerContext {
 
     pub fn commit_sender(&self) -> Sender<Commit> {
         self.commit_waker.clone()
+    }
+
+    pub fn set_lso(&self, topic: &str, partition: i32, offset: i64) {
+        match self.topic_lso.get_mut(topic) {
+            None => {
+                let inner = DashMap::new();
+                inner.insert(partition, offset);
+
+                self.topic_lso.insert(topic.to_owned(), inner);
+            }
+            Some(topic_map) => match topic_map.get_mut(&partition) {
+                None => {
+                    topic_map.insert(partition, offset);
+                }
+                Some(mut partition) => {
+                    *partition.value_mut() = offset;
+                }
+            },
+        }
+    }
+
+    pub fn get_lso(&self, topic: &str, partition: i32) -> Option<i64> {
+        self.topic_lso.get(topic)?.get(&partition).map(|lso| *lso)
     }
 }
 

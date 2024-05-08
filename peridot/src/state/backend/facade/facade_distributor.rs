@@ -63,6 +63,11 @@ where
     ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend> {
         let backend = self.fetch_backend(partition);
 
-        StateFacade::new(backend, self.store_name().to_owned(), partition)
+        StateFacade::new(
+            backend,
+            self.state_store_manager.clone(),
+            self.store_name().to_owned(),
+            partition,
+        )
     }
 }

@@ -40,9 +40,6 @@ where
 {
     type Error: std::error::Error;
 
-    fn wake(&self, topic: &str, partition: i32);
-    fn wake_all(&self, topic: &str, partition: i32);
-
     fn with_source_topic_name_and_partition(
         topic_name: &str,
         partition: i32,
@@ -65,12 +62,6 @@ where
         partition: i32,
         offset: i64,
     ) -> Result<(), Self::Error>;
-
-    /// Polls the state store for it's current state time. If the caller time <= state time
-    /// the it will return Poll::Ready(current_state_time). Otherwise, the state store will
-    /// store the waker, and when the state time becomes >= caller time, the waker will be
-    /// fired.
-    fn poll_time(&self, store: &str, partition: i32, time: i64, cx: &mut Context<'_>) -> Poll<i64>;
 
     async fn get<K, V>(
         &self,

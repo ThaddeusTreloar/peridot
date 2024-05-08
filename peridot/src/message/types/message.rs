@@ -74,6 +74,14 @@ impl<K, V> Message<K, V> {
     pub fn headers(&self) -> &MessageHeaders {
         &self.headers
     }
+
+    pub(crate) fn headers_mut(&mut self) -> &mut MessageHeaders {
+        &mut self.headers
+    }
+
+    pub(crate) fn override_offset(&mut self, offset: i64) {
+        self.offset = offset;
+    }
 }
 
 impl From<Message<(), ()>> for PartialMessage<(), ()> {

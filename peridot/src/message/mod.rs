@@ -13,7 +13,7 @@ pub mod types;
 const BATCH_SIZE: usize = 65535;
 
 #[derive(Debug, Default, PartialEq, Eq)]
-enum StreamState {
+pub(crate) enum StreamState {
     #[default]
     Uncommitted,
     Committing,

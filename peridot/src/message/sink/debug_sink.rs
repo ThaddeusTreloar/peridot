@@ -23,6 +23,7 @@ pin_project! {
         VS: PeridotSerializer,
     {
         queue_metadata: QueueMetadata,
+        highest_offset: i64,
         _key_serialiser_type: PhantomData<KS>,
         _value_serialiser_type: PhantomData<VS>,
     }
@@ -36,6 +37,7 @@ where
     pub fn new(queue_metadata: QueueMetadata) -> Self {
         Self {
             queue_metadata,
+            highest_offset: 0,
             _key_serialiser_type: PhantomData,
             _value_serialiser_type: PhantomData,
         }
@@ -62,10 +64,18 @@ where
         Poll::Ready(Ok(()))
     }
 
+    fn poll_commit(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<i64, Self::Error>> {
+        Poll::Ready(Ok(self.highest_offset))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
     fn start_send(
         self: Pin<&mut Self>,
         message: Message<KS::Input, VS::Input>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<Message<KS::Input, VS::Input>, Self::Error> {
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");
 
@@ -79,14 +89,10 @@ where
             String::from_utf8(ser_value).unwrap(),
         );
 
-        Ok(())
-    }
+        let this = self.project();
 
-    fn poll_commit(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
+        *this.highest_offset = std::cmp::max(*this.highest_offset, message.offset());
 
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
+        Ok(message)
     }
 }

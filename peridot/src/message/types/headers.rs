@@ -1,30 +1,41 @@
+use std::collections::HashMap;
+
 use rdkafka::message::{BorrowedHeaders, Header, Headers as KafkaHeaders, OwnedHeaders};
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MessageHeaders {
-    headers: Vec<(String, Vec<u8>)>,
+    headers: HashMap<String, Vec<Vec<u8>>>,
 }
 
 impl MessageHeaders {
-    fn iter(&self) -> impl Iterator<Item = &(String, Vec<u8>)> {
-        self.headers.iter()
+    pub fn get(&self, key: &str) -> Option<&Vec<Vec<u8>>> {
+        self.headers.get(key)
     }
 
-    fn list(&self, key: &str) -> Vec<&Vec<u8>> {
-        self.headers
-            .iter()
-            .filter_map(|(k, v)| if k == key { Some(v) } else { None })
-            .collect()
+    pub fn set(&mut self, key: &str, value: Vec<u8>) {
+        match self.headers.get_mut(key) {
+            None => {
+                let values = vec![value];
+                self.headers.insert(key.to_owned(), values);
+            }
+            Some(values) => values.push(value),
+        };
+    }
+
+    pub fn remove(&mut self, key: &str) {
+        self.headers.remove(key);
     }
 
     pub fn into_owned_headers(&self) -> OwnedHeaders {
         let out = self
             .headers
             .iter()
-            .fold(OwnedHeaders::new(), |out, (key, value)| {
-                out.insert(Header {
-                    key,
-                    value: Some(value),
+            .fold(OwnedHeaders::new(), |mut out, (key, values)| {
+                values.iter().fold(out, |acc, value| {
+                    acc.insert(Header {
+                        key,
+                        value: Some(value),
+                    })
                 })
             });
 
@@ -33,33 +44,25 @@ impl MessageHeaders {
 }
 
 impl From<&BorrowedHeaders> for MessageHeaders {
-    fn from(headers: &BorrowedHeaders) -> Self {
-        let headers: Vec<_> = headers
-            .iter()
-            .map(|h| (String::from(h.key), h.value.unwrap_or_default().to_vec()))
-            .collect::<Vec<(String, Vec<u8>)>>();
+    fn from(from: &BorrowedHeaders) -> Self {
+        let mut headers = Self::default();
 
-        Self {
-            headers: headers
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_vec()))
-                .collect(),
-        }
+        from.iter()
+            .map(|h| (String::from(h.key), h.value.unwrap_or_default().to_vec()))
+            .for_each(|(key, value)| headers.set(&key, value));
+
+        headers
     }
 }
 
 impl From<&OwnedHeaders> for MessageHeaders {
-    fn from(headers: &OwnedHeaders) -> Self {
-        let headers: Vec<_> = headers
-            .iter()
-            .map(|h| (String::from(h.key), h.value.unwrap_or_default().to_vec()))
-            .collect::<Vec<(String, Vec<u8>)>>();
+    fn from(from: &OwnedHeaders) -> Self {
+        let mut headers = Self::default();
 
-        Self {
-            headers: headers
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_vec()))
-                .collect(),
-        }
+        from.iter()
+            .map(|h| (String::from(h.key), h.value.unwrap_or_default().to_vec()))
+            .for_each(|(key, value)| headers.set(&key, value));
+
+        headers
     }
 }

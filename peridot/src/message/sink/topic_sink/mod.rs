@@ -27,6 +27,8 @@ use crate::{
 mod error;
 pub use error::TopicSinkError;
 
+pub(crate) const CHANGELOG_OFFSET_HEADER: &str = "peridot-internal-changelog-offset";
+
 #[derive(Debug, Clone, Default, derive_more::Display)]
 pub(crate) enum TopicType {
     #[default]
@@ -91,9 +93,9 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<i64, Self::Error>> {
         let span = tracing::span!(
-            Level::TRACE,
+            Level::DEBUG,
             "->TopicSink::poll_commit",
             target_topic = self.topic,
             sink_type = self.topic_type.as_str(),
@@ -159,7 +161,7 @@ where
             }
         }
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(Ok(*this.highest_offset))
     }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -168,10 +170,10 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        message: crate::message::types::Message<KS::Input, VS::Input>,
-    ) -> Result<(), Self::Error> {
+        mut message: crate::message::types::Message<KS::Input, VS::Input>,
+    ) -> Result<crate::message::types::Message<KS::Input, VS::Input>, Self::Error> {
         let span = tracing::span!(
-            Level::TRACE,
+            Level::DEBUG,
             "->TopicSink::start_send",
             target_topic = self.topic,
             sink_type = self.topic_type.as_str(),
@@ -235,6 +237,12 @@ where
             message.partition()
         );
 
-        Ok(())
+        if let TopicType::Changelog = this.topic_type {
+            let bytes = <i64 as PeridotSerializer>::serialize(this.highest_offset).unwrap();
+
+            message.headers_mut().set(CHANGELOG_OFFSET_HEADER, bytes);
+        }
+
+        Ok(message)
     }
 }

@@ -63,7 +63,7 @@ where
             commit_state,
         } = self.project();
 
-        let span = tracing::span!(Level::TRACE, "->Fork::poll",).entered();
+        let span = tracing::span!(Level::DEBUG, "->Fork::poll",).entered();
 
         // If we have transitioned to a committing state, we can start our
         // sink commit process. Otherwise, we can continue to poll the stream.

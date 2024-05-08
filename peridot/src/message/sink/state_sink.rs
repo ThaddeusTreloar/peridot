@@ -15,14 +15,16 @@ use crate::{
     app::PeridotConsumer,
     engine::{
         queue_manager::queue_metadata::QueueMetadata,
-        wrapper::serde::{json::Json, native::NativeBytes, PeridotSerializer},
+        wrapper::serde::{json::Json, native::NativeBytes, PeridotDeserializer, PeridotSerializer},
     },
     message::{
-        sink::{MessageSink, NonCommittingSink},
+        sink::{topic_sink::CHANGELOG_OFFSET_HEADER, MessageSink, NonCommittingSink},
         types::{Message, TryFromOwnedMessage},
     },
     state::backend::{
-        facade::StateFacade, view::ReadableStateView, view::WriteableStateView, StateBackend,
+        facade::StateFacade,
+        view::{ReadableStateView, WriteableStateView},
+        StateBackend,
     },
 };
 
@@ -42,6 +44,7 @@ pin_project! {
         pending_commit: PendingCommit<B::Error>,
         highest_offset: i64,
         highest_committed_offset: i64,
+        consumer_position: Option<i64>,
     }
 }
 
@@ -61,6 +64,7 @@ where
             pending_commit: None,
             highest_offset: 0,
             highest_committed_offset: 0,
+            consumer_position: None,
         }
     }
 
@@ -68,6 +72,11 @@ where
         self.state_facade
             .get_checkpoint()
             .map(|r| r.map(|c| c.offset))
+    }
+
+    // Only for when the state is rebuilding.
+    pub fn set_consumer_position(&mut self, offset: i64) {
+        let _ = self.consumer_position.replace(offset);
     }
 
     pub fn wake_all(&self) {
@@ -107,8 +116,8 @@ where
 impl<B, K, V> MessageSink<K, V> for StateSink<B, K, V>
 where
     B: StateBackend + Send + Sync + 'static,
-    K: Serialize + Send + Sync + 'static,
-    V: Serialize + DeserializeOwned + Send + Sync + 'static,
+    K: Clone + Serialize + Send + Sync + 'static,
+    V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
 {
     type Error = StateSinkError;
 
@@ -116,17 +125,42 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<i64, Self::Error>> {
         let this = self.project();
 
         tracing::debug!("Committing state sink.");
 
         if this.pending_commit.is_none() {
             if this.buffer.is_empty() {
-                return Poll::Ready(Ok(()));
+                return Poll::Ready(Ok(*this.highest_committed_offset));
             }
 
-            let range = this.buffer.drain(..).collect();
+            let range = this
+                .buffer
+                .drain(..)
+                // Swap source offset for changelog offset. Otherwise our checkpoint
+                // is derived from the source offset which may be different.
+                .map(|mut message| {
+                    if let Some(values) = message.headers().get(CHANGELOG_OFFSET_HEADER) {
+                        let bytes = values.iter().next().unwrap();
+
+                        let new_offset =
+                            <i64 as PeridotDeserializer>::deserialize(bytes.as_slice())
+                                .expect("Failed to parse changelog offset.");
+
+                        message.override_offset(new_offset);
+                    }
+
+                    if let Some(offset) = this.consumer_position {
+                        message.override_offset(*offset)
+                    }
+
+                    *this.highest_committed_offset =
+                        std::cmp::max(*this.highest_committed_offset, message.offset());
+
+                    message
+                })
+                .collect();
 
             let facade = this.state_facade.clone();
 
@@ -141,31 +175,37 @@ where
             tracing::debug!("Sink committed.");
 
             let _ = this.pending_commit.take();
+            let _ = this.consumer_position.take();
+
+            this.state_facade.wake();
         }
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(Ok(*this.highest_committed_offset))
     }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(self: Pin<&mut Self>, message: Message<K, V>) -> Result<(), Self::Error> {
+    fn start_send(
+        self: Pin<&mut Self>,
+        message: Message<K, V>,
+    ) -> Result<Message<K, V>, Self::Error> {
         let this = self.project();
 
-        let raw_key = Json::serialize(message.key()).unwrap();
-        let ser_key = String::from_utf8_lossy(&raw_key);
-        let raw_value = Json::serialize(message.value()).unwrap();
-        let ser_value = String::from_utf8_lossy(&raw_value);
-
-        tracing::debug!("Buffering state sink message: topic: {}, partition: {}, offset: {}, key: {}, value: {}", message.topic(), message.partition(), message.offset(), ser_key, ser_value);
+        tracing::debug!(
+            "Buffering state sink message: topic: {}, partition: {}, offset: {}",
+            message.topic(),
+            message.partition(),
+            message.offset()
+        );
 
         let offset = std::cmp::max(message.offset + 1, *this.highest_offset);
 
         *this.highest_offset = offset;
 
-        this.buffer.push(message);
+        this.buffer.push(message.clone());
 
-        Ok(())
+        Ok(message)
     }
 }

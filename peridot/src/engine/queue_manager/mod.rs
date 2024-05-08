@@ -33,9 +33,10 @@ use crate::{
     },
     engine::{
         context::EngineContext,
-        queue_manager::changelog_queues::ChangelogQueues,
+        queue_manager::{changelog_queues::ChangelogQueues, state_cells::StateCells},
         wrapper::serde::{PeridotDeserializer, PeridotSerializer},
     },
+    message::StreamState,
     state::backend::StateBackend,
 };
 
@@ -58,6 +59,7 @@ use super::{
 pub mod changelog_queues;
 pub mod partition_queue;
 pub mod queue_metadata;
+pub mod state_cells;
 
 pin_project! {
     #[derive()]
@@ -220,36 +222,43 @@ where
                 .create_state_store_if_not_exists(&topic, partition)
                 .expect("Failed to create state store.");
 
-            this.engine_context
-                .metadata_manager
-                .get_tables_for_topic(&topic)
-                .into_iter()
-                .for_each(|state_name| {
-                    this.state_store_manager
-                        .create_state_store_for_topic(&topic, &state_name, partition)
-                        .expect("Failed to build state store for topic.")
-                });
+            let changelog_queues = ChangelogQueues::new(
+                this.engine_context
+                    .metadata_manager
+                    .get_tables_for_topic(&topic)
+                    .into_iter()
+                    .map(|table| {
+                        let changelog_topic = this
+                            .engine_context
+                            .metadata_manager
+                            .get_changelog_topic_for_store(&table);
 
-            let changelog_queues: Vec<(String, StreamPeridotPartitionQueue)> = this
-                .engine_context
-                .metadata_manager
-                .get_tables_for_topic(&topic)
-                .into_iter()
-                .map(|table| {
-                    let changelog_topic = this
-                        .engine_context
-                        .metadata_manager
-                        .get_changelog_topic_for_store(&table);
+                        let partition = this
+                            .engine_context
+                            .changelog_manager
+                            .request_changelog_partition(&changelog_topic, partition)
+                            .expect("Failed to get changelog partition");
 
-                    let partition = this
-                        .engine_context
-                        .changelog_manager
-                        .request_changelog_partition(&changelog_topic, partition)
-                        .expect("Failed to get changelog partition");
+                        (table, partition)
+                    })
+                    .collect(),
+            );
 
-                    (table, partition)
-                })
-                .collect();
+            let state_cells: StateCells = StateCells::new(
+                this.engine_context
+                    .metadata_manager
+                    .get_tables_for_topic(&topic)
+                    .into_iter()
+                    .map(|state_name| {
+                        (
+                            state_name.clone(),
+                            this.state_store_manager
+                                .create_state_store_for_topic(&topic, &state_name, partition)
+                                .expect("Failed to build state store for topic."),
+                        )
+                    })
+                    .collect(),
+            );
 
             let partition_queue = this
                 .partition_queues
@@ -263,7 +272,8 @@ where
                         .create_producer(&topic, partition)
                         .expect("Fail"),
                 ),
-                changelog_queues: ChangelogQueues::new(changelog_queues),
+                changelog_queues,
+                state_cells,
                 partition,
                 source_topic: topic.clone(),
             };

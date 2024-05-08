@@ -31,6 +31,7 @@ pub(super) const PARTITIONER: &str = "partitioner";
 pub(super) const PERSISTENT_CONFIG_DIR: &str = "persistent.config.dir";
 pub(super) const PERSISTENT_CONFIG_FILENAME: &str = "peridot.persistent.config";
 pub(super) const STATE_DIR: &str = "state.dir";
+pub(super) const STATISTICS_INTERVAL_MS: &str = "statistics.interval.ms";
 
 // Config values
 pub(super) const ENABLE_IDEMPOTENCE_TRUE: &str = "TRUE";
@@ -48,12 +49,13 @@ pub(super) const REQUIRED_FIELDS: [&str; 6] = [
 
 pub(super) const APP_FIELDS: [&str; 3] = [APPLICATION_ID, STATE_DIR, PERSISTENT_CONFIG_DIR];
 
-pub(super) const DEFAULT_FIELDS: [(&str, &str); 5] = [
+pub(super) const DEFAULT_FIELDS: [(&str, &str); 6] = [
     (ENABLE_IDEMPOTENCE, ENABLE_IDEMPOTENCE_TRUE),
     (ISOLATION_LEVEL, ISOLATION_LEVEL_READ_COMMITTED), // TODO: Make setting this dependent on delivery semantics arg
     (PARTITIONER, PARTITIONER_MURMUR_2_RANDOM), // TODO: Make setting this dependent on delivery semantics arg
     (PERSISTENT_CONFIG_DIR, "./"),
     (STATE_DIR, "/var/lib/peridot"),
+    (STATISTICS_INTERVAL_MS, "100"),
 ];
 
 pub(super) const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [

@@ -7,7 +7,8 @@ use serde::{de::DeserializeOwned, Serialize};
 use tracing::info;
 
 use crate::{
-    message::types::Message,
+    engine::state_store_manager::StateStoreManager,
+    message::{state_fork::StoreStateCell, types::Message},
     state::backend::{
         view::{ReadableStateView, WriteableStateView},
         Checkpoint, StateBackend,
@@ -15,6 +16,7 @@ use crate::{
 };
 
 pub struct StateFacade<K, V, B> {
+    backend_manager: Arc<StateStoreManager<B>>,
     backend: Arc<B>,
     store_name: String,
     partition: i32,
@@ -23,9 +25,15 @@ pub struct StateFacade<K, V, B> {
 }
 
 impl<K, V, B> StateFacade<K, V, B> {
-    pub fn new(backend: Arc<B>, store_name: String, partition: i32) -> Self {
+    pub(crate) fn new(
+        backend: Arc<B>,
+        backend_manager: Arc<StateStoreManager<B>>,
+        store_name: String,
+        partition: i32,
+    ) -> Self {
         Self {
             backend,
+            backend_manager,
             store_name,
             partition,
             _key_type: Default::default(),
@@ -48,7 +56,7 @@ impl<K, V, B> StateFacade<K, V, B> {
 
 impl<K, V, B> ReadableStateView for StateFacade<K, V, B>
 where
-    B: StateBackend + Send + Sync,
+    B: StateBackend + Send + Sync + 'static,
     K: Serialize + Send + Sync,
     V: DeserializeOwned + Send + Sync,
 {
@@ -66,8 +74,20 @@ where
     }
 
     fn poll_time(&self, time: i64, cx: &mut Context<'_>) -> Poll<i64> {
-        self.backend
-            .poll_time(self.store_name(), self.partition, time, cx)
+        let state_time = self
+            .backend
+            .get_state_store_time(self.store_name(), self.partition());
+
+        if state_time >= time {
+            Poll::Ready(state_time)
+        } else {
+            let waker = cx.waker().clone();
+
+            self.backend_manager
+                .store_waker(self.store_name(), self.partition(), time, waker);
+
+            Poll::Pending
+        }
     }
 
     fn get_checkpoint(&self) -> Result<Option<Checkpoint>, Self::Error> {
@@ -77,11 +97,16 @@ where
 
         Ok(checkpoint)
     }
+
+    fn get_stream_state(&self) -> Option<Arc<StoreStateCell>> {
+        self.backend_manager
+            .get_stream_state(self.store_name(), self.partition())
+    }
 }
 
 impl<K, V, B> WriteableStateView for StateFacade<K, V, B>
 where
-    B: StateBackend + Send + Sync,
+    B: StateBackend + Send + Sync + 'static,
     K: Serialize + Send + Sync,
     V: Serialize + Send + Sync,
     Self: Send,
@@ -140,10 +165,16 @@ where
     }
 
     fn wake(&self) {
-        self.backend.wake(self.store_name(), self.partition())
+        let state_time = self
+            .backend
+            .get_state_store_time(self.store_name(), self.partition());
+
+        self.backend_manager
+            .wake_for_time(self.store_name(), self.partition(), state_time);
     }
 
     fn wake_all(&self) {
-        self.backend.wake_all(self.store_name(), self.partition())
+        self.backend_manager
+            .wake_all(self.store_name(), self.partition());
     }
 }
