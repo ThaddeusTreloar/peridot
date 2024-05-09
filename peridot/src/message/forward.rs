@@ -224,19 +224,27 @@ where
                             }
                         }
                         Poll::Pending | Poll::Ready(MessageStreamPoll::Commit(Ok(_))) => {
-                            tracing::debug!(
-                                "No messages available for topic: {} partition: {}, waiting...",
-                                queue_metadata.source_topic(),
-                                queue_metadata.partition()
-                            );
                             // TODO: Store commit offset from messagestreampoll
 
                             match stream_state {
                                 StreamState::Uncommitted => {
+                                    tracing::debug!(
+                                        "No messages available for topic: {} partition: {}, committing...",
+                                        queue_metadata.source_topic(),
+                                        queue_metadata.partition()
+                                    );
                                     *stream_state = StreamState::Committing;
                                 }
                                 StreamState::Committed => {
+                                    tracing::debug!(
+                                        "No messages available for topic: {} partition: {}, already comitted. Transitioning to Sleeping.",
+                                        queue_metadata.source_topic(),
+                                        queue_metadata.partition()
+                                    );
                                     *stream_state = StreamState::Sleeping;
+                                },
+                                StreamState::Sleeping => {
+                                    return Poll::Pending;
                                 }
                                 _ => (),
                             }
@@ -252,10 +260,6 @@ where
                                 *stream_state = Default::default();
                             }
 
-                            let topic = String::from(message.topic());
-                            let partition = message.partition();
-                            let offset = message.offset();
-
                             // TODO: Some retry logic
                             message_sink
                                 .as_mut()
@@ -265,6 +269,8 @@ where
                     }
                 }
                 StreamState::Closing => {
+                    tracing::debug!("Stream state Closed, finishing...");
+
                     ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
                     return Poll::Ready(Ok(()));
                 }

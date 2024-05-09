@@ -69,10 +69,9 @@ pin_project! {
         engine_context: Arc<EngineContext>,
         #[pin]
         changelog_stream: Option<DeserialiserQueue<M::KeyType, M::ValueType>>,
-        changelog_start: Option<i64>,
         store_name: String,
         partition: i32,
-        commit_state: StreamState,
+        stream_state: StreamState,
         store_state: Arc<StoreStateCell>,
         wait: Option<Pin<Box<Sleep>>>,
         _state_backend: PhantomData<B>,
@@ -99,9 +98,8 @@ where
             engine_context,
             store_name,
             partition,
-            changelog_start: None,
             store_state,
-            commit_state: Default::default(),
+            stream_state: Default::default(),
             wait: None,
             _state_backend: Default::default(),
         }
@@ -123,9 +121,8 @@ where
             engine_context,
             store_name,
             partition,
-            changelog_start: None,
             store_state,
-            commit_state: Default::default(),
+            stream_state: Default::default(),
             wait: None,
             _state_backend: Default::default(),
         }
@@ -145,17 +142,16 @@ where
     fn poll_next(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<super::types::Message<Self::KeyType, Self::ValueType>>> {
+    ) -> Poll<MessageStreamPoll<Self::KeyType, Self::ValueType>> {
         let StateSinkForkProjection {
             mut changelog_stream,
             mut message_stream,
             mut state_sink,
-            commit_state,
+            stream_state,
             store_state,
             engine_context,
             store_name,
             partition,
-            changelog_start,
             wait,
             ..
         } = self.project();
@@ -174,193 +170,230 @@ where
 
         let mut changelog_stream_proj = changelog_stream.as_pin_mut();
 
-        // If we have transitioned to a committing state, we can start our
-        // sink commit process. Otherwise, we can continue to poll the stream.
-        if let StreamState::Committing = commit_state {
-            tracing::debug!("Committing sink...");
-            ready!(state_sink.as_mut().poll_commit(cx)).expect("Failed to close");
-            *commit_state = StreamState::Committed;
-        }
-
-        if store_state.load().is_ready() && changelog_stream_proj.is_some() {
-            let s = changelog_stream_proj.take();
-        }
-
-        if let Some(mut stream) = changelog_stream_proj {
-            if let StreamState::Committed = commit_state {
-                *commit_state = Default::default();
-            }
-
-            if changelog_start.is_none() {
-                let checkpoint = state_sink
-                    .get_checkpoint()
-                    .expect("Failed to get checkpoint")
-                    .unwrap_or(0);
-
-                tracing::debug!("Rebuilding state store from checkpoint: {}", checkpoint);
-
-                let watermarks = engine_context.watermark_for_changelog(store_name, *partition);
-
-                let lso = match engine_context.get_changelog_lso(store_name, *partition) {
-                    None => {
-                        info!("LSO not store, waiting...");
-
-                        let mut sleep = Box::pin(tokio::time::sleep(Duration::from_millis(100)));
-
-                        sleep.poll_unpin(cx);
-
-                        let _ = wait.replace(sleep);
-
-                        return Poll::Pending;
+        for _ in 0..BATCH_SIZE {
+            match (store_state.load(), stream_state) {
+                (StoreState::Uninitialised, _) => {
+                    let checkpoint = state_sink
+                        .get_checkpoint()
+                        .expect("Failed to get checkpoint")
+                        .unwrap_or(0);
+    
+                    tracing::debug!("Rebuilding state store from checkpoint: {}", checkpoint);
+    
+                    let watermarks = engine_context.watermark_for_changelog(store_name, *partition);
+    
+                    let lso = match engine_context.get_changelog_lso(store_name, *partition) {
+                        None => {
+                            info!("LSO not store, waiting...");
+    
+                            let mut sleep = Box::pin(tokio::time::sleep(Duration::from_millis(100)));
+    
+                            sleep.poll_unpin(cx);
+    
+                            let _ = wait.replace(sleep);
+    
+                            return Poll::Pending;
+                        }
+                        Some(lso) => lso,
+                    };
+    
+                    tracing::debug!("State store changelog watermarks: {}", watermarks);
+    
+                    let mut beginning_offset = 0;
+    
+                    if checkpoint > lso {
+                        //watermarks.high() {
+                        tracing::debug!(
+                            "State store checkpoint higher than lso, checkpoint: {} lso: {}",
+                            checkpoint,
+                            lso
+                        );
+                        beginning_offset = watermarks.low();
+    
+                        // reset state store
+                        // } else if checkpoint < watermarks.high() && checkpoint < watermarks.low() {
+                    } else if checkpoint < lso && checkpoint < watermarks.low() {
+                        tracing::debug!(
+                            "State store checkpoint lower than low watermark, checkpoint: {} lso: {}",
+                            checkpoint,
+                            lso
+                        );
+                        beginning_offset = watermarks.low();
+    
+                        // reset state store
+                    } else {
+                        // If the check point is seekable, or the checkpoint is equal with the high watermark
+                        // Just use the checkpoint as the next offset.
+                        tracing::debug!(
+                            "Resuming changelog from checkpoint, checkpoint: {} lso: {}",
+                            checkpoint,
+                            lso
+                        );
+                        beginning_offset = checkpoint;
                     }
-                    Some(lso) => lso,
-                };
-
-                tracing::debug!("State store changelog watermarks: {}", watermarks);
-
-                let mut beginning_offset = 0;
-
-                if checkpoint > lso {
-                    //watermarks.high() {
+    
                     tracing::debug!(
-                        "State store checkpoint higher than lso, checkpoint: {} lso: {}",
-                        checkpoint,
-                        lso
+                        "Seeking changelog consumer for {}-{} to offset: {}",
+                        store_name,
+                        partition,
+                        beginning_offset
                     );
-                    beginning_offset = watermarks.low();
-
-                    // reset state store
-                    // } else if checkpoint < watermarks.high() && checkpoint < watermarks.low() {
-                } else if checkpoint < lso && checkpoint < watermarks.low() {
+    
+                    engine_context
+                        .seek_changlog_consumer(store_name, *partition, beginning_offset)
+                        .expect("Failed to seek changelog consumer.");
+    
                     tracing::debug!(
-                        "State store checkpoint lower than low watermark, checkpoint: {} lso: {}",
-                        checkpoint,
-                        lso
+                        "Reading changelog from current store position: {}",
+                        beginning_offset
                     );
-                    beginning_offset = watermarks.low();
-
-                    // reset state store
-                } else {
-                    // If the check point is seekable, or the checkpoint is equal with the high watermark
-                    // Just use the checkpoint as the next offset.
-                    tracing::debug!(
-                        "Resuming changelog from checkpoint, checkpoint: {} lso: {}",
-                        checkpoint,
-                        lso
-                    );
-                    beginning_offset = checkpoint;
+    
+                    store_state.store(StoreState::Rebuilding);
                 }
+                (_, StreamState::Committing | StreamState::CommittingClosing) => {
+                    tracing::debug!("Committing sink...");
+                    ready!(state_sink.as_mut().poll_commit(cx)).expect("Failed to close");
 
-                tracing::debug!(
-                    "Seeking changelog consumer for {}-{} to offset: {}",
-                    store_name,
-                    partition,
-                    beginning_offset
-                );
-
-                engine_context
-                    .seek_changlog_consumer(store_name, *partition, beginning_offset)
-                    .expect("Failed to seek changelog consumer.");
-
-                tracing::debug!(
-                    "Reading changelog from current store position: {}",
-                    beginning_offset
-                );
-
-                let _ = changelog_start.replace(beginning_offset);
-            }
-
-            for _ in 0..BATCH_SIZE {
-                match stream.as_mut().poll_next(cx) {
-                    Poll::Ready(None) => {
-                        panic!("Changelog stream closed before state store rebuilt.")
+                    match stream_state {
+                        StreamState::Committing => {
+                            *stream_state = StreamState::Committed;
+                        }
+                        StreamState::CommittingClosing => {
+                            *stream_state = StreamState::Closing;
+                        }
+                        _ => ()
                     }
-                    Poll::Ready(Some(message)) => {
-                        tracing::debug!("Sending changelog record to sink.");
+                }
+                (_, StreamState::Closing) => {
 
-                        let _ = state_sink
-                            .as_mut()
-                            .start_send(message)
-                            .expect("Failed to send message to sink.");
-                    }
-                    Poll::Pending => {
-                        tracing::debug!("No records for changelog.");
-
-                        let lso = match engine_context.get_changelog_lso(store_name, *partition) {
-                            None => {
-                                info!("LSO not store, waiting...");
-
-                                let mut sleep =
-                                    Box::pin(tokio::time::sleep(Duration::from_millis(100)));
-
-                                sleep.poll_unpin(cx);
-
-                                let _ = wait.replace(sleep);
-
-                                return Poll::Pending;
+                }
+                (StoreState::Rebuilding, StreamState::Uncommitted | StreamState::Committed | StreamState::Sleeping) => {
+                    if let Some(mut stream) = changelog_stream_proj {
+                        match stream.as_mut().poll_next(cx) {
+                            Poll::Ready(MessageStreamPoll::Closed) => {
+                                todo!("Changelog stream closed before state store rebuilt.")
                             }
-                            Some(lso) => lso,
-                        };
-
-                        let consumer_position =
-                            engine_context.get_changelog_consumer_position(store_name, *partition);
-
-                        tracing::debug!("Checkpointing consumer position offset: {} for store: {}, partition: {}", consumer_position, store_name, partition);
-
-                        state_sink.as_mut().set_consumer_position(consumer_position);
-
-                        match state_sink.as_mut().poll_commit(cx) {
+                            Poll::Ready(MessageStreamPoll::Commit(val)) => {
+                                match stream_state {
+                                    StreamState::Uncommitted => {
+                                        *stream_state = StreamState::Committing;
+                                        cx.waker().wake_by_ref();
+                                    }
+                                    StreamState::Committed => {
+                                        tracing::debug!("Transitioning to sleeping...");
+                                        *stream_state = StreamState::Sleeping;
+                
+                                        // Yield control so that when we wake dependents we will be
+                                        // behind any tasks that are pending wake.
+                                        cx.waker().wake_by_ref();
+                                    }
+                                    StreamState::Sleeping => {
+                                        todo!("Sleeping while rebuilding")
+                                    }
+                                    _ => (),
+                                }
+                                todo!("Changelog stream closed before state store rebuilt.")
+                            }
+                            Poll::Ready(MessageStreamPoll::Message(message)) => {
+                                tracing::debug!("Sending changelog record to sink.");
+        
+                                let _ = state_sink
+                                    .as_mut()
+                                    .start_send(message)
+                                    .expect("Failed to send message to sink.");
+                            }
                             Poll::Pending => {
-                                // Handle potential sleeping state.
-                                tracing::debug!("State sink pending commit for checkpoint");
-
-                                *commit_state = StreamState::Committing;
-                                return Poll::Pending;
-                            }
-                            Poll::Ready(result) => {
-                                result.expect("Sink failed to commit.");
-
-                                // TODO: ALO and AMO semantics only
-                                //let watermarks =
-                                //    engine_context.watermark_for_changelog(store_name, *partition);
-
-                                let lso = engine_context
-                                    .get_changelog_lso(store_name, *partition)
-                                    .unwrap();
-
-                                let checkpoint = state_sink
-                                    .get_checkpoint()
-                                    .expect("Failed to get checkpoint.")
-                                    .expect("State sink not checkpointed after commit.");
-
-                                match checkpoint.cmp(&std::cmp::max(lso, 0)) {
-                                    Ordering::Equal => {
-                                        tracing::debug!(
-                                            "checkpoint: {} caught up to changelog lso: {}",
-                                            checkpoint,
-                                            lso
-                                        );
-
-                                        break;
-                                    }
-                                    Ordering::Greater => {
-                                        panic!("Checkpoint greater than lso after state store rebuild, checkpoint: {}, lso: {}", checkpoint, lso)
-                                    }
-                                    Ordering::Less => {
-                                        tracing::debug!(
-                                            "checkpoint: {} still behind lso: {}",
-                                            checkpoint,
-                                            lso
-                                        );
-
+                                tracing::debug!("No records for changelog.");
+        
+                                let lso = match engine_context.get_changelog_lso(store_name, *partition) {
+                                    None => {
+                                        info!("LSO not stored, waiting...");
+        
+                                        let mut sleep =
+                                            Box::pin(tokio::time::sleep(Duration::from_millis(100)));
+        
+                                        sleep.poll_unpin(cx);
+        
+                                        let _ = wait.replace(sleep);
+        
                                         return Poll::Pending;
+                                    }
+
+                                    Some(lso) => lso,
+                                };
+        
+                                let consumer_position =
+                                    engine_context.get_changelog_consumer_position(store_name, *partition);
+        
+                                tracing::debug!("Checkpointing consumer position offset: {} for store: {}, partition: {}", consumer_position, store_name, partition);
+        
+                                state_sink.as_mut().set_consumer_position(consumer_position);
+        
+                                match state_sink.as_mut().poll_commit(cx) {
+                                    Poll::Pending => {
+                                        // Handle potential sleeping state.
+                                        tracing::debug!("State sink pending commit for checkpoint");
+        
+                                        *stream_state = StreamState::Committing;
+                                        return Poll::Pending;
+                                    }
+                                    Poll::Ready(result) => {
+                                        result.expect("Sink failed to commit.");
+        
+                                        // TODO: ALO and AMO semantics only
+                                        //let watermarks =
+                                        //    engine_context.watermark_for_changelog(store_name, *partition);
+        
+                                        let lso = engine_context
+                                            .get_changelog_lso(store_name, *partition)
+                                            .unwrap();
+        
+                                        let checkpoint = state_sink
+                                            .get_checkpoint()
+                                            .expect("Failed to get checkpoint.")
+                                            .expect("State sink not checkpointed after commit.");
+        
+                                        match checkpoint.cmp(&std::cmp::max(lso, 0)) {
+                                            Ordering::Equal => {
+                                                tracing::debug!(
+                                                    "checkpoint: {} caught up to changelog lso: {}",
+                                                    checkpoint,
+                                                    lso
+                                                );
+        
+                                                break;
+                                            }
+                                            Ordering::Greater => {
+                                                panic!("Checkpoint greater than lso after state store rebuild, checkpoint: {}, lso: {}", checkpoint, lso)
+                                            }
+                                            Ordering::Less => {
+                                                tracing::debug!(
+                                                    "checkpoint: {} still behind lso: {}",
+                                                    checkpoint,
+                                                    lso
+                                                );
+        
+                                                return Poll::Pending;
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
+
+
+                    let _ = changelog_stream_proj.take();
+                }
+                (StoreState::Ready | StoreState::Sleeping, StreamState::Uncommitted | StreamState::Committed | StreamState::Sleeping) => {
+
                 }
             }
+        }
+
+
+        
+
+        
 
             tracing::debug!(
                 "Setting state store status to StoreState::Ready for store: {}, partition: {}",
@@ -398,14 +431,14 @@ where
                 // We have recieved no messages from upstream, they will have
                 // transitioned to a commit state.
                 // We can transition to a commit state if we haven't already.
-                match commit_state {
+                match stream_state {
                     StreamState::Uncommitted => {
-                        *commit_state = StreamState::Committing;
+                        *stream_state = StreamState::Committing;
                         cx.waker().wake_by_ref();
                     }
                     StreamState::Committed => {
                         tracing::debug!("Transitioning to sleeping...");
-                        *commit_state = StreamState::Sleeping;
+                        *stream_state = StreamState::Sleeping;
 
                         // Yield control so that when we wake dependents we will be
                         // behind any tasks that are pending wake.
@@ -429,8 +462,8 @@ where
             Poll::Ready(MessageStreamPoll::Message(message)) => {
                 // If we were waiting for upstream nodes to commit, we can transition
                 // to our default state.
-                if let StreamState::Committed | StreamState::Sleeping = commit_state {
-                    *commit_state = Default::default();
+                if let StreamState::Committed | StreamState::Sleeping = stream_state {
+                    *stream_state = Default::default();
                     store_state.store(StoreState::Ready)
                 }
 
@@ -442,8 +475,8 @@ where
                 Poll::Ready(Some(message))
             }
             Poll::Ready(MessageStreamPoll::Commit(Ok(()))) => {
-                if let StreamState::Uncommitted = commit_state {
-                    *commit_state = StreamState::Committing;
+                if let StreamState::Uncommitted = stream_state {
+                    *stream_state = StreamState::Committing;
                     cx.waker().wake_by_ref();
                 }
 

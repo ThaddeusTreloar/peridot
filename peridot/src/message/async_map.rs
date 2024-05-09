@@ -3,7 +3,7 @@ use std::{
     pin::Pin,
     process::Output,
     sync::Arc,
-    task::{Context, Poll},
+    task::{ready, Context, Poll},
 };
 
 use crate::message::types::{FromMessage, Message, PatchMessage};
@@ -11,7 +11,7 @@ use crate::message::types::{FromMessage, Message, PatchMessage};
 use futures::Future;
 use pin_project_lite::pin_project;
 
-use super::stream::MessageStream;
+use super::stream::{MessageStream, MessageStreamPoll};
 
 pin_project! {
     pub struct AsyncMapMessage<M, F, E, R> {
@@ -50,20 +50,18 @@ where
     fn poll_next(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
+    ) -> Poll<MessageStreamPoll<Self::KeyType, Self::ValueType>> {
         let this = self.project();
-        let next = this.stream.poll_next(cx);
 
-        let msg = match next {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(None) => return Poll::Ready(None),
-            Poll::Ready(Some(msg)) => msg,
-        };
-
-        let (extractor, partial_message) = E::from_message(msg);
-
-        todo!("");
-
+        match ready!(this.stream.poll_next(cx)) {
+            MessageStreamPoll::Closed => Poll::Ready(MessageStreamPoll::Closed),
+            MessageStreamPoll::Commit(val) => Poll::Ready(MessageStreamPoll::Commit(val)),
+            MessageStreamPoll::Message(msg) => {
+                let (extractor, partial_message) = E::from_message(msg);
+                
+                todo!("");
+            },
+        }
         //let mut map_future = Box::pin((this.callback)(extractor));
 
         //match map_future.as_mut().poll(cx) {
@@ -76,6 +74,5 @@ where
         //let patched_message = map_result.patch(partial_message);
 
         //Poll::Ready(Some(patched_message))
-        todo!("")
     }
 }
