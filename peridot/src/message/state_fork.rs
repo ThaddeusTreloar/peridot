@@ -292,7 +292,6 @@ where
                                     }
                                     _ => (),
                                 }
-                                todo!("Changelog stream closed before state store rebuilt.")
                             }
                             Poll::Ready(MessageStreamPoll::Message(message)) => {
                                 tracing::debug!("Sending changelog record to sink.");
