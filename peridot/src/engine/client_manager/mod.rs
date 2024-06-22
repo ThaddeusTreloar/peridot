@@ -3,6 +3,7 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 use rdkafka::{
     consumer::{BaseConsumer, Consumer},
     message::OwnedMessage,
+    Offset,
 };
 use tracing::info;
 
@@ -12,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    metadata_manager::topic_metadata::TopicMetadata,
+    context::EngineContext, metadata_manager::topic_metadata::TopicMetadata,
     queue_manager::partition_queue::StreamPeridotPartitionQueue, util::ConsumerUtils,
     PeridotConsumer,
 };
@@ -124,6 +125,7 @@ impl ClientManager {
         &self,
         topic: &str,
         partition: i32,
+        engine_context: Arc<EngineContext>,
     ) -> Result<StreamPeridotPartitionQueue, ClientManagerError> {
         tracing::debug!(
             "Getting partition queue for topic: {} partition: {}",
@@ -149,6 +151,7 @@ impl ClientManager {
                     queue,
                     topic.to_owned(),
                     partition,
+                    engine_context,
                 ))
             }
         }
@@ -160,6 +163,37 @@ impl ClientManager {
             Some(result) => result
                 .map(|m| Some(m.detach()))
                 .map_err(|err| ClientManagerError::ConsumerPollError { err }),
+        }
+    }
+
+    pub(crate) fn get_topic_partition_consumer_position(&self, topic: &str, partition: i32) -> i64 {
+        match self
+            .consumer
+            .position()
+            .expect("Failed to get assignment")
+            .elements_for_topic(topic)
+            .into_iter()
+            .find(|elem| elem.partition() == partition)
+            .map(|elem| elem.offset())
+            .expect("Unable to find topic offset.")
+        {
+            Offset::Offset(offset) => offset,
+            Offset::Beginning => {
+                panic!("Offset::Beginning")
+            }
+            Offset::End => {
+                panic!("Offset::End")
+            }
+            Offset::OffsetTail(o) => {
+                panic!("Offset::OffsetTail({})", o)
+            }
+            Offset::Stored => {
+                panic!("Offset::Stored")
+            }
+            Offset::Invalid => {
+                tracing::warn!("Current offset invalid...");
+                -1
+            }
         }
     }
 

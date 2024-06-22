@@ -15,7 +15,7 @@ use tracing::error;
 
 use crate::{
     engine::{
-        queue_manager::partition_queue::StreamPeridotPartitionQueue,
+        context::EngineContext, queue_manager::partition_queue::StreamPeridotPartitionQueue,
         wrapper::serde::PeridotDeserializer,
     },
     message::{
@@ -35,7 +35,7 @@ pin_project! {
         input: StreamPeridotPartitionQueue,
         interval: Option<Instant>,
         is_committed: bool,
-        next_offset: i64,
+        is_changelog: bool,
         _key_serialiser: PhantomData<KS>,
         _value_serialiser: PhantomData<VS>,
     }
@@ -46,17 +46,22 @@ impl<KS, VS> QueueHead<KS, VS> {
         QueueHead {
             input,
             interval: None,
-            is_committed: true,
-            next_offset: 0,
+            is_committed: false,
+            is_changelog: false,
             _key_serialiser: PhantomData,
             _value_serialiser: PhantomData,
         }
     }
-}
 
-impl<KS, VS> From<StreamPeridotPartitionQueue> for QueueHead<KS, VS> {
-    fn from(input: StreamPeridotPartitionQueue) -> Self {
-        QueueHead::new(input)
+    pub fn new_changelog(input: StreamPeridotPartitionQueue) -> Self {
+        QueueHead {
+            input,
+            interval: None,
+            is_committed: false,
+            is_changelog: true,
+            _key_serialiser: PhantomData,
+            _value_serialiser: PhantomData,
+        }
     }
 }
 
@@ -73,10 +78,10 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<MessageStreamPoll<KS::Output, VS::Output>> {
         let QueueHeadProjection {
-            input,
+            mut input,
             interval,
             is_committed,
-            next_offset,
+            is_changelog,
             ..
         } = self.project();
 
@@ -86,7 +91,11 @@ where
             }
             Some(instant) => {
                 if instant.elapsed().as_millis() > COMMIT_INTERVAL {
-                    return Poll::Ready(MessageStreamPoll::Commit(Ok(*next_offset)));
+                    *is_committed = true;
+
+                    let next_offset = input.consumer_position();
+
+                    return Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset)));
                 } else {
                     let _ = interval.replace(instant);
                 }
@@ -105,7 +114,7 @@ where
         }
          */
 
-        match input.poll_next(cx) {
+        match input.as_mut().poll_next(cx) {
             Poll::Pending => {
                 let _ = interval.take();
 
@@ -114,13 +123,13 @@ where
                 } else {
                     *is_committed = true;
 
-                    Poll::Ready(MessageStreamPoll::Commit(Ok(*next_offset)))
+                    let next_offset = input.consumer_position();
+
+                    Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset)))
                 }
             }
             Poll::Ready(None) => panic!("PartitionQueueStreams should never return none. If this panic is triggered, there must be an upstream change."),
             Poll::Ready(Some(raw_msg)) => {
-                *next_offset = raw_msg.offset()+1;
-
                 match <Message<KS::Output, VS::Output> as TryFromOwnedMessage<
                     KS,
                     VS,
