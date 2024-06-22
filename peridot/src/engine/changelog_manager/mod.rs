@@ -325,7 +325,11 @@ impl ChangelogManager {
         }
     }
 
-    pub(super) fn get_lso(&self, changelog_topic: &str, partition: i32) -> Option<i64> {
+    pub(super) fn get_lowest_stable_offset(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<i64> {
         self.consumer.context().get_lso(changelog_topic, partition)
     }
 }

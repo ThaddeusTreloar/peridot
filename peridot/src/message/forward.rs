@@ -37,6 +37,7 @@ pin_project! {
         message_sink: Si,
         queue_metadata: QueueMetadata,
         stream_state: StreamState,
+        next_offset: i64,
     }
 }
 
@@ -51,6 +52,7 @@ where
             message_sink,
             queue_metadata,
             stream_state: Default::default(),
+            next_offset: 0,
         }
     }
 }
@@ -59,6 +61,195 @@ where
 pub enum ForwarderError {
     #[error(transparent)]
     UnknownError(#[from] Box<dyn std::error::Error + Send>),
+}
+
+impl<M, Si> Forward<M, Si>
+where
+    M: MessageStream,
+    Si: MessageSink<M::KeyType, M::ValueType>,
+{
+    fn commit(
+        queue_metadata: &mut QueueMetadata,
+        message_sink: &mut Pin<&mut Si>,
+        stream_state: &mut StreamState,
+        next_offset: &mut i64,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), ForwarderError>> {
+        // If the sink has not completed it's committing, we need to wait.
+        ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit transaction.");
+        // TODO: match and if err, abort transaction.
+
+        let cgm = queue_metadata.engine_context().group_metadata();
+
+        let mut offsets = TopicPartitionList::new();
+
+        offsets
+            .add_partition_offset(
+                queue_metadata.source_topic(),
+                queue_metadata.partition(),
+                Offset::Offset(*next_offset),
+            )
+            .expect("Failed to add partition offset.");
+
+        match queue_metadata.producer_arc().send_offsets_to_transaction(
+            &offsets,
+            &cgm,
+            Duration::from_millis(1000),
+        ) {
+            Ok(r) => {
+                tracing::debug!("Successfully sent offsets, {} to producer transaction for source_topic: {}, partition: {}", next_offset, queue_metadata.source_topic(), queue_metadata.partition())
+            }
+            Err(KafkaError::Transaction(e)) => {
+                tracing::error!(
+                    "Transaction error while committing transaction, caused by {}",
+                    e
+                );
+                panic!(
+                    "Transaction error while committing transaction, caused by {}",
+                    e
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Unknown error while committing transaction, caused by {}",
+                    e
+                );
+                panic!(
+                    "Unknown error while committing transaction, caused by {}",
+                    e
+                );
+            }
+        };
+
+        match queue_metadata
+            .producer()
+            .commit_transaction(Duration::from_millis(2500))
+        {
+            Ok(r) => {
+                tracing::debug!("Successfully committed producer transaction for source_topic: {}, partition: {}", queue_metadata.source_topic(), queue_metadata.partition())
+            }
+            Err(KafkaError::Transaction(e)) => {
+                tracing::error!(
+                    "Transaction error while committing transaction, caused by {}",
+                    e
+                );
+                panic!(
+                    "Transaction error while committing transaction, caused by {}",
+                    e
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Unknown error while committing transaction, caused by {}",
+                    e
+                );
+                panic!(
+                    "Unknown error while committing transaction, caused by {}",
+                    e
+                );
+            }
+        }
+
+        *stream_state = StreamState::Committed;
+
+        match queue_metadata.producer().begin_transaction() {
+            Ok(r) => {
+                tracing::debug!(
+                    "Successfully begun producer transaction for source_topic: {}, partition: {}",
+                    queue_metadata.source_topic(),
+                    queue_metadata.partition()
+                );
+
+                Poll::Ready(Ok(()))
+            }
+            Err(KafkaError::Transaction(e)) => {
+                tracing::error!(
+                    "Transaction error while committing transaction, caused by {}",
+                    e
+                );
+                panic!(
+                    "Transaction error while committing transaction, caused by {}",
+                    e
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Unknown error while committing transaction, caused by {}",
+                    e
+                );
+                panic!(
+                    "Unknown error while committing transaction, caused by {}",
+                    e
+                );
+            }
+        }
+    }
+
+    fn handle_poll(
+        queue_metadata: &mut QueueMetadata,
+        message_stream: &mut Pin<&mut M>,
+        message_sink: &mut Pin<&mut Si>,
+        stream_state: &mut StreamState,
+        next_offset: &mut i64,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), ForwarderError>> {
+        ready!(message_sink.as_mut().poll_ready(cx)).expect("Failed to get sink ready.");
+
+        match ready!(message_stream.as_mut().poll_next(cx)) {
+            MessageStreamPoll::Closed => {
+                tracing::debug!(
+                    "Upstream queue for topic: {}, partition: {}, has completed. Cleaning up...",
+                    queue_metadata.source_topic(),
+                    queue_metadata.partition()
+                );
+
+                *stream_state = StreamState::Closing;
+
+                Poll::Ready(Ok(()))
+            }
+            MessageStreamPoll::Commit(Ok(offset)) => {
+                tracing::debug!(
+                    "No messages available for topic: {} partition: {}, waiting...",
+                    queue_metadata.source_topic(),
+                    queue_metadata.partition()
+                );
+                // TODO: Store commit offset from messagestreampoll
+
+                *next_offset = offset;
+
+                if let StreamState::Uncommitted = *stream_state {
+                    *stream_state = StreamState::Committing;
+
+                    Self::commit(queue_metadata, message_sink, stream_state, next_offset, cx)
+                } else {
+                    Poll::Pending
+                }
+            }
+            MessageStreamPoll::Commit(Err(e)) => {
+                todo!("Handle upstream commit error.");
+            }
+            MessageStreamPoll::Message(message) => {
+                tracing::debug!("Message received in Fork, sending to sink.");
+                // If we were waiting for upstream nodes to finish committing, we can transition
+                // to our default state.
+                if let StreamState::Committed = stream_state {
+                    *stream_state = Default::default();
+                }
+
+                let topic = String::from(message.topic());
+                let partition = message.partition();
+                let offset = message.offset();
+
+                // TODO: Some retry logic
+                message_sink
+                    .as_mut()
+                    .start_send(message)
+                    .expect("Failed to send message to sink.");
+
+                Poll::Ready(Ok(()))
+            }
+        }
+    }
 }
 
 impl<M, Si> Future for Forward<M, Si>
@@ -74,7 +265,8 @@ where
             mut message_stream,
             mut message_sink,
             queue_metadata,
-            mut stream_state,
+            stream_state,
+            next_offset,
         } = self.project();
 
         let span = tracing::span!(
@@ -87,182 +279,28 @@ where
 
         for _ in 0..BATCH_SIZE {
             match stream_state {
-                StreamState::Committing | StreamState::CommittingClosing => {
-                    // If the sink has not completed it's committing, we need to wait.
-                    ready!(message_sink.as_mut().poll_commit(cx))
-                        .expect("Failed to commit transaction.");
-                    // TODO: match and if err, abort transaction.
-
-                    let cgm = queue_metadata.engine_context().group_metadata();
-
-                    let mut offsets = TopicPartitionList::new();
-
-                    // Get from stored offset
-                    let next_offset = 0;
-
-                    offsets
-                        .add_partition_offset(
-                            queue_metadata.source_topic(),
-                            queue_metadata.partition(),
-                            Offset::Offset(next_offset),
-                        )
-                        .expect("Failed to add partition offset.");
-
-                    match queue_metadata.producer_arc().send_offsets_to_transaction(
-                        &offsets,
-                        &cgm,
-                        Duration::from_millis(1000),
-                    ) {
-                        Ok(r) => {
-                            tracing::debug!("Successfully sent offsets, {} to producer transaction for source_topic: {}, partition: {}", next_offset, queue_metadata.source_topic(), queue_metadata.partition())
-                        }
-                        Err(KafkaError::Transaction(e)) => {
-                            tracing::error!(
-                                "Transaction error while committing transaction, caused by {}",
-                                e
-                            );
-                            panic!(
-                                "Transaction error while committing transaction, caused by {}",
-                                e
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Unknown error while committing transaction, caused by {}",
-                                e
-                            );
-                            panic!(
-                                "Unknown error while committing transaction, caused by {}",
-                                e
-                            );
-                        }
-                    };
-
-                    match queue_metadata
-                        .producer()
-                        .commit_transaction(Duration::from_millis(2500))
-                    {
-                        Ok(r) => {
-                            tracing::debug!("Successfully committed producer transaction for source_topic: {}, partition: {}", queue_metadata.source_topic(), queue_metadata.partition())
-                        }
-                        Err(KafkaError::Transaction(e)) => {
-                            tracing::error!(
-                                "Transaction error while committing transaction, caused by {}",
-                                e
-                            );
-                            panic!(
-                                "Transaction error while committing transaction, caused by {}",
-                                e
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Unknown error while committing transaction, caused by {}",
-                                e
-                            );
-                            panic!(
-                                "Unknown error while committing transaction, caused by {}",
-                                e
-                            );
-                        }
-                    }
-
-                    match stream_state {
-                        StreamState::Committing => {
-                            *stream_state = StreamState::Committed;
-
-                            match queue_metadata.producer().begin_transaction() {
-                                Ok(r) => {
-                                    tracing::debug!("Successfully begun producer transaction for source_topic: {}, partition: {}", queue_metadata.source_topic(), queue_metadata.partition())
-                                }
-                                Err(KafkaError::Transaction(e)) => {
-                                    tracing::error!(
-                                        "Transaction error while committing transaction, caused by {}",
-                                        e
-                                    );
-                                    panic!(
-                                        "Transaction error while committing transaction, caused by {}",
-                                        e
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Unknown error while committing transaction, caused by {}",
-                                        e
-                                    );
-                                    panic!(
-                                        "Unknown error while committing transaction, caused by {}",
-                                        e
-                                    );
-                                }
-                            };
-                        }
-                        StreamState::CommittingClosing => *stream_state = StreamState::Closing,
-                        _ => (),
-                    }
+                StreamState::Committing => {
+                    // TODO: Expand error propogation
+                    ready!(Self::commit(
+                        queue_metadata,
+                        &mut message_sink,
+                        stream_state,
+                        next_offset,
+                        cx
+                    ))
+                    .expect("Commit Error");
                 }
                 StreamState::Committed | StreamState::Uncommitted | StreamState::Sleeping => {
-                    ready!(message_sink.as_mut().poll_ready(cx))
-                        .expect("Failed to get sink ready.");
-
-                    match message_stream.as_mut().poll_next(cx) {
-                        Poll::Ready(MessageStreamPoll::Closed) => {
-                            tracing::debug!(
-                                "Upstream queue for topic: {}, partition: {}, has completed. Cleaning up...",
-                                queue_metadata.source_topic(),
-                                queue_metadata.partition()
-                            );
-
-                            match stream_state {
-                                StreamState::Committed | StreamState::Sleeping => {
-                                    *stream_state = StreamState::Closing;
-                                }
-                                StreamState::Uncommitted => {
-                                    *stream_state = StreamState::CommittingClosing;
-                                }
-                                _ => (),
-                            }
-                        }
-                        Poll::Pending | Poll::Ready(MessageStreamPoll::Commit(Ok(_))) => {
-                            tracing::debug!(
-                                "No messages available for topic: {} partition: {}, waiting...",
-                                queue_metadata.source_topic(),
-                                queue_metadata.partition()
-                            );
-                            // TODO: Store commit offset from messagestreampoll
-
-                            match stream_state {
-                                StreamState::Uncommitted => {
-                                    *stream_state = StreamState::Committing;
-                                }
-                                StreamState::Committed => {
-                                    *stream_state = StreamState::Sleeping;
-                                }
-                                _ => (),
-                            }
-                        }
-                        Poll::Ready(MessageStreamPoll::Commit(Err(e))) => {
-                            todo!("Handle upstream commit error.");
-                        }
-                        Poll::Ready(MessageStreamPoll::Message(message)) => {
-                            tracing::debug!("Message received in Fork, sending to sink.");
-                            // If we were waiting for upstream nodes to finish committing, we can transition
-                            // to our default state.
-                            if let StreamState::Committed = stream_state {
-                                *stream_state = Default::default();
-                            }
-
-                            let topic = String::from(message.topic());
-                            let partition = message.partition();
-                            let offset = message.offset();
-
-                            // TODO: Some retry logic
-                            message_sink
-                                .as_mut()
-                                .start_send(message)
-                                .expect("Failed to send message to sink.");
-                        }
-                    }
+                    // TODO: Expand error propogation
+                    ready!(Self::handle_poll(
+                        queue_metadata,
+                        &mut message_stream,
+                        &mut message_sink,
+                        stream_state,
+                        next_offset,
+                        cx,
+                    ))
+                    .expect("Poll error");
                 }
                 StreamState::Closing => {
                     ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");

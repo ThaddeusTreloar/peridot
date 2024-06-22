@@ -88,14 +88,9 @@ where
                 None => {
                     let message = match this.waiting_message.take() {
                         Some(message) => message,
-                        None => match ready!(this.stream.poll_next(cx)) {
+                        None => match ready!(this.stream.as_mut().poll_next(cx)) {
                             MessageStreamPoll::Message(msg) => msg,
-                            MessageStreamPoll::Closed => {
-                                return Poll::Ready(MessageStreamPoll::Closed)
-                            }
-                            MessageStreamPoll::Commit(val) => {
-                                return Poll::Ready(MessageStreamPoll::Commit(val))
-                            }
+                            other => return other.translate(),
                         },
                     };
 

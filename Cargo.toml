@@ -5,7 +5,6 @@ members = [
 ]
 
 [workspace.package]
-name = "peridot"
 version = "0.0.5"
 edition = "2021"
 homepage = ""

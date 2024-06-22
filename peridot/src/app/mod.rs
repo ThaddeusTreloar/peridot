@@ -18,7 +18,7 @@ use crate::{
         wrapper::serde::PeridotDeserializer,
         AppEngine, Job,
     },
-    pipeline::stream::serialiser::SerialiserPipeline,
+    pipeline::stream::head::HeadPipeline,
     state::backend::{in_memory::InMemoryStateBackend, StateBackend},
     task::{table::TableTask, transparent::TransparentTask, Task},
 };
@@ -50,7 +50,7 @@ impl CompletedQueueMetadata {
     }
 }
 
-type DirectTableTask<'a, KS, VS, B, G> = TableTask<'a, SerialiserPipeline<KS, VS>, B, G>;
+type DirectTableTask<'a, KS, VS, B, G> = TableTask<'a, HeadPipeline<KS, VS>, B, G>;
 
 #[derive()]
 pub struct PeridotApp<B = InMemoryStateBackend, G = ExactlyOnce>
@@ -70,7 +70,7 @@ where
     fn stream<KS, VS>(
         &self,
         topic: &str,
-    ) -> Result<SerialiserPipeline<KS, VS, ExactlyOnce>, PeridotAppRuntimeError>
+    ) -> Result<HeadPipeline<KS, VS, ExactlyOnce>, PeridotAppRuntimeError>
     where
         KS: PeridotDeserializer,
         VS: PeridotDeserializer,
@@ -90,7 +90,7 @@ where
         KS::Output: Clone + Serialize + Send,
         VS::Output: Clone + Serialize + Send,
     {
-        let input: SerialiserPipeline<KS, VS, ExactlyOnce> =
+        let input: HeadPipeline<KS, VS, ExactlyOnce> =
             self.stream(topic).expect("Failed to create topic");
 
         TransparentTask::new(self, topic, input).into_table(store_name)
@@ -99,12 +99,12 @@ where
     pub fn task<'a, KS, VS>(
         &'a self,
         topic: &'a str,
-    ) -> TransparentTask<'a, SerialiserPipeline<KS, VS, ExactlyOnce>, B, G>
+    ) -> TransparentTask<'a, HeadPipeline<KS, VS, ExactlyOnce>, B, G>
     where
         KS: PeridotDeserializer + Send + 'static,
         VS: PeridotDeserializer + Send + 'static,
     {
-        let input: SerialiserPipeline<KS, VS, ExactlyOnce> = self
+        let input: HeadPipeline<KS, VS, ExactlyOnce> = self
             .stream(topic)
             .expect("Failed to create input stream from source topic");
 
