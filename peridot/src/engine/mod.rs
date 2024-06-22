@@ -32,9 +32,7 @@ use tracing_subscriber::field::display;
 use crate::app::error::PeridotAppRuntimeError;
 use crate::engine::queue_manager::QueueManager;
 use crate::state::backend::StateBackend;
-use crate::{
-    engine::wrapper::serde::PeridotDeserializer, pipeline::stream::serialiser::SerialiserPipeline,
-};
+use crate::{engine::wrapper::serde::PeridotDeserializer, pipeline::stream::head::HeadPipeline};
 
 use self::admin_manager::AdminManager;
 use self::changelog_manager::ChangelogManager;
@@ -219,7 +217,7 @@ where
     pub(crate) fn input_stream<KS, VS>(
         &self,
         topic: String,
-    ) -> Result<SerialiserPipeline<KS, VS>, PeridotEngineRuntimeError>
+    ) -> Result<HeadPipeline<KS, VS>, PeridotEngineRuntimeError>
     where
         KS: PeridotDeserializer,
         VS: PeridotDeserializer,
@@ -240,6 +238,6 @@ where
         let (queue_sender, queue_receiver) = tokio::sync::mpsc::unbounded_channel();
         self.downstreams.insert(topic.clone(), queue_sender);
 
-        Ok(SerialiserPipeline::new(queue_receiver))
+        Ok(HeadPipeline::new(queue_receiver))
     }
 }

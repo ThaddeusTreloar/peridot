@@ -21,11 +21,10 @@ pub(crate) enum StreamState {
     Committed,
     Sleeping,
     Closing,
-    CommittingClosing,
 }
 
 impl StreamState {
     fn is_committing(&self) -> bool {
-        *self == StreamState::Committing || *self == StreamState::CommittingClosing
+        *self == StreamState::Committing
     }
 }

@@ -14,7 +14,7 @@ use super::{
 };
 
 //pub mod import;
-pub mod serialiser;
+pub mod head;
 //pub mod transparent;
 
 pub type ChannelStream<K, V> = UnboundedReceiver<Message<K, V>>;
@@ -63,10 +63,25 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum MessageCommitError {}
+pub enum MessageCommitError {
+    #[error("Sink commit error: {}", 0)]
+    SinkCommitError(Box<dyn std::error::Error>),
+}
 
-pub(crate) enum MessageStreamPoll<K, V> {
-    Commit(Result<(), MessageCommitError>),
+pub enum MessageStreamPoll<K, V> {
+    // Next offset to be read, or unrecoverable commit error
+    Commit(Result<i64, MessageCommitError>),
     Message(Message<K, V>),
     Closed,
+}
+
+impl<K, V> MessageStreamPoll<K, V> {
+    // Rename this at some point and also make it slightly safer
+    pub(crate) fn translate<RK, RV>(self) -> Poll<MessageStreamPoll<RK, RV>> {
+        match self {
+            MessageStreamPoll::Message(_) => panic!("Cannot translate MessageStreamPoll::Message."),
+            MessageStreamPoll::Closed => Poll::Ready(MessageStreamPoll::Closed),
+            MessageStreamPoll::Commit(i) => Poll::Ready(MessageStreamPoll::Commit(i)),
+        }
+    }
 }
