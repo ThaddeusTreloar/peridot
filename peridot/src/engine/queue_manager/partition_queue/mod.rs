@@ -33,7 +33,6 @@ pin_project! {
         partition_queue: PeridotPartitionQueue,
         source_topic: String,
         partition: i32,
-        interval: Option<Instant>,
         // TODO: maybe remove rebalance waker as due to consumer behaviour when splitting
         // partition queues, we have to split partition queues before our first call to Consumer::poll.
         // Therefore, if we drop a partition queue, there is a possibility that the consumer may buffer
@@ -61,6 +60,8 @@ impl StreamPeridotPartitionQueue {
 
             if let Some(waker) = maybe_waker.take() {
                 waker.wake()
+            } else {
+                todo!("Queue became non empty while lock not present.")
             }
         };
 
@@ -71,18 +72,12 @@ impl StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
-            interval: None,
         }
     }
 }
 
-pub enum QueueStreamPoll {
-    Commit(i64),
-    Message(OwnedMessage),
-}
-
 impl Stream for StreamPeridotPartitionQueue {
-    type Item = QueueStreamPoll;
+    type Item = OwnedMessage;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -101,12 +96,7 @@ impl Stream for StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
-            interval,
         } = self.project();
-
-        if interval.is_none() {
-            let _ = interval.replace(Instant::now());
-        }
 
         //tracing::debug!("Checking rebalances for topic: {} partition: {}", source_topic, partition);
         //match pre_rebalance_waker.try_recv() {
@@ -127,20 +117,18 @@ impl Stream for StreamPeridotPartitionQueue {
             partition
         );
 
-        if let Some(interval) = interval {
-            if interval.elapsed().as_millis() > COMMIT_INTERVAL {
-                let next_offset = (); // Get consumer cursor
-
-                todo!("Queue commit");
-
-                return Poll::Ready(Some(QueueStreamPoll::Commit(0)));
-            }
-        }
-
         match partition_queue.poll(Duration::from_millis(0)) {
-            Some(Ok(message)) => Poll::Ready(Some(QueueStreamPoll::Message(message.detach()))),
-            Some(Err(e)) => panic!("Failed to get message from upstream: {}", e),
+            Some(Ok(message)) => Poll::Ready(Some(message.detach())),
+            Some(Err(e)) => {
+                tracing::error!("Failed to get message from upstream: {}", e);
+                todo!("Propogate error from head downstream")
+            }
             None => {
+                // PartitionQueues will return None if no messages are buffered
+                // We set the waker so that when the queue becomes non empty,
+                // the task will resume.
+                // TODO: potential race condition if the queue becomes non empty
+                // before the lock is set.
                 waker.lock().replace(cx.waker().clone());
 
                 Poll::Pending

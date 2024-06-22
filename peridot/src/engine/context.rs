@@ -143,9 +143,14 @@ impl EngineContext {
             .get_topic_consumer_position(&changelog_topic, partition)
     }
 
-    pub(crate) fn get_changelog_lso(&self, state_store: &str, partition: i32) -> Option<i64> {
+    pub(crate) fn get_changelog_lowest_stable_offset(
+        &self,
+        state_store: &str,
+        partition: i32,
+    ) -> Option<i64> {
         let changelog_topic = self.get_changelog_topic_name(state_store);
 
-        self.changelog_manager.get_lso(&changelog_topic, partition)
+        self.changelog_manager
+            .get_lowest_stable_offset(&changelog_topic, partition)
     }
 }

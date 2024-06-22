@@ -58,9 +58,9 @@ where
             MessageStreamPoll::Commit(val) => Poll::Ready(MessageStreamPoll::Commit(val)),
             MessageStreamPoll::Message(msg) => {
                 let (extractor, partial_message) = E::from_message(msg);
-                
+
                 todo!("");
-            },
+            }
         }
         //let mut map_future = Box::pin((this.callback)(extractor));
 

@@ -9,7 +9,10 @@ use crate::message::types::{FromMessage, Message, PatchMessage};
 
 use pin_project_lite::pin_project;
 
-use super::{stream::{MessageStream, MessageStreamPoll}, BATCH_SIZE};
+use super::{
+    stream::{MessageStream, MessageStreamPoll},
+    BATCH_SIZE,
+};
 
 pin_project! {
     pub struct FilterMessage<M, F> {
@@ -43,7 +46,9 @@ where
         for _ in 0..BATCH_SIZE {
             let message = match ready!(this.stream.as_mut().poll_next(cx)) {
                 MessageStreamPoll::Closed => return Poll::Ready(MessageStreamPoll::Closed),
-                MessageStreamPoll::Commit(val) => return Poll::Ready(MessageStreamPoll::Commit(val)),
+                MessageStreamPoll::Commit(val) => {
+                    return Poll::Ready(MessageStreamPoll::Commit(val))
+                }
                 MessageStreamPoll::Message(msg) => msg,
             };
 
@@ -52,6 +57,7 @@ where
             }
         }
 
+        // Reschedule the task so that it doesn't hold a worker indefinitely
         cx.waker().wake_by_ref();
 
         Poll::Pending

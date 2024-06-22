@@ -32,12 +32,15 @@ use crate::{
 };
 
 use super::{
-    sink::{state_sink::StateSink, MessageSink},
-    stream::{serialiser::QueueSerialiser, MessageStream},
+    sink::{
+        state_sink::{StateSink, StateSinkError},
+        MessageSink,
+    },
+    stream::{head::QueueHead, MessageStream},
     StreamState,
 };
 
-type DeserialiserQueue<K, V> = QueueSerialiser<NativeBytes<K>, NativeBytes<V>>;
+type DeserialiserQueue<K, V> = QueueHead<NativeBytes<K>, NativeBytes<V>>;
 pub type StoreStateCell = AtomicCell<StoreState>;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -73,7 +76,8 @@ pin_project! {
         partition: i32,
         stream_state: StreamState,
         store_state: Arc<StoreStateCell>,
-        wait: Option<Pin<Box<Sleep>>>,
+        lso_sleep: Option<Pin<Box<Sleep>>>,
+        consumer_next_offset: i64,
         _state_backend: PhantomData<B>,
     }
 }
@@ -115,7 +119,7 @@ where
         partition: i32,
     ) -> Self {
         Self {
-            changelog_stream: Some(QueueSerialiser::new(changelog_stream)),
+            changelog_stream: Some(QueueHead::new(changelog_stream)),
             message_stream,
             state_sink,
             engine_context,
@@ -129,18 +133,20 @@ where
     }
 }
 
-impl<B, M> MessageStream for StateSinkFork<B, M>
+impl<B, M> StateSinkFork<B, M>
 where
     M: MessageStream,
     M::KeyType: Serialize + Send + Sync + Clone + DeserializeOwned + 'static,
     M::ValueType: Serialize + DeserializeOwned + Send + Sync + Clone + DeserializeOwned + 'static,
     B: StateBackend + Send + Sync + 'static,
 {
-    type KeyType = M::KeyType;
-    type ValueType = M::ValueType;
-
-    fn poll_next(
-        self: Pin<&mut Self>,
+    fn set_changelog_start(
+        state_sink: &mut Pin<&mut StateSink<B, M::KeyType, M::ValueType>>,
+        engine_context: &mut Arc<EngineContext>,
+        store_name: &mut String,
+        partition: &mut i32,
+        changelog_start: &mut Option<i64>,
+        lso_sleep: &mut Option<Pin<Box<Sleep>>>,
         cx: &mut Context<'_>,
     ) -> Poll<MessageStreamPoll<Self::KeyType, Self::ValueType>> {
         let StateSinkForkProjection {
@@ -400,32 +406,83 @@ where
                 partition
             );
 
-            store_state.store(StoreState::Ready);
+                        store_state.store(StoreState::Ready);
 
-            tracing::debug!(
-                "Closing changelog stream for for store: {}, partition: {}",
-                store_name,
-                partition
-            );
-            engine_context
-                .close_changelog_stream(store_name, *partition)
-                .expect("Failed to close changelog stream.");
+                        tracing::debug!(
+                            "Closing changelog stream for for store: {}, partition: {}",
+                            store_name,
+                            partition
+                        );
+
+                        engine_context
+                            .close_changelog_stream(store_name, *partition)
+                            .expect("Failed to close changelog stream.");
+
+                        let _ = changelog_stream_proj.take();
+                    }
+
+                    *commit_state = StreamState::Committed;
+                }
+                StreamState::Closing => panic!("stream state closed"),
+                StreamState::Committed | StreamState::Sleeping | StreamState::Uncommitted => {
+                    if changelog_start.is_none() {
+                        ready!(Self::set_changelog_start(
+                            &mut state_sink,
+                            engine_context,
+                            store_name,
+                            partition,
+                            changelog_start,
+                            lso_sleep,
+                            cx,
+                        ))
+                        .expect("Failed to set changelog start.");
+                    };
+
+                    Self::poll_changelog(
+                        stream,
+                        &mut state_sink,
+                        engine_context,
+                        store_name,
+                        partition,
+                        changelog_start,
+                        lso_sleep,
+                        commit_state,
+                        cx,
+                    );
+                }
+            }
         }
 
         tracing::debug!("ForkedSinking messages from stream to sink...");
 
-        // Poll the stream for the next message. If self.commit_state is
-        // Committed, we know that we have committed our producer transaction,
-        // and we will begin polling upstream nodes until they yield Poll::Ready
-        // at which point we know that they have either committed or aborted.
-        match message_stream.as_mut().poll_next(cx) {
-            Poll::Ready(MessageStreamPoll::Closed) => {
-                tracing::debug!("No Messages left for stream, finishing...");
-                ready!(state_sink.as_mut().poll_close(cx)).expect("Failed to close");
-                Poll::Ready(None)
-            }
-            Poll::Pending => {
-                tracing::debug!("No messages available, waiting...");
+        for _ in 0..BATCH_SIZE {
+            match *commit_state {
+                StreamState::Committing => {
+                    tracing::debug!("Committing sink...");
+                    ready!(state_sink.as_mut().poll_commit(cx)).expect("Failed to close");
+                    *commit_state = StreamState::Committed;
+
+                    return Poll::Ready(MessageStreamPoll::Commit(Ok(0)));
+                }
+                StreamState::Closing => {
+                    ready!(state_sink.as_mut().poll_close(cx)).expect("Failed to close");
+
+                    return Poll::Ready(MessageStreamPoll::Closed);
+                }
+                StreamState::Committed | StreamState::Sleeping | StreamState::Uncommitted =>
+                // Poll the stream for the next message. If self.commit_state is
+                // Committed, we know that we have committed our producer transaction,
+                // and we will begin polling upstream nodes until they yield Poll::Ready
+                // at which point we know that they have either committed or aborted.
+                {
+                    match message_stream.as_mut().poll_next(cx) {
+                        Poll::Ready(MessageStreamPoll::Closed) => {
+                            *commit_state = StreamState::Closing;
+
+                            return Poll::Ready(MessageStreamPoll::Closed);
+                        }
+                        Poll::Pending => {
+                            tracing::debug!("No messages available, waiting...");
 
                 // We have recieved no messages from upstream, they will have
                 // transitioned to a commit state.
@@ -466,10 +523,10 @@ where
                     store_state.store(StoreState::Ready)
                 }
 
-                let message = state_sink
-                    .as_mut()
-                    .start_send(message)
-                    .expect("Failed to send message to sink.");
+                            let message = state_sink
+                                .as_mut()
+                                .start_send(message)
+                                .expect("Failed to send message to sink.");
 
                 Poll::Ready(Some(message))
             }
@@ -478,9 +535,9 @@ where
                     *stream_state = StreamState::Committing;
                     cx.waker().wake_by_ref();
                 }
-
-                Poll::Ready(Some(message))
             }
         }
+
+        Poll::Pending
     }
 }

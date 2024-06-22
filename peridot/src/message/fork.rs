@@ -9,7 +9,11 @@ use tracing::{info, Level};
 
 use crate::engine::queue_manager::queue_metadata::{self, QueueMetadata};
 
-use super::{sink::MessageSink, stream::{MessageStream, MessageStreamPoll}, StreamState, BATCH_SIZE};
+use super::{
+    sink::MessageSink,
+    stream::{MessageStream, MessageStreamPoll},
+    StreamState, BATCH_SIZE,
+};
 
 pin_project! {
     #[project = ForkProjection]
@@ -83,14 +87,14 @@ where
                         StreamState::CommittingClosing => {
                             *stream_state = StreamState::Closing;
                         }
-                        _ => ()
+                        _ => (),
                     }
-                },
+                }
                 StreamState::Closing => {
                     tracing::debug!("No Messages left for stream, finishing...");
                     ready!(message_sink.as_mut().poll_close(cx)).expect("Failed to close");
                     return Poll::Ready(MessageStreamPoll::Closed);
-                },
+                }
                 StreamState::Uncommitted | StreamState::Sleeping | StreamState::Committed => {
                     ready!(message_sink.as_mut().poll_ready(cx))
                         .expect("Failed to get sink ready.");
@@ -133,7 +137,7 @@ where
                                         queue_metadata.partition()
                                     );
                                     *stream_state = StreamState::Sleeping;
-                                },
+                                }
                                 StreamState::Sleeping => {
                                     return Poll::Pending;
                                 }
@@ -158,7 +162,6 @@ where
 
                             return Poll::Ready(MessageStreamPoll::Message(message));
                         }
-
                     }
                 }
             }

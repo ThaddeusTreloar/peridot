@@ -11,13 +11,13 @@ use crate::{
     engine::{
         queue_manager::QueueReceiver, util::ExactlyOnce, wrapper::serde::PeridotDeserializer,
     },
-    message::stream::{serialiser::QueueSerialiser, PipelineStage},
+    message::stream::{head::QueueHead, PipelineStage},
 };
 
 use super::PipelineStream;
 
 pin_project! {
-    pub struct SerialiserPipeline<KS, VS, G = ExactlyOnce>
+    pub struct HeadPipeline<KS, VS, G = ExactlyOnce>
     where KS: PeridotDeserializer,
         VS: PeridotDeserializer
     {
@@ -29,7 +29,7 @@ pin_project! {
     }
 }
 
-impl<KS, VS, G> SerialiserPipeline<KS, VS, G>
+impl<KS, VS, G> HeadPipeline<KS, VS, G>
 where
     KS: PeridotDeserializer,
     VS: PeridotDeserializer,
@@ -44,14 +44,14 @@ where
     }
 }
 
-impl<KS, VS, G> PipelineStream for SerialiserPipeline<KS, VS, G>
+impl<KS, VS, G> PipelineStream for HeadPipeline<KS, VS, G>
 where
     KS: PeridotDeserializer + Send,
     VS: PeridotDeserializer + Send,
 {
     type KeyType = KS::Output;
     type ValueType = VS::Output;
-    type MStream = QueueSerialiser<KS, VS>;
+    type MStream = QueueHead<KS, VS>;
 
     fn poll_next(
         mut self: Pin<&mut Self>,
@@ -71,7 +71,7 @@ where
 
         Poll::Ready(Option::Some(PipelineStage::new(
             metadata,
-            QueueSerialiser::<KS, VS>::new(queue),
+            QueueHead::<KS, VS>::new(queue),
         )))
     }
 }
