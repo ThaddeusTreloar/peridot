@@ -17,6 +17,7 @@ use tracing::info;
 
 use crate::{
     app::extensions::{OwnedRebalance, PeridotConsumerContext, RebalanceReceiver},
+    engine::context::EngineContext,
     message::stream::MessageStreamPoll,
 };
 
@@ -26,6 +27,11 @@ pub(super) type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
 
 pub const COMMIT_INTERVAL: u128 = 100;
 
+enum QueueType {
+    Core,
+    Changelog(String),
+}
+
 pin_project! {
     #[project = QueueProjection]
     pub struct StreamPeridotPartitionQueue {
@@ -33,6 +39,8 @@ pin_project! {
         partition_queue: PeridotPartitionQueue,
         source_topic: String,
         partition: i32,
+        queue_type: QueueType,
+        engine_context: Arc<EngineContext>,
         // TODO: maybe remove rebalance waker as due to consumer behaviour when splitting
         // partition queues, we have to split partition queues before our first call to Consumer::poll.
         // Therefore, if we drop a partition queue, there is a possibility that the consumer may buffer
@@ -52,6 +60,7 @@ impl StreamPeridotPartitionQueue {
         mut partition_queue: PeridotPartitionQueue,
         source_topic: String,
         partition: i32,
+        engine_context: Arc<EngineContext>,
     ) -> Self {
         let waker: Arc<Mutex<Option<Waker>>> = Arc::new(Mutex::new(Default::default()));
         let waker_ref = waker.clone();
@@ -61,7 +70,7 @@ impl StreamPeridotPartitionQueue {
             if let Some(waker) = maybe_waker.take() {
                 waker.wake()
             } else {
-                todo!("Queue became non empty while lock not present.")
+                //todo!("Queue became non empty while lock not present.")
             }
         };
 
@@ -72,6 +81,58 @@ impl StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
+            queue_type: QueueType::Core,
+            engine_context,
+        }
+    }
+
+    pub fn new_changelog(
+        mut partition_queue: PeridotPartitionQueue,
+        state_store: &str,
+        source_topic: String,
+        partition: i32,
+        engine_context: Arc<EngineContext>,
+    ) -> Self {
+        let waker: Arc<Mutex<Option<Waker>>> = Arc::new(Mutex::new(Default::default()));
+        let waker_ref = waker.clone();
+        let cb = move || {
+            let mut maybe_waker = waker_ref.lock();
+
+            if let Some(waker) = maybe_waker.take() {
+                waker.wake()
+            } else {
+                //todo!("Queue became non empty while lock not present.")
+            }
+        };
+
+        partition_queue.set_nonempty_callback(cb);
+
+        Self {
+            waker,
+            partition_queue,
+            source_topic,
+            partition,
+            queue_type: QueueType::Changelog(state_store.to_owned()),
+            engine_context,
+        }
+    }
+
+    pub fn source_topic(&self) -> &str {
+        &self.source_topic
+    }
+
+    pub fn partition(&self) -> i32 {
+        self.partition
+    }
+
+    pub fn consumer_position(&self) -> i64 {
+        match &self.queue_type {
+            QueueType::Core => self
+                .engine_context
+                .get_consumer_position(self.source_topic(), self.partition()),
+            QueueType::Changelog(state_name) => self
+                .engine_context
+                .get_changelog_consumer_position(state_name, self.partition()),
         }
     }
 }
@@ -96,6 +157,7 @@ impl Stream for StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
+            ..
         } = self.project();
 
         //tracing::debug!("Checking rebalances for topic: {} partition: {}", source_topic, partition);

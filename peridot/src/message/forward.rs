@@ -75,7 +75,6 @@ where
         next_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ForwarderError>> {
-        // If the sink has not completed it's committing, we need to wait.
         ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit transaction.");
         // TODO: match and if err, abort transaction.
 

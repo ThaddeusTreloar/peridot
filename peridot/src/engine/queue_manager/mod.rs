@@ -94,7 +94,7 @@ impl<B> QueueManager<B> {
             .map(|(topic, partition)| {
                 let partition_queue = engine_context
                     .client_manager
-                    .get_partition_queue(&topic, partition)
+                    .get_partition_queue(&topic, partition, engine_context.clone())
                     .expect("Failed to get partition queue.");
 
                 ((topic, partition), partition_queue)
@@ -236,7 +236,12 @@ where
                         let partition = this
                             .engine_context
                             .changelog_manager
-                            .request_changelog_partition(&changelog_topic, partition)
+                            .request_changelog_partition_for_state_store(
+                                &table,
+                                &changelog_topic,
+                                partition,
+                                this.engine_context.clone(),
+                            )
                             .expect("Failed to get changelog partition");
 
                         (table, partition)

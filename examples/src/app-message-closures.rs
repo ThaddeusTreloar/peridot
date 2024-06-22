@@ -6,9 +6,7 @@ use peridot::app::config::builder::PeridotConfigBuilder;
 use peridot::engine::wrapper::serde::json::Json;
 use peridot::init::init_tracing;
 use peridot::task::Task;
-use rdkafka::ClientConfig;
 
-use rdkafka::config::RDKafkaLogLevel;
 use serde::Serialize;
 use tracing::level_filters::LevelFilter;
 

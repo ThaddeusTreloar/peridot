@@ -9,7 +9,10 @@ use tracing::{info, warn};
 
 use crate::app::{config::PeridotConfig, extensions::PeridotConsumerContext};
 
-use super::{queue_manager::partition_queue::StreamPeridotPartitionQueue, PeridotConsumer};
+use super::{
+    context::EngineContext, queue_manager::partition_queue::StreamPeridotPartitionQueue,
+    PeridotConsumer,
+};
 
 #[derive(Debug)]
 pub struct Watermarks(i64, i64);
@@ -99,10 +102,12 @@ impl ChangelogManager {
         })
     }
 
-    pub(crate) fn request_changelog_partition(
+    pub(crate) fn request_changelog_partition_for_state_store(
         &self,
+        state_name: &str,
         changelog_topic: &str,
         partition: i32,
+        engine_context: Arc<EngineContext>,
     ) -> Result<StreamPeridotPartitionQueue, ChangelogManagerError> {
         let partition_registered = self
             .consumer
@@ -136,9 +141,13 @@ impl ChangelogManager {
                     topic: changelog_topic.to_owned(),
                     partition,
                 })?,
-                Some(queue) => {
-                    StreamPeridotPartitionQueue::new(queue, changelog_topic.to_owned(), partition)
-                }
+                Some(queue) => StreamPeridotPartitionQueue::new_changelog(
+                    queue,
+                    state_name,
+                    changelog_topic.to_owned(),
+                    partition,
+                    engine_context,
+                ),
             };
 
             let mut tpl = TopicPartitionList::new();
@@ -148,6 +157,19 @@ impl ChangelogManager {
             self.consumer
                 .incremental_assign(&tpl)
                 .expect("Failed to assign partition.");
+
+            self.consumer
+                .assignment()
+                .expect("Failed to get assignment")
+                .elements()
+                .iter()
+                .for_each(|tp| {
+                    info!(
+                        "Incremental assign. Current assignment, topic: {}, partition: {}",
+                        tp.topic(),
+                        tp.partition()
+                    )
+                });
 
             tracing::debug!(
                 "Partition assigned to consumer for topic: {}, partition: {}",
@@ -165,6 +187,19 @@ impl ChangelogManager {
         partition: i32,
     ) -> Result<(), ChangelogManagerError> {
         let mut tpl = TopicPartitionList::new();
+
+        self.consumer
+            .assignment()
+            .expect("Failed to get assignment")
+            .elements()
+            .iter()
+            .for_each(|tp| {
+                info!(
+                    "Incremental unassign. Current assignment, topic: {}, partition: {}",
+                    tp.topic(),
+                    tp.partition()
+                )
+            });
 
         tpl.add_partition(changelog_topic, partition);
 
