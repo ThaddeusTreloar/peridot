@@ -13,7 +13,7 @@ pub mod types;
 // Derive from partition_nodes/max_producer_msg
 const BATCH_SIZE: usize = 65535;
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, derive_more::Display)]
 pub(crate) enum StreamState {
     #[default]
     Uncommitted,

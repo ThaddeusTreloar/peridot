@@ -13,12 +13,12 @@ use futures::{ready, Future, FutureExt};
 use pin_project_lite::pin_project;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::time::Sleep;
-use tracing::info;
+use tracing::{info, Level};
 
 use crate::{
     engine::{
         changelog_manager::ChangelogManager,
-        client_manager::{self, ClientManager},
+        consumer_manager::{self, ConsumerManager},
         context::EngineContext,
         queue_manager::partition_queue::StreamPeridotPartitionQueue,
         wrapper::serde::native::NativeBytes,
@@ -167,9 +167,9 @@ where
 
         let watermarks = engine_context.watermark_for_changelog(store_name, *partition);
 
-        let lso = match engine_context.get_changelog_lowest_stable_offset(store_name, *partition) {
+        let lso = match engine_context.get_changelog_next_offset(store_name, *partition) {
             None => {
-                info!("LSO not store, waiting...");
+                info!("LSO not stored, waiting...");
 
                 let mut sleep = Box::pin(tokio::time::sleep(Duration::from_millis(100)));
 
@@ -244,9 +244,19 @@ where
         next_offset: i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), MessageCommitError>> {
-        tracing::debug!("Comitting state store.");
+        tracing::debug!(
+            "Committing state fork for sink: {}, at offset: {}",
+            std::any::type_name::<StateSink<B, M::KeyType, M::ValueType>>(),
+            next_offset,
+        );
 
-        ready!(state_sink.as_mut().poll_commit(cx)).expect("Failed to commit state store.");
+        ready!(state_sink.as_mut().poll_commit(next_offset, cx))
+            .expect("Failed to commit state store.");
+
+        tracing::debug!(
+            "Commit completed for state fork, at offset: {}",
+            next_offset,
+        );
 
         *commit_state = StreamState::Committed;
 
@@ -272,8 +282,6 @@ where
                 let position = next_offset?;
 
                 *changelog_next_offset = position;
-
-                state_sink.as_mut().set_consumer_position(position);
 
                 tracing::debug!(
                     "Checkpointing consumer position next_offset: {} for store: {}, partition: {}",
@@ -316,17 +324,17 @@ where
         //let watermarks =
         //    engine_context.watermark_for_changelog(store_name, *partition);
 
-        let consumer_position =
+        let _consumer_position =
             engine_context.get_changelog_consumer_position(store_name, *partition);
 
-        info!("Consumer position: {}", consumer_position);
+        info!("Consumer position: {}", _consumer_position);
 
         let checkpoint = state_sink
             .get_checkpoint()
             .expect("Failed to get checkpoint.")
             .expect("State sink not checkpointed after commit.");
 
-        let lso = match engine_context.get_changelog_lowest_stable_offset(store_name, *partition) {
+        let lso = match engine_context.get_changelog_next_offset(store_name, *partition) {
             None => {
                 info!("LSO not store, waiting...");
 
@@ -392,6 +400,8 @@ where
             changelog_next_offset,
             ..
         } = self.project();
+
+        let span = tracing::span!(Level::DEBUG, "->StateSinkFork::poll",).entered();
 
         if let Some(mut w) = lso_sleep.take() {
             match w.as_mut().poll(cx) {
@@ -482,34 +492,48 @@ where
                         .is_pending()
                         {
                             *commit_state = StreamState::Committing;
+
+                            let mut sleep =
+                                Box::pin(tokio::time::sleep(Duration::from_millis(250)));
+
+                            sleep.poll_unpin(cx);
+
+                            let _ = lso_sleep.replace(sleep);
+
+                            return Poll::Pending;
                         }
                     }
                 }
             }
         }
 
-        tracing::debug!("ForkedSinking messages from stream to sink...");
+        tracing::debug!("Resuming state fork processing...");
 
         for _ in 0..BATCH_SIZE {
             match *commit_state {
                 StreamState::Committing => {
-                    tracing::debug!("Committing sink...");
-                    ready!(state_sink.as_mut().poll_commit(cx)).expect("Failed to close");
-                    *commit_state = StreamState::Committed;
-
-                    return Poll::Ready(MessageStreamPoll::Commit(Ok(0)));
+                    match ready!(Self::commit(
+                        &mut state_sink,
+                        commit_state,
+                        *consumer_next_offset,
+                        cx
+                    )) {
+                        Ok(_) => {
+                            return Poll::Ready(MessageStreamPoll::Commit(Ok(
+                                *consumer_next_offset,
+                            )))
+                        }
+                        Err(e) => return Poll::Ready(MessageStreamPoll::Commit(Err(e))),
+                    }
                 }
                 StreamState::Closing => {
+                    // TODO: Migrate to state function
                     ready!(state_sink.as_mut().poll_close(cx)).expect("Failed to close");
 
                     return Poll::Ready(MessageStreamPoll::Closed);
                 }
-                StreamState::Committed | StreamState::Sleeping | StreamState::Uncommitted =>
-                // Poll the stream for the next message. If self.commit_state is
-                // Committed, we know that we have committed our producer transaction,
-                // and we will begin polling upstream nodes until they yield Poll::Ready
-                // at which point we know that they have either committed or aborted.
-                {
+                StreamState::Committed | StreamState::Sleeping | StreamState::Uncommitted => {
+                    // TODO: Movie this to static function.
                     match message_stream.as_mut().poll_next(cx) {
                         Poll::Ready(MessageStreamPoll::Closed) => {
                             *commit_state = StreamState::Closing;
@@ -552,6 +576,8 @@ where
                 }
             }
         }
+
+        cx.waker().wake_by_ref();
 
         Poll::Pending
     }

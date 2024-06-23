@@ -23,7 +23,6 @@ pin_project! {
         VS: PeridotSerializer,
     {
         queue_metadata: QueueMetadata,
-        highest_offset: i64,
         _key_serialiser_type: PhantomData<KS>,
         _value_serialiser_type: PhantomData<VS>,
     }
@@ -37,7 +36,6 @@ where
     pub fn new(queue_metadata: QueueMetadata) -> Self {
         Self {
             queue_metadata,
-            highest_offset: 0,
             _key_serialiser_type: PhantomData,
             _value_serialiser_type: PhantomData,
         }
@@ -64,8 +62,12 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn poll_commit(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<i64, Self::Error>> {
-        Poll::Ready(Ok(self.highest_offset))
+    fn poll_commit(
+        self: Pin<&mut Self>,
+        consumer_position: i64,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<i64, Self::Error>> {
+        Poll::Ready(Ok(consumer_position))
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -88,10 +90,6 @@ where
             String::from_utf8(ser_key).unwrap(),
             String::from_utf8(ser_value).unwrap(),
         );
-
-        let this = self.project();
-
-        *this.highest_offset = std::cmp::max(*this.highest_offset, message.offset());
 
         Ok(message)
     }

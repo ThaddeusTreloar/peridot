@@ -193,6 +193,8 @@ impl Stream for StreamPeridotPartitionQueue {
                 // before the lock is set.
                 waker.lock().replace(cx.waker().clone());
 
+                info!("Queue empty, Pending.");
+
                 Poll::Pending
             }
         }

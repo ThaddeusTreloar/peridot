@@ -1,9 +1,10 @@
 use std::{
     fmt::{Display, Write},
-    sync::Arc,
+    sync::{atomic::AtomicI64, Arc},
     time::Duration,
 };
 
+use dashmap::DashMap;
 use rdkafka::{consumer::Consumer, Message, Offset, TopicPartitionList};
 use tracing::{info, warn};
 
@@ -84,6 +85,7 @@ pub enum ChangelogManagerError {
 
 pub(crate) struct ChangelogManager {
     consumer: Arc<PeridotConsumer>,
+    changelog_positions: Arc<DashMap<(String, i32), AtomicI64>>,
 }
 
 impl ChangelogManager {
@@ -99,6 +101,7 @@ impl ChangelogManager {
 
         Ok(Self {
             consumer: Arc::new(consumer),
+            changelog_positions: Default::default(),
         })
     }
 
@@ -360,11 +363,53 @@ impl ChangelogManager {
         }
     }
 
+    pub(super) fn set_changelog_write_position(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+        offset: i64,
+    ) {
+        match self
+            .changelog_positions
+            .get(&(changelog_topic.to_string(), partition))
+        {
+            Some(stored_offset) => {
+                stored_offset
+                    .value()
+                    .fetch_max(offset, std::sync::atomic::Ordering::Relaxed);
+            }
+            None => {
+                self.changelog_positions
+                    .insert((changelog_topic.to_owned(), partition), offset.into());
+            }
+        };
+    }
+
+    pub(super) fn get_changelog_write_position(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<i64> {
+        self.changelog_positions
+            .get(&(changelog_topic.to_string(), partition))
+            .map(|offset| offset.value().load(std::sync::atomic::Ordering::Relaxed))
+    }
+
     pub(super) fn get_lowest_stable_offset(
         &self,
         changelog_topic: &str,
         partition: i32,
     ) -> Option<i64> {
         self.consumer.context().get_lso(changelog_topic, partition)
+    }
+
+    pub(super) fn get_next_consumer_offset(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<i64> {
+        self.consumer
+            .context()
+            .get_next_offset(changelog_topic, partition)
     }
 }

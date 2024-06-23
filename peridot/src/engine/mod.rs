@@ -36,7 +36,7 @@ use crate::{engine::wrapper::serde::PeridotDeserializer, pipeline::stream::head:
 
 use self::admin_manager::AdminManager;
 use self::changelog_manager::ChangelogManager;
-use self::client_manager::ClientManager;
+use self::consumer_manager::ConsumerManager;
 use self::context::EngineContext;
 use self::engine_state::EngineState;
 use self::error::{EngineInitialisationError, TableRegistrationError};
@@ -61,7 +61,7 @@ use crate::app::{
 pub mod admin_manager;
 pub mod changelog_manager;
 pub mod circuit_breaker;
-pub mod client_manager;
+pub mod consumer_manager;
 pub mod context;
 pub mod engine_state;
 pub mod error;
@@ -186,7 +186,7 @@ where
         let engine_context = EngineContext {
             config: config.clone(),
             admin_manager: AdminManager::new(config)?,
-            client_manager: ClientManager::from_config(config)?,
+            client_manager: ConsumerManager::from_config(config)?,
             metadata_manager: MetadataManager::new(config.app_id()),
             changelog_manager: ChangelogManager::from_config(config)?,
         };

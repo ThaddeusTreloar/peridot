@@ -90,7 +90,11 @@ where
                         Some(message) => message,
                         None => match ready!(this.stream.as_mut().poll_next(cx)) {
                             MessageStreamPoll::Message(msg) => msg,
-                            other => return other.translate(),
+                            other => {
+                                let o = other;
+
+                                return o.translate();
+                            }
                         },
                     };
 

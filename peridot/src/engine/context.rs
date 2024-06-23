@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use rdkafka::consumer::{Consumer, ConsumerGroupMetadata};
 
-use crate::app::config::PeridotConfig;
+use crate::{app::config::PeridotConfig, state};
 
 use super::{
     admin_manager::AdminManager,
     changelog_manager::{ChangelogManager, ChangelogManagerError, Watermarks},
-    client_manager::{self, ClientManager},
+    consumer_manager::{self, ConsumerManager},
     metadata_manager::{table_metadata, MetadataManager},
     wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor},
     AppEngine, TableMetadata,
@@ -26,7 +26,7 @@ pub enum EngineContextError {
 pub struct EngineContext {
     pub(super) config: PeridotConfig,
     pub(super) admin_manager: AdminManager,
-    pub(super) client_manager: ClientManager,
+    pub(super) client_manager: ConsumerManager,
     pub(super) metadata_manager: MetadataManager,
     pub(super) changelog_manager: ChangelogManager,
 }
@@ -35,7 +35,7 @@ impl EngineContext {
     pub(super) fn new(
         config: PeridotConfig,
         admin_manager: AdminManager,
-        client_manager: ClientManager,
+        client_manager: ConsumerManager,
         metadata_manager: MetadataManager,
         changelog_manager: ChangelogManager,
     ) -> Self {
@@ -148,7 +148,17 @@ impl EngineContext {
             .get_topic_consumer_position(&changelog_topic, partition)
     }
 
-    pub(crate) fn get_changelog_lowest_stable_offset(
+    pub(crate) fn set_changelog_write_position(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+        offset: i64,
+    ) {
+        self.changelog_manager
+            .set_changelog_write_position(changelog_topic, partition, offset)
+    }
+
+    pub(crate) fn get_changelog_write_position(
         &self,
         state_store: &str,
         partition: i32,
@@ -156,6 +166,17 @@ impl EngineContext {
         let changelog_topic = self.get_changelog_topic_name(state_store);
 
         self.changelog_manager
-            .get_lowest_stable_offset(&changelog_topic, partition)
+            .get_changelog_write_position(&changelog_topic, partition)
+    }
+
+    pub(crate) fn get_changelog_next_offset(
+        &self,
+        state_store: &str,
+        partition: i32,
+    ) -> Option<i64> {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager
+            .get_next_consumer_offset(&changelog_topic, partition)
     }
 }

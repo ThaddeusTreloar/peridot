@@ -164,6 +164,11 @@ where
             .await
     }
 
+    fn create_checkpoint(self: Arc<Self>, consumer_position: i64) -> Result<(), Self::Error> {
+        self.backend
+            .create_checkpoint(self.store_name(), self.partition(), consumer_position)
+    }
+
     fn wake(&self) {
         let state_time = self
             .backend

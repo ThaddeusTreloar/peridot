@@ -67,12 +67,15 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<MessageStreamPoll<M::KeyType, M::ValueType>> {
         tracing::debug!(
-            "Notifying fork sink of commit: {}",
-            std::any::type_name::<Si>()
+            "Committing fork for sink: {}, at offset: {}",
+            std::any::type_name::<Si>(),
+            next_offset,
         );
 
-        match ready!(message_sink.as_mut().poll_commit(cx)) {
-            Ok(i) => {
+        match ready!(message_sink.as_mut().poll_commit(*next_offset, cx)) {
+            Ok(_) => {
+                tracing::debug!("Commit completed for fork, at offset: {}", *next_offset,);
+
                 *commit_state = StreamState::Committed;
 
                 Poll::Ready(MessageStreamPoll::Commit(Ok(*next_offset)))
@@ -114,13 +117,23 @@ where
                 Self::close(queue_metadata, message_sink, cx)
             }
             MessageStreamPoll::Commit(Ok(offset)) => {
-                *next_offset = offset;
+                tracing::debug!("Recieved commit message for offset: {}", offset);
 
-                if let StreamState::Uncommitted = *commit_state {
+                if offset > *next_offset {
+                    tracing::debug!(
+                        "Consumer position increased, committing fork at offset: {}.",
+                        offset
+                    );
+                    *next_offset = offset;
+
                     *commit_state = StreamState::Committing;
 
                     Self::commit(queue_metadata, message_sink, commit_state, next_offset, cx)
                 } else {
+                    tracing::debug!(
+                        "No change in consumer offset, skipping commit at offset: {}.",
+                        offset
+                    );
                     Poll::Ready(MessageStreamPoll::Commit(Ok(*next_offset)))
                 }
             }

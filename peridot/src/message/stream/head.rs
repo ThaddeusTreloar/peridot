@@ -95,6 +95,11 @@ where
 
                     let next_offset = input.consumer_position();
 
+                    tracing::info!(
+                        "Commit interval reached. Sending commit request upstream for offset: {}",
+                        next_offset
+                    );
+
                     return Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset)));
                 } else {
                     let _ = interval.replace(instant);
@@ -119,17 +124,28 @@ where
                 let _ = interval.take();
 
                 if *is_committed {
+                    tracing::info!(
+                        "No buffered messages, already committed. Pending..."
+                    );
+
                     Poll::Pending
                 } else {
                     *is_committed = true;
 
                     let next_offset = input.consumer_position();
 
+                    tracing::info!(
+                        "No buffered messages. Sending commit request upstream for offset: {}",
+                        next_offset
+                    );
+
                     Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset)))
                 }
             }
             Poll::Ready(None) => panic!("PartitionQueueStreams should never return none. If this panic is triggered, there must be an upstream change."),
             Poll::Ready(Some(raw_msg)) => {
+                *is_committed = false;
+
                 match <Message<KS::Output, VS::Output> as TryFromOwnedMessage<
                     KS,
                     VS,

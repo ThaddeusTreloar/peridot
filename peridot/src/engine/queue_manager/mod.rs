@@ -47,7 +47,7 @@ use self::{
 
 use super::{
     changelog_manager::{self, ChangelogManager},
-    client_manager::ClientManager,
+    consumer_manager::ConsumerManager,
     engine_state::EngineState,
     error::PeridotEngineRuntimeError,
     metadata_manager::{self, MetadataManager},
