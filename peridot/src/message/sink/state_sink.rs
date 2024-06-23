@@ -1,4 +1,5 @@
 use std::{
+    borrow::BorrowMut,
     pin::Pin,
     sync::{atomic::AtomicI64, Arc},
     task::{ready, Context, Poll},
@@ -28,7 +29,7 @@ use crate::{
     },
 };
 
-type PendingCommit<E> = Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>;
+type PendingCommit<E> = Pin<Box<dyn Future<Output = Result<(), E>> + Send>>;
 type PendingOffsetCommit<E> = Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>;
 
 pin_project! {
@@ -38,12 +39,9 @@ pin_project! {
     {
         queue_metadata: QueueMetadata,
         state_facade: Arc<StateFacade<K, V, B>>,
-        buffer: Vec<Message<K, V>>,
+        buffer: Vec<PendingCommit<B::Error>>,
         _key_type: std::marker::PhantomData<K>,
         _value_type: std::marker::PhantomData<V>,
-        pending_commit: PendingCommit<B::Error>,
-        highest_offset: i64,
-        highest_committed_offset: i64,
         consumer_position: Option<i64>,
     }
 }
@@ -61,9 +59,6 @@ where
             buffer: Default::default(),
             _key_type: Default::default(),
             _value_type: Default::default(),
-            pending_commit: None,
-            highest_offset: 0,
-            highest_committed_offset: 0,
             consumer_position: None,
         }
     }
@@ -74,28 +69,12 @@ where
             .map(|r| r.map(|c| c.offset))
     }
 
-    // Only for when the state is rebuilding.
-    pub fn set_consumer_position(&mut self, offset: i64) {
-        let _ = self.consumer_position.replace(offset);
-    }
-
     pub fn wake_all(&self) {
         self.state_facade.wake_all();
     }
 
     pub fn wake(&self) {
         self.state_facade.wake();
-    }
-}
-
-impl<B, K, V> StateSink<B, K, V>
-where
-    B: StateBackend + Send + Sync,
-    K: Serialize + Send + Sync,
-    V: Serialize + DeserializeOwned + Send + Sync,
-{
-    pub fn checkpoint_changelog_position(&mut self, offset: i64) {
-        self.highest_offset = std::cmp::max(self.highest_offset, offset);
     }
 }
 
@@ -125,62 +104,55 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<i64, Self::Error>> {
+    /// Will always return the changelog offset
+    fn poll_commit(
+        self: Pin<&mut Self>,
+        mut consumer_position: i64,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<i64, Self::Error>> {
         let this = self.project();
 
         tracing::debug!("Committing state sink.");
 
-        if this.pending_commit.is_none() {
-            if this.buffer.is_empty() {
-                return Poll::Ready(Ok(*this.highest_committed_offset));
-            }
+        let pending_commits = this
+            .buffer
+            .drain(..)
+            .filter_map(|mut commit| match commit.as_mut().poll(cx) {
+                Poll::Pending => Some(commit),
+                Poll::Ready(Ok(())) => None,
+                Poll::Ready(Err(e)) => todo!("{}", e),
+            })
+            .collect::<Vec<PendingCommit<B::Error>>>();
 
-            let range = this
-                .buffer
-                .drain(..)
-                // Swap source offset for changelog offset. Otherwise our checkpoint
-                // is derived from the source offset which may be different.
-                .map(|mut message| {
-                    if let Some(values) = message.headers().get(CHANGELOG_OFFSET_HEADER) {
-                        let bytes = values.iter().next().unwrap();
+        this.buffer.extend(pending_commits);
 
-                        let new_offset =
-                            <i64 as PeridotDeserializer>::deserialize(bytes.as_slice())
-                                .expect("Failed to parse changelog offset.");
+        let changelog_write_position = this
+            .queue_metadata
+            .engine_context()
+            .get_changelog_write_position(
+                this.state_facade.store_name(),
+                this.state_facade.partition(),
+            );
 
-                        message.override_offset(new_offset);
-                    }
-
-                    if let Some(offset) = this.consumer_position {
-                        message.override_offset(*offset)
-                    }
-
-                    *this.highest_committed_offset =
-                        std::cmp::max(*this.highest_committed_offset, message.offset());
-
-                    message
-                })
-                .collect();
-
-            let facade = this.state_facade.clone();
-
-            let commit = Box::pin(facade.put_range(range));
-
-            let _ = this.pending_commit.replace(commit);
+        if let Some(offset) = changelog_write_position {
+            consumer_position = offset + 1;
         }
 
-        if let Some(ref mut task) = this.pending_commit {
-            ready!(task.as_mut().poll(cx)).expect("Failed to commit sink buffer.");
-
-            tracing::debug!("Sink committed.");
-
-            let _ = this.pending_commit.take();
-            let _ = this.consumer_position.take();
-
+        if this.buffer.is_empty() {
+            // TODO: Evaluate whether it is better to wake after every commit attempt
+            // or only after the commit is completed.
+            // Waking after every commit attempt will decrease latency but increase
+            // the async scheduler contention.
             this.state_facade.wake();
-        }
 
-        Poll::Ready(Ok(*this.highest_committed_offset))
+            this.state_facade
+                .clone()
+                .create_checkpoint(consumer_position);
+
+            Poll::Ready(Ok(consumer_position))
+        } else {
+            Poll::Pending
+        }
     }
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -200,11 +172,11 @@ where
             message.offset()
         );
 
-        let offset = std::cmp::max(message.offset + 1, *this.highest_offset);
+        let facade = this.state_facade.clone();
 
-        *this.highest_offset = offset;
+        let commit = Box::pin(facade.put(message.clone()));
 
-        this.buffer.push(message.clone());
+        this.buffer.push(commit);
 
         Ok(message)
     }

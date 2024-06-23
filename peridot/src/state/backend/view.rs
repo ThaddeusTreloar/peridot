@@ -79,6 +79,8 @@ pub trait WriteableStateView {
 
     async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), Self::Error>;
 
+    fn create_checkpoint(self: Arc<Self>, consumer_position: i64) -> Result<(), Self::Error>;
+
     fn wake(&self);
     fn wake_all(&self);
 }

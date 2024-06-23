@@ -93,7 +93,11 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn poll_commit(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<i64, Self::Error>> {
+    fn poll_commit(
+        self: Pin<&mut Self>,
+        consumer_position: i64,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<i64, Self::Error>> {
         let span = tracing::span!(
             Level::DEBUG,
             "->TopicSink::poll_commit",
@@ -110,8 +114,15 @@ where
             match future.poll_unpin(cx) {
                 Poll::Ready(Ok(result)) => match result {
                     Ok((partition, offset)) => {
-                        if let TopicType::Bench(_) = this.topic_type {
-                            *this.highest_offset = offset;
+                        match this.topic_type {
+                            TopicType::Bench(_) => {
+                                *this.highest_offset = offset;
+                            }
+                            TopicType::Changelog => this
+                                .queue_metadata
+                                .engine_context()
+                                .set_changelog_write_position(this.topic, partition, offset),
+                            _ => (),
                         }
 
                         tracing::trace!("Successfully sent topic record for offset: {}", offset);
@@ -236,12 +247,6 @@ where
             this.topic,
             message.partition()
         );
-
-        if let TopicType::Changelog = this.topic_type {
-            let bytes = <i64 as PeridotSerializer>::serialize(this.highest_offset).unwrap();
-
-            message.headers_mut().set(CHANGELOG_OFFSET_HEADER, bytes);
-        }
 
         Ok(message)
     }

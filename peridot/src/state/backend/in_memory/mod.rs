@@ -273,7 +273,6 @@ impl StateBackend for InMemoryStateBackend {
         store.insert(key_bytes, value_byte);
 
         self.update_store_time(store_name, partition, timestamp);
-        self.create_checkpoint(store_name, partition, offset);
 
         Ok(())
     }
@@ -306,7 +305,6 @@ impl StateBackend for InMemoryStateBackend {
         }
 
         self.update_store_time(store_name, partition, timestamp);
-        self.create_checkpoint(store_name, partition, offset);
 
         Ok(())
     }

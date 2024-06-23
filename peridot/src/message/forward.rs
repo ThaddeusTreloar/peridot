@@ -75,12 +75,23 @@ where
         next_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ForwarderError>> {
-        ready!(message_sink.as_mut().poll_commit(cx)).expect("Failed to commit transaction.");
+        tracing::info!("Committing forward at offset: {}", *next_offset);
+
+        ready!(message_sink.as_mut().poll_commit(*next_offset, cx))
+            .expect("Failed to commit transaction.");
         // TODO: match and if err, abort transaction.
 
         let cgm = queue_metadata.engine_context().group_metadata();
 
         let mut offsets = TopicPartitionList::new();
+
+        tracing::debug!("Adding offset: {} to transaction.", next_offset);
+
+        if *next_offset < 0 {
+            *stream_state = StreamState::Committed;
+
+            return Poll::Ready(Ok(()));
+        }
 
         offsets
             .add_partition_offset(
@@ -88,7 +99,7 @@ where
                 queue_metadata.partition(),
                 Offset::Offset(*next_offset),
             )
-            .expect("Failed to add partition offset.");
+            .expect("Failed to add partition offset");
 
         match queue_metadata.producer_arc().send_offsets_to_transaction(
             &offsets,
@@ -125,7 +136,7 @@ where
             .commit_transaction(Duration::from_millis(2500))
         {
             Ok(r) => {
-                tracing::debug!("Successfully committed producer transaction for source_topic: {}, partition: {}", queue_metadata.source_topic(), queue_metadata.partition())
+                tracing::debug!("Successfully committed producer transaction for source_topic: {}, partition: {}, offset: {}", queue_metadata.source_topic(), queue_metadata.partition(), next_offset)
             }
             Err(KafkaError::Transaction(e)) => {
                 tracing::error!(
@@ -208,19 +219,28 @@ where
             }
             MessageStreamPoll::Commit(Ok(offset)) => {
                 tracing::debug!(
-                    "No messages available for topic: {} partition: {}, waiting...",
+                    "Recieved commit instruction for topic: {} partition: {}, offset: {}",
                     queue_metadata.source_topic(),
-                    queue_metadata.partition()
+                    queue_metadata.partition(),
+                    offset
                 );
-                // TODO: Store commit offset from messagestreampoll
 
-                *next_offset = offset;
+                if offset > *next_offset {
+                    tracing::debug!(
+                        "Consumer position increased, committing forward at offset: {}.",
+                        offset
+                    );
 
-                if let StreamState::Uncommitted = *stream_state {
+                    *next_offset = offset;
+
                     *stream_state = StreamState::Committing;
 
                     Self::commit(queue_metadata, message_sink, stream_state, next_offset, cx)
                 } else {
+                    tracing::debug!(
+                        "No change in consumer offset, skipping forward commit at offset: {}.",
+                        offset
+                    );
                     Poll::Pending
                 }
             }

@@ -19,7 +19,7 @@ use super::{
 };
 
 #[derive(Clone)]
-pub(crate) struct ClientManager {
+pub(crate) struct ConsumerManager {
     consumer: Arc<PeridotConsumer>,
 }
 
@@ -56,7 +56,7 @@ pub enum ClientManagerError {
     PartitionMetadataNotFoundForTopic { topic: String },
 }
 
-impl ClientManager {
+impl ConsumerManager {
     pub(crate) fn from_config(config: &PeridotConfig) -> Result<Self, ClientManagerError> {
         let context = PeridotConsumerContext::default();
 

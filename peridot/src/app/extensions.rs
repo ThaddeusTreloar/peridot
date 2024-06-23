@@ -95,6 +95,7 @@ pub struct PeridotConsumerContext {
     post_rebalance_waker: RebalanceSender,
     commit_waker: Sender<Commit>,
     topic_lso: DashMap<String, DashMap<i32, i64>>,
+    next_offset: DashMap<String, DashMap<i32, i64>>,
 }
 
 impl Clone for PeridotConsumerContext {
@@ -104,6 +105,7 @@ impl Clone for PeridotConsumerContext {
             post_rebalance_waker: self.post_rebalance_waker.clone(),
             commit_waker: self.commit_waker.clone(),
             topic_lso: Default::default(),
+            next_offset: Default::default(),
         }
     }
 }
@@ -117,17 +119,10 @@ impl ClientContext for PeridotConsumerContext {
                 .filter(|(p, _)| p >= &&0)
                 .filter(|(_, stat)| stat.ls_offset >= 0)
                 .for_each(|(p, p_stat)| {
-                    //info!(
-                    //    "Set lso, topic:{}, partition: {}, offset: {}",
-                    //    topic, p, p_stat.ls_offset
-                    //);
-                    //info!(
-                    //    "Set hwm, topic:{}, partition: {}, offset: {}",
-                    //    topic, p, p_stat.hi_offset
-                    //);
+                    self.set_next_offset(topic, *p, p_stat.next_offset);
                     self.set_lso(topic, *p, p_stat.ls_offset);
                 })
-        })
+        });
     }
 
     fn log(&self, level: rdkafka::config::RDKafkaLogLevel, fac: &str, log_message: &str) {
@@ -146,6 +141,7 @@ impl Default for PeridotConsumerContext {
             post_rebalance_waker,
             commit_waker,
             topic_lso: Default::default(),
+            next_offset: Default::default(),
         }
     }
 }
@@ -181,6 +177,29 @@ impl PeridotConsumerContext {
 
     pub fn commit_sender(&self) -> Sender<Commit> {
         self.commit_waker.clone()
+    }
+
+    pub fn set_next_offset(&self, topic: &str, partition: i32, offset: i64) {
+        match self.next_offset.get_mut(topic) {
+            None => {
+                let inner = DashMap::new();
+                inner.insert(partition, offset);
+
+                self.next_offset.insert(topic.to_owned(), inner);
+            }
+            Some(topic_map) => match topic_map.get_mut(&partition) {
+                None => {
+                    topic_map.insert(partition, offset);
+                }
+                Some(mut partition) => {
+                    *partition.value_mut() = offset;
+                }
+            },
+        }
+    }
+
+    pub fn get_next_offset(&self, topic: &str, partition: i32) -> Option<i64> {
+        self.next_offset.get(topic)?.get(&partition).map(|lso| *lso)
     }
 
     pub fn set_lso(&self, topic: &str, partition: i32, offset: i64) {
