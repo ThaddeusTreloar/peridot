@@ -5,7 +5,6 @@ kafka-topics.sh --bootstrap-server=kafka1:9092 --topic changeOfAddress --create 
 kafka-topics.sh --bootstrap-server=kafka1:9092 --topic consent.Client --delete
 kafka-topics.sh --bootstrap-server=kafka1:9092 --topic consent.Client --create --partitions 2
 kafka-topics.sh --bootstrap-server=kafka1:9092 --topic app-message-closures-consent_table-Changelog --delete
-kafka-topics.sh --bootstrap-server=kafka1:9092 --topic app-message-closures-consent_table-Changelog --create --partitions 2
 kafka-topics.sh --bootstrap-server=kafka1:9092 --topic genericTopic --delete
 kafka-topics.sh --bootstrap-server=kafka1:9092 --topic genericTopic --create --partitions 2
 

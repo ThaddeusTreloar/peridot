@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use rdkafka::consumer::{Consumer, ConsumerGroupMetadata};
+use tracing::info;
 
 use crate::{app::config::PeridotConfig, state};
 
 use super::{
-    admin_manager::AdminManager,
+    admin_manager::{AdminManager, AdminManagerError},
     changelog_manager::{ChangelogManager, ChangelogManagerError, Watermarks},
-    consumer_manager::{self, ConsumerManager},
+    consumer_manager::{self, ClientManagerError, ConsumerManager},
     metadata_manager::{table_metadata, MetadataManager},
     wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor},
     AppEngine, TableMetadata,
@@ -21,12 +22,28 @@ pub enum EngineContextError {
         partition: i32,
         err: rdkafka::error::KafkaError,
     },
+    #[error("EngineContextError::UnregisteredSourceTopic, source topic '{}' not registered for state store '{}'", source_topic, state_store)]
+    UnregisteredSourceTopic {
+        source_topic: String,
+        state_store: String,
+    },
+    #[error(transparent)]
+    ConsumerManagerError(#[from] ClientManagerError),
+    #[error(
+        "EngineContextError::CreateTopicError, topic '{}' due to {}",
+        topic,
+        error
+    )]
+    CreateTopicError {
+        topic: String,
+        error: AdminManagerError,
+    },
 }
 
 pub struct EngineContext {
     pub(super) config: PeridotConfig,
     pub(super) admin_manager: AdminManager,
-    pub(super) client_manager: ConsumerManager,
+    pub(super) consumer_manager: ConsumerManager,
     pub(super) metadata_manager: MetadataManager,
     pub(super) changelog_manager: ChangelogManager,
 }
@@ -42,7 +59,7 @@ impl EngineContext {
         Self {
             config,
             admin_manager,
-            client_manager,
+            consumer_manager: client_manager,
             metadata_manager,
             changelog_manager,
         }
@@ -55,7 +72,7 @@ impl EngineContext {
     }
 
     pub(crate) fn group_metadata(&self) -> ConsumerGroupMetadata {
-        self.client_manager
+        self.consumer_manager
             .consumer_ref()
             .group_metadata()
             .expect("Failed to get consumer group metadata.")
@@ -106,11 +123,52 @@ impl EngineContext {
             .get_changelog_topic_for_store(store_name)
     }
 
-    pub(crate) fn register_topic_store(
+    pub(crate) async fn register_topic_store(
         &self,
         source_topic: &str,
         store_name: &str,
     ) -> Result<TableMetadata, EngineContextError> {
+        let changelog_topic = self.metadata_manager.derive_changelog_topic(store_name);
+
+        let changelog_exists = self
+            .consumer_manager
+            .get_topic_metadata(&changelog_topic)?
+            .topics()
+            .first()
+            .and_then(|topic| topic.error());
+
+        match changelog_exists {
+            Some(rdkafka_sys::RDKafkaRespErr::RD_KAFKA_RESP_ERR_UNKNOWN_TOPIC_OR_PART)
+            | Some(rdkafka_sys::RDKafkaRespErr::RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC) => {
+                info!(
+                    "Changelog topic not on broker, creating, topic: {}",
+                    changelog_topic
+                );
+                // TODO: set relication factor from config.
+
+                match self.metadata_manager.get_topic_metadata(source_topic) {
+                    None => Err(EngineContextError::UnregisteredSourceTopic {
+                        source_topic: source_topic.to_owned(),
+                        state_store: store_name.to_owned(),
+                    })?,
+                    Some(metadata) => {
+                        self.admin_manager
+                            .create_topic(&changelog_topic, metadata.partition_count())
+                            .await
+                            .map_err(|e| EngineContextError::CreateTopicError {
+                                topic: changelog_topic,
+                                error: e,
+                            })?;
+                    }
+                }
+            }
+            Some(e) => panic!(
+                "Unknown error while fetching changelog metadata for topic: {}, error: {:?}",
+                &changelog_topic, e
+            ),
+            None => info!("Changelog topic already exists, topic: {}", changelog_topic),
+        }
+
         Ok(self
             .metadata_manager
             .register_table_with_changelog(store_name, source_topic)
@@ -137,7 +195,7 @@ impl EngineContext {
     }
 
     pub(crate) fn get_consumer_position(&self, topic: &str, partition: i32) -> i64 {
-        self.client_manager
+        self.consumer_manager
             .get_topic_partition_consumer_position(topic, partition)
     }
 

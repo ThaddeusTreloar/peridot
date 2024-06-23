@@ -93,7 +93,7 @@ impl<B> QueueManager<B> {
             .flat_map(|(topic, md)| (0..md.partition_count()).map(move |p: i32| (topic.clone(), p)))
             .map(|(topic, partition)| {
                 let partition_queue = engine_context
-                    .client_manager
+                    .consumer_manager
                     .get_partition_queue(&topic, partition, engine_context.clone())
                     .expect("Failed to get partition queue.");
 
@@ -138,7 +138,7 @@ where
 
         this.engine_context.changelog_manager.poll_consumer();
 
-        if let Some(message) = this.engine_context.client_manager.poll_consumer()? {
+        if let Some(message) = this.engine_context.consumer_manager.poll_consumer()? {
             let key = <String as PeridotDeserializer>::deserialize(message.key().unwrap()).unwrap();
             let value =
                 <String as PeridotDeserializer>::deserialize(message.payload().unwrap()).unwrap();

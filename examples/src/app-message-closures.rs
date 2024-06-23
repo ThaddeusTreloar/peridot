@@ -86,7 +86,9 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .expect("Failed to build app.");
 
-    let table = app.table::<String, Json<ConsentGrant>>("consent.Client", "consent_table");
+    let table = app
+        .table::<String, Json<ConsentGrant>>("consent.Client", "consent_table")
+        .await;
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .join(&table, CombinedValues)

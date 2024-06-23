@@ -98,6 +98,8 @@ where
                         },
                     };
 
+                    info!("State store state: {}", this.store_state.load());
+
                     // TODO: Maybe optimise this by having the message interface provide
                     // timestamp directly.
                     if *this.cached_state_time < message.timestamp().into()

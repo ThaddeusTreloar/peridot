@@ -179,7 +179,7 @@ pub trait Task<'a> {
         )
     }
 
-    fn into_table(self, store_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
+    async fn into_table(self, store_name: &str) -> TableTask<'a, Self::R, Self::B, Self::G>
     where
         <Self::R as PipelineStream>::KeyType: Clone + Serialize + Send + 'static,
         <Self::R as PipelineStream>::ValueType: Clone + Serialize + Send + 'static,
@@ -193,6 +193,7 @@ pub trait Task<'a> {
             store_name.to_owned(),
             parts.output(),
         )
+        .await
     }
 
     fn into_pipeline(self) -> Self::R;

@@ -43,7 +43,7 @@ use super::{
 type DeserialiserQueue<K, V> = QueueHead<NativeBytes<K>, NativeBytes<V>>;
 pub type StoreStateCell = AtomicCell<StoreState>;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, derive_more::Display)]
 pub enum StoreState {
     #[default]
     Uninitialised,

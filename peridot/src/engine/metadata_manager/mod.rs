@@ -123,7 +123,7 @@ impl MetadataManager {
             .unwrap()
     }
 
-    fn derive_changelog_topic(&self, store_name: &str) -> String {
+    pub(super) fn derive_changelog_topic(&self, store_name: &str) -> String {
         format!("{}-{}-Changelog", &self.app_id, store_name)
     }
 

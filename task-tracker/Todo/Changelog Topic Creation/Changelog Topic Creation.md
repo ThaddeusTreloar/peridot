@@ -1,0 +1,1 @@
+After creating a changelog, the task must wait and confirm that the topic has been created. Otherwise, the task may try to fetch watermarks for a partition before the topic has been fully created, causing a panic.

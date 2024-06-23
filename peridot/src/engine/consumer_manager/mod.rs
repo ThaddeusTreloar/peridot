@@ -3,6 +3,7 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 use rdkafka::{
     consumer::{BaseConsumer, Consumer},
     message::OwnedMessage,
+    metadata::Metadata,
     Offset,
 };
 use tracing::info;
@@ -70,18 +71,21 @@ impl ConsumerManager {
         })
     }
 
+    pub(crate) fn get_topic_metadata(&self, topic: &str) -> Result<Metadata, ClientManagerError> {
+        self.consumer
+            .client()
+            .fetch_metadata(Some(topic), Duration::from_millis(2500))
+            .map_err(|err| ClientManagerError::FetchTopicMetadataError {
+                topic: topic.to_owned(),
+                err,
+            })
+    }
+
     pub(crate) fn create_topic_source(
         &self,
         topic: &str,
     ) -> Result<TopicMetadata, ClientManagerError> {
-        let raw_metadata = self
-            .consumer
-            .client()
-            .fetch_metadata(Some(topic), Duration::from_millis(1000))
-            .map_err(|err| ClientManagerError::FetchTopicMetadataError {
-                topic: topic.to_owned(),
-                err,
-            })?;
+        let raw_metadata = self.get_topic_metadata(topic)?;
 
         let topic_metadata = match raw_metadata.topics().first() {
             None => Err(ClientManagerError::TopicNotFoundOnCluster {

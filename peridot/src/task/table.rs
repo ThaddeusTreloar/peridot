@@ -65,7 +65,7 @@ where
 {
     // TODO: considering refactoring this so that is returns (Self, TableHandle) where
     // TableHandle is what is used for joins, views, etc
-    pub fn new(
+    pub async fn new(
         app: &'a PeridotApp<B, G>,
         source_topic: String,
         store_name: String,
@@ -75,6 +75,7 @@ where
             .engine()
             .engine_context()
             .register_topic_store(&source_topic, &store_name)
+            .await
             .expect("Failed to register table.");
 
         let changelog_sink_factory =

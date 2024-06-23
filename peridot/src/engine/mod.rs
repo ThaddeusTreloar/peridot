@@ -114,7 +114,7 @@ where
     }
 
     pub async fn run(&self) -> Result<(), PeridotEngineRuntimeError> {
-        let waker_context = self.engine_context.client_manager.consumer_context();
+        let waker_context = self.engine_context.consumer_manager.consumer_context();
 
         let pre_rebalance_waker = waker_context.pre_rebalance_waker();
         let commit_waker = waker_context.commit_waker();
@@ -186,7 +186,7 @@ where
         let engine_context = EngineContext {
             config: config.clone(),
             admin_manager: AdminManager::new(config)?,
-            client_manager: ConsumerManager::from_config(config)?,
+            consumer_manager: ConsumerManager::from_config(config)?,
             metadata_manager: MetadataManager::new(config.app_id()),
             changelog_manager: ChangelogManager::from_config(config)?,
         };
@@ -229,7 +229,7 @@ where
         // undefined behaviour.
         let metadata = self
             .engine_context
-            .client_manager
+            .consumer_manager
             .create_topic_source(&topic)?;
         self.engine_context
             .metadata_manager

@@ -79,7 +79,7 @@ where
         Ok(self.engine.input_stream(topic.to_string())?)
     }
 
-    pub fn table<'a, KS, VS>(
+    pub async fn table<'a, KS, VS>(
         &'a self,
         topic: &'a str,
         store_name: &'a str,
@@ -93,7 +93,9 @@ where
         let input: HeadPipeline<KS, VS, ExactlyOnce> =
             self.stream(topic).expect("Failed to create topic");
 
-        TransparentTask::new(self, topic, input).into_table(store_name)
+        TransparentTask::new(self, topic, input)
+            .into_table(store_name)
+            .await
     }
 
     pub fn task<'a, KS, VS>(

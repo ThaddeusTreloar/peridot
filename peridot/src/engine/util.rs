@@ -6,6 +6,10 @@ where
     C: ConsumerContext,
 {
     fn get_subscribed_topics(&self) -> Vec<String> {
+        // TODO: maybe return this to the original call to 'TopicPartitionList::elements()' directly on the
+        // subscription. Currently with rdkafka version 0.36.2, if this is a called on an empty list
+        // the call will panic as rdafka does not check for null pointers in the unsafe block that calls
+        // 'from_raw_parts'.
         let subscription = self.subscription().expect("Failed to get subscription.");
 
         if subscription.count() == 0 {
