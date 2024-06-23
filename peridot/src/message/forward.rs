@@ -93,15 +93,6 @@ where
             return Poll::Ready(Ok(()));
         }
 
-        if *next_offset > 0 {
-            queue_metadata
-                .producer_arc()
-                .abort_transaction(Duration::from_millis(1000))
-                .unwrap();
-
-            panic!("transaction abort")
-        }
-
         offsets
             .add_partition_offset(
                 queue_metadata.source_topic(),
