@@ -132,7 +132,8 @@ impl StreamPeridotPartitionQueue {
                 .get_consumer_position(self.source_topic(), self.partition()),
             QueueType::Changelog(state_name) => self
                 .engine_context
-                .get_changelog_consumer_position(state_name, self.partition()),
+                .get_changelog_next_offset(state_name, self.partition())
+                .unwrap_or(0),
         }
     }
 }

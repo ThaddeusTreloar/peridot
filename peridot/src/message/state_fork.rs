@@ -334,7 +334,7 @@ where
             .expect("Failed to get checkpoint.")
             .expect("State sink not checkpointed after commit.");
 
-        let lso = match engine_context.get_changelog_next_offset(store_name, *partition) {
+        let lso = match engine_context.get_changelog_lso(store_name, *partition) {
             None => {
                 info!("LSO not store, waiting...");
 
@@ -348,6 +348,22 @@ where
             }
             Some(lso) => lso,
         };
+
+        let changelog_next_offset =
+            match engine_context.get_changelog_next_offset(store_name, *partition) {
+                None => {
+                    info!("LSO not store, waiting...");
+
+                    let mut sleep = Box::pin(tokio::time::sleep(Duration::from_millis(100)));
+
+                    sleep.poll_unpin(cx);
+
+                    let _ = lso_sleep.replace(sleep);
+
+                    return Poll::Pending;
+                }
+                Some(cno) => cno,
+            };
 
         match checkpoint.cmp(&std::cmp::max(lso, 0)) {
             Ordering::Equal => {
@@ -363,7 +379,12 @@ where
                 panic!("Checkpoint greater than lso after state store rebuild, checkpoint: {}, lso: {}", checkpoint, lso)
             }
             Ordering::Less => {
-                tracing::debug!("checkpoint: {} still behind lso: {}", checkpoint, lso);
+                tracing::debug!(
+                    "checkpoint: {} still behind lso: {}, changelog_next_offset: {}",
+                    checkpoint,
+                    lso,
+                    changelog_next_offset
+                );
 
                 Poll::Ready(Ok(false))
             }
