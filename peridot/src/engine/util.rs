@@ -6,21 +6,31 @@ where
     C: ConsumerContext,
 {
     fn get_subscribed_topics(&self) -> Vec<String> {
-        self.subscription()
-            .expect("Failed to get subscription.")
-            .elements()
-            .iter()
-            .map(|t| t.topic().to_string())
-            .collect::<Vec<String>>()
+        let subscription = self.subscription().expect("Failed to get subscription.");
+
+        if subscription.count() == 0 {
+            Vec::new()
+        } else {
+            subscription
+                .elements()
+                .iter()
+                .map(|t| t.topic().to_string())
+                .collect::<Vec<String>>()
+        }
     }
 
     fn is_subscribed_to(&self, topic: &str) -> bool {
-        self.subscription()
-            .expect("Failed to get subscription.")
-            .elements()
-            .iter()
-            .map(|t| t.topic())
-            .any(|t| t == topic)
+        let subscription = self.subscription().expect("Failed to get subscription.");
+
+        if subscription.count() == 0 {
+            false
+        } else {
+            subscription
+                .elements()
+                .iter()
+                .map(|t| t.topic())
+                .any(|t| t == topic)
+        }
     }
 }
 
