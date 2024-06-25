@@ -1,5 +1,24 @@
+/*
+ * Copyright 2024 Thaddeus Treloar
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
 use std::{
-    pin::Pin, sync::Arc, task::{ready, Context, Poll}
+    pin::Pin,
+    sync::Arc,
+    task::{ready, Context, Poll},
 };
 
 use pin_project_lite::pin_project;
@@ -22,15 +41,18 @@ impl<S> ImportQueue<S> {
     }
 }
 
-impl<S> MessageStream for ImportQueue<S> 
+impl<S> MessageStream for ImportQueue<S>
 where
     S: futures::Stream,
-    S::Item: PatchMessage<(), ()>
+    S::Item: PatchMessage<(), ()>,
 {
     type KeyType = <S::Item as PatchMessage<(), ()>>::RK;
     type ValueType = <S::Item as PatchMessage<(), ()>>::RV;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Message<Self::KeyType, Self::ValueType>>> {
         let mut this = self.project();
 
         match this.input.poll_recv(cx) {
@@ -38,13 +60,12 @@ where
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(patch)) => {
                 let message = Message::default();
-                
+
                 Poll::Ready(patch.patch(message.into()))
-            },
+            }
         }
     }
 }
-
 
 pin_project! {
     #[project = WrapperProjection]
@@ -55,20 +76,20 @@ pin_project! {
     }
 }
 
-impl <S, F> IntegrationWrapper<S, F> {
+impl<S, F> IntegrationWrapper<S, F> {
     pub fn new(upstream: S, callback: F) -> Self {
         Self {
             upstream,
-            integration_callback: Arc::new(callback)
+            integration_callback: Arc::new(callback),
         }
-    } 
+    }
 }
 
-impl <S, F, RM> futures::Stream for IntegrationWrapper<S, F> 
+impl<S, F, RM> futures::Stream for IntegrationWrapper<S, F>
 where
     S: futures::Stream,
     F: Fn(S::Item) -> RM,
-    RM: PatchMessage<(), ()>
+    RM: PatchMessage<(), ()>,
 {
     type Item = RM;
 
