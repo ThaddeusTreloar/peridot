@@ -27,7 +27,7 @@ use dashmap::{
     DashMap,
 };
 use serde::{de::DeserializeOwned, Serialize};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::message::types::PeridotTimestamp;
 
@@ -258,7 +258,9 @@ impl StateBackend for InMemoryStateBackend {
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
         let value = match store.get(&key_bytes) {
-            None => return Ok(None),
+            None => {
+                return Ok(None);
+            }
             Some(value_bytes) => {
                 bincode::deserialize(value_bytes.as_ref()).expect("Failed to deserialize value")
             }

@@ -41,7 +41,7 @@ use crate::{
         stream::{PipelineStream, PipelineStreamExt},
     },
     state::backend::{
-        facade::{FacadeDistributor, StateFacade},
+        facade::{facade_distributor::FacadeDistributor, GetFacadeDistributor},
         view::GetViewDistributor,
         StateBackend,
     },
@@ -177,7 +177,7 @@ where
     }
 }
 
-impl<'a, P, B, G> GetViewDistributor for &TableTask<'a, P, B, G>
+impl<'a, P, B, G> GetFacadeDistributor for &TableTask<'a, P, B, G>
 where
     P: PipelineStream + Send + 'static,
     B: StateBackend + Send + Sync + 'static,
@@ -191,7 +191,7 @@ where
     type ValueType = P::ValueType;
     type Backend = B;
 
-    fn get_view_distributor(
+    fn get_facade_distributor(
         &self,
     ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
         FacadeDistributor::new(self.app.engine(), self.name.clone())
@@ -203,15 +203,39 @@ pub struct TableHandle<B, G> {
     store_name: String,
 }
 
-impl<B, G> GetViewDistributor for TableHandle<B, G> {
+impl<B, G> GetFacadeDistributor for TableHandle<B, G> {
     type Backend = B;
     type KeyType = ();
     type ValueType = ();
     type Error = std::io::Error;
 
-    fn get_view_distributor(
+    fn get_facade_distributor(
         &self,
     ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend> {
+        todo!("")
+    }
+}
+
+impl<'a, P, B, G> GetViewDistributor for TableTask<'a, P, B, G>
+where
+    G: DeliveryGuaranteeType + Send + Sync + 'static,
+    P: PipelineStream + Send + 'static,
+    P::MStream: Send + 'static,
+    P::KeyType: Clone + Serialize + Send + 'static,
+    P::ValueType: Clone + Serialize + Send + 'static,
+{
+    type Backend = B;
+    type KeyType = P::KeyType;
+    type ValueType = P::ValueType;
+    type Error = std::io::Error;
+
+    fn get_view_distributor(
+        &self,
+    ) -> crate::state::backend::view::view_distributor::ViewDistributor<
+        Self::KeyType,
+        Self::ValueType,
+        Self::Backend,
+    > {
         todo!("")
     }
 }

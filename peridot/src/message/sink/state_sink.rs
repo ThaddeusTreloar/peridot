@@ -40,8 +40,7 @@ use crate::{
         types::{Message, TryFromOwnedMessage},
     },
     state::backend::{
-        facade::StateFacade,
-        view::{ReadableStateView, WriteableStateView},
+        facade::{state_facade::StateFacade, ReadableStateFacade, WriteableStateFacade},
         StateBackend,
     },
 };

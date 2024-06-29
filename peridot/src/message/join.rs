@@ -30,7 +30,10 @@ use tracing::{info, Level};
 
 use crate::{
     message::types::PatchMessage,
-    state::backend::{facade::StateFacade, view::ReadableStateView, StateBackend},
+    state::backend::{
+        facade::{state_facade::StateFacade, ReadableStateFacade},
+        StateBackend,
+    },
 };
 
 use super::{

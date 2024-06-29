@@ -30,7 +30,7 @@ use futures::{ready, Future, FutureExt};
 use pin_project_lite::pin_project;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::time::Sleep;
-use tracing::{info, Level};
+use tracing::{debug, info, Level};
 
 use crate::{
     engine::{
@@ -467,6 +467,10 @@ where
                         ))
                         .expect("Failed to commit");
 
+                        *commit_state = StreamState::Committed;
+                    }
+                    StreamState::Closing => panic!("stream state closed"),
+                    StreamState::Committed => {
                         if ready!(Self::poll_state_rebuilt(
                             &mut state_sink,
                             engine_context,
@@ -498,10 +502,9 @@ where
                             let _ = changelog_stream_proj.take();
                         }
 
-                        *commit_state = StreamState::Committed;
+                        *commit_state = StreamState::Uncommitted;
                     }
-                    StreamState::Closing => panic!("stream state closed"),
-                    StreamState::Committed | StreamState::Sleeping | StreamState::Uncommitted => {
+                    StreamState::Sleeping | StreamState::Uncommitted => {
                         if changelog_start.is_none() {
                             ready!(Self::set_changelog_start(
                                 &mut state_sink,
@@ -529,14 +532,16 @@ where
                         )
                         .is_pending()
                         {
-                            *commit_state = StreamState::Committing;
+                            /**commit_state = StreamState::Committing;
 
                             let mut sleep =
                                 Box::pin(tokio::time::sleep(Duration::from_millis(250)));
 
                             sleep.poll_unpin(cx);
 
-                            let _ = lso_sleep.replace(sleep);
+                            let _ = lso_sleep.replace(sleep);*/
+
+                            debug!("Waiting for changelog messages...");
 
                             return Poll::Pending;
                         }

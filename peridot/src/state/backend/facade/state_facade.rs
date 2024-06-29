@@ -26,11 +26,10 @@ use tracing::info;
 use crate::{
     engine::state_store_manager::StateStoreManager,
     message::{state_fork::StoreStateCell, types::Message},
-    state::backend::{
-        view::{ReadableStateView, WriteableStateView},
-        Checkpoint, StateBackend,
-    },
+    state::backend::{Checkpoint, StateBackend},
 };
+
+use super::{ReadableStateFacade, WriteableStateFacade};
 
 pub struct StateFacade<K, V, B> {
     backend_manager: Arc<StateStoreManager<B>>,
@@ -71,7 +70,7 @@ impl<K, V, B> StateFacade<K, V, B> {
     }
 }
 
-impl<K, V, B> ReadableStateView for StateFacade<K, V, B>
+impl<K, V, B> ReadableStateFacade for StateFacade<K, V, B>
 where
     B: StateBackend + Send + Sync + 'static,
     K: Serialize + Send + Sync,
@@ -121,7 +120,7 @@ where
     }
 }
 
-impl<K, V, B> WriteableStateView for StateFacade<K, V, B>
+impl<K, V, B> WriteableStateFacade for StateFacade<K, V, B>
 where
     B: StateBackend + Send + Sync + 'static,
     K: Serialize + Send + Sync,

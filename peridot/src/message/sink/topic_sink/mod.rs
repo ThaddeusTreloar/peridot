@@ -29,7 +29,9 @@ use rdkafka::{
     producer::{DeliveryFuture, FutureRecord},
     Message,
 };
+use rdkafka_sys::RDKafkaErrorCode;
 use serde::Serialize;
+use tokio::sync::mpsc::error::TrySendError;
 use tracing::{debug, info, warn, Level};
 
 use crate::{
@@ -183,9 +185,11 @@ where
 
         if let TopicType::Bench(sender) = this.topic_type {
             if *this.highest_offset > 0 {
-                sender
-                    .try_send((this.queue_metadata.partition(), *this.highest_offset))
-                    .unwrap();
+                match sender.try_send((this.queue_metadata.partition(), *this.highest_offset)) {
+                    Ok(_) => (),
+                    Err(TrySendError::Closed(_)) => (),
+                    Err(TrySendError::Full(_)) => panic!("Queue full.."),
+                };
             }
         }
 
@@ -251,11 +255,13 @@ where
             },
         };
 
-        let delivery_future = this
-            .queue_metadata
-            .producer()
-            .send_result(record)
-            .expect("Failed to queue record.");
+        let delivery_future = match this.queue_metadata.producer().send_result(record) {
+            Ok(fut) => fut,
+            Err((KafkaError::MessageProduction(RDKafkaErrorCode::QueueFull), record)) => {
+                return Err(TopicSinkError::QueueFull);
+            }
+            Err((e, _)) => panic!("Error: {}", e),
+        };
 
         this.delivery_futures.push_back(delivery_future);
 

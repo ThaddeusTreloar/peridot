@@ -54,6 +54,8 @@ impl Future for Bencher {
             std::mem::replace(&mut this.offsets[part as usize], offset);
         }
 
+        info!("Offsets total: {}", this.offsets.iter().sum::<i64>());
+
         if this.offsets.iter().sum::<i64>() > *this.message_count {
             let time_taken = this.timer.elapsed().as_millis();
             let mps = this.offsets.iter().sum::<i64>() as f64 / (time_taken as f64 / 1000_f64);

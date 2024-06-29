@@ -33,7 +33,10 @@ use rdkafka::{
 use tokio::time::Instant;
 use tracing::{event, info, instrument, trace_span, Level};
 
-use crate::engine::queue_manager::queue_metadata::{self, QueueMetadata};
+use crate::{
+    engine::queue_manager::queue_metadata::{self, QueueMetadata},
+    message::sink::topic_sink::TopicSinkError,
+};
 
 use super::{
     sink::MessageSink,
@@ -92,10 +95,17 @@ where
         next_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ForwarderError>> {
-        tracing::info!("Committing forward at offset: {}", *next_offset);
+        tracing::debug!("Committing forward at offset: {}", *next_offset);
 
-        ready!(message_sink.as_mut().poll_commit(*next_offset, cx))
-            .expect("Failed to commit transaction.");
+        match message_sink.as_mut().poll_commit(*next_offset, cx) {
+            Poll::Pending => {
+                tracing::debug!("Waiting on downstream commit...");
+                return Poll::Pending;
+            }
+            Poll::Ready(r) => {
+                r.expect("Failed to commit transaction.");
+            }
+        }
         // TODO: match and if err, abort transaction.
 
         let cgm = queue_metadata.engine_context().group_metadata();
@@ -177,6 +187,7 @@ where
             }
         }
 
+        tracing::info!("Transaction committed.");
         *stream_state = StreamState::Committed;
 
         match queue_metadata.producer().begin_transaction() {
@@ -258,7 +269,8 @@ where
                         "No change in consumer offset, skipping forward commit at offset: {}.",
                         offset
                     );
-                    Poll::Pending
+
+                    Poll::Ready(Ok(()))
                 }
             }
             MessageStreamPoll::Commit(Err(e)) => {
@@ -277,10 +289,11 @@ where
                 let offset = message.offset();
 
                 // TODO: Some retry logic
-                message_sink
-                    .as_mut()
-                    .start_send(message)
-                    .expect("Failed to send message to sink.");
+                match message_sink.as_mut().start_send(message) {
+                    Ok(_) => (),
+                    //                    Err(e) => {}
+                    Err(e) => panic!("Unknown error while sending record: {}", e),
+                };
 
                 Poll::Ready(Ok(()))
             }

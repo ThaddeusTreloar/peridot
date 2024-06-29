@@ -26,7 +26,7 @@ use crate::{
         AppEngine,
     },
     message::sink::state_sink::StateSink,
-    state::backend::{facade::StateFacade, StateBackend},
+    state::backend::{facade::state_facade::StateFacade, StateBackend},
 };
 
 use super::MessageSinkFactory;

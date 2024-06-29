@@ -15,9 +15,10 @@
  *
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use rdkafka::consumer::{Consumer, ConsumerGroupMetadata};
+use tokio::time::sleep;
 use tracing::info;
 
 use crate::{app::config::PeridotConfig, state};
@@ -140,6 +141,48 @@ impl EngineContext {
             .get_changelog_topic_for_store(store_name)
     }
 
+    async fn topic_exists(&self, topic: &str) -> Result<bool, ClientManagerError> {
+        match self
+            .consumer_manager
+            .get_topic_metadata(topic)?
+            .topics()
+            .first()
+            .and_then(|topic| topic.error())
+        {
+            Some(rdkafka_sys::RDKafkaRespErr::RD_KAFKA_RESP_ERR_UNKNOWN_TOPIC_OR_PART)
+            | Some(rdkafka_sys::RDKafkaRespErr::RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC) => Ok(false),
+            Some(e) => panic!(
+                "Unknown error while fetching metadata for topic: {}, error: {:?}",
+                &topic, e
+            ),
+            None => Ok(true),
+        }
+    }
+
+    async fn topic_ready(&self, topic: &str, is_changelog: bool) -> bool {
+        if is_changelog {
+            self.changelog_manager
+                .get_watermark_for_changelog(topic, 0)
+                .is_ok()
+        } else {
+            todo!("Check non-changelog topic ready.")
+        }
+    }
+
+    async fn create_topic(
+        &self,
+        topic: &str,
+        partition_count: i32,
+    ) -> Result<(), EngineContextError> {
+        self.admin_manager
+            .create_topic(&topic, partition_count)
+            .await
+            .map_err(|e| EngineContextError::CreateTopicError {
+                topic: topic.to_owned(),
+                error: e,
+            })
+    }
+
     pub(crate) async fn register_topic_store(
         &self,
         source_topic: &str,
@@ -147,43 +190,34 @@ impl EngineContext {
     ) -> Result<TableMetadata, EngineContextError> {
         let changelog_topic = self.metadata_manager.derive_changelog_topic(store_name);
 
-        let changelog_exists = self
-            .consumer_manager
-            .get_topic_metadata(&changelog_topic)?
-            .topics()
-            .first()
-            .and_then(|topic| topic.error());
+        if self.topic_exists(&changelog_topic).await? {
+            info!("Changelog topic already exists, topic: {}", changelog_topic);
+        } else {
+            info!(
+                "Changelog topic not on broker, creating, topic: {}",
+                changelog_topic
+            );
+            // TODO: set relication factor from config.
 
-        match changelog_exists {
-            Some(rdkafka_sys::RDKafkaRespErr::RD_KAFKA_RESP_ERR_UNKNOWN_TOPIC_OR_PART)
-            | Some(rdkafka_sys::RDKafkaRespErr::RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC) => {
-                info!(
-                    "Changelog topic not on broker, creating, topic: {}",
-                    changelog_topic
-                );
-                // TODO: set relication factor from config.
+            match self.metadata_manager.get_topic_metadata(source_topic) {
+                None => Err(EngineContextError::UnregisteredSourceTopic {
+                    source_topic: source_topic.to_owned(),
+                    state_store: store_name.to_owned(),
+                })?,
+                Some(metadata) => {
+                    self.create_topic(&changelog_topic, metadata.partition_count())
+                        .await?;
 
-                match self.metadata_manager.get_topic_metadata(source_topic) {
-                    None => Err(EngineContextError::UnregisteredSourceTopic {
-                        source_topic: source_topic.to_owned(),
-                        state_store: store_name.to_owned(),
-                    })?,
-                    Some(metadata) => {
-                        self.admin_manager
-                            .create_topic(&changelog_topic, metadata.partition_count())
-                            .await
-                            .map_err(|e| EngineContextError::CreateTopicError {
-                                topic: changelog_topic,
-                                error: e,
-                            })?;
+                    while !self.topic_ready(&changelog_topic, true).await {
+                        info!("Changelog topic not ready, topic: {}", &changelog_topic);
+                        info!("Waiting for changelog topic to be ready...");
+
+                        sleep(Duration::from_millis(500)).await;
                     }
+
+                    info!("Changelog topic ready, topic: {}", &changelog_topic);
                 }
             }
-            Some(e) => panic!(
-                "Unknown error while fetching changelog metadata for topic: {}, error: {:?}",
-                &changelog_topic, e
-            ),
-            None => info!("Changelog topic already exists, topic: {}", changelog_topic),
         }
 
         Ok(self

@@ -25,7 +25,7 @@ use std::{
 use futures::{Future, Stream};
 use parking_lot::Mutex;
 use pin_project_lite::pin_project;
-use rdkafka::{consumer::base_consumer::PartitionQueue, message::OwnedMessage};
+use rdkafka::{consumer::base_consumer::PartitionQueue, message::OwnedMessage, Message};
 use tokio::{
     sync::broadcast::error::{RecvError, TryRecvError},
     time::Instant,
@@ -42,8 +42,6 @@ pub mod queue_service;
 
 pub(super) type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
 
-pub const COMMIT_INTERVAL: u128 = 100;
-
 enum QueueType {
     Core,
     Changelog(String),
@@ -57,6 +55,7 @@ pin_project! {
         source_topic: String,
         partition: i32,
         queue_type: QueueType,
+        highest_offset: i64,
         engine_context: Arc<EngineContext>,
         // TODO: maybe remove rebalance waker as due to consumer behaviour when splitting
         // partition queues, we have to split partition queues before our first call to Consumer::poll.
@@ -99,6 +98,7 @@ impl StreamPeridotPartitionQueue {
             source_topic,
             partition,
             queue_type: QueueType::Core,
+            highest_offset: -1,
             engine_context,
         }
     }
@@ -130,6 +130,7 @@ impl StreamPeridotPartitionQueue {
             source_topic,
             partition,
             queue_type: QueueType::Changelog(state_store.to_owned()),
+            highest_offset: -1,
             engine_context,
         }
     }
@@ -144,9 +145,12 @@ impl StreamPeridotPartitionQueue {
 
     pub fn consumer_position(&self) -> i64 {
         match &self.queue_type {
-            QueueType::Core => self
-                .engine_context
-                .get_consumer_position(self.source_topic(), self.partition()),
+            QueueType::Core => {
+                //self
+                //    .engine_context
+                //    .get_consumer_position(self.source_topic(), self.partition())
+                self.highest_offset
+            }
             QueueType::Changelog(state_name) => self
                 .engine_context
                 .get_changelog_next_offset(state_name, self.partition())
@@ -175,6 +179,7 @@ impl Stream for StreamPeridotPartitionQueue {
             partition_queue,
             source_topic,
             partition,
+            highest_offset,
             ..
         } = self.project();
 
@@ -198,7 +203,11 @@ impl Stream for StreamPeridotPartitionQueue {
         );
 
         match partition_queue.poll(Duration::from_millis(0)) {
-            Some(Ok(message)) => Poll::Ready(Some(message.detach())),
+            Some(Ok(message)) => {
+                *highest_offset = message.offset();
+
+                Poll::Ready(Some(message.detach()))
+            }
             Some(Err(e)) => {
                 tracing::error!("Failed to get message from upstream: {}", e);
                 todo!("Propogate error from head downstream")

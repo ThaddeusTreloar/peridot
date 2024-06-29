@@ -22,10 +22,10 @@ use crate::{
         context::EngineContext, metadata_manager::table_metadata,
         state_store_manager::StateStoreManager, util::DeliveryGuaranteeType, AppEngine,
     },
-    state::backend::{view::GetView, StateBackend, VersionedStateBackend},
+    state::backend::{StateBackend, VersionedStateBackend},
 };
 
-use super::StateFacade;
+use super::{GetFacade, StateFacade};
 
 pub struct FacadeDistributor<K, V, B> {
     engine_context: Arc<EngineContext>,
@@ -65,7 +65,7 @@ where
     }
 }
 
-impl<K, V, B> GetView for FacadeDistributor<K, V, B>
+impl<K, V, B> GetFacade for FacadeDistributor<K, V, B>
 where
     B: StateBackend + Send + Sync + 'static,
 {
@@ -74,7 +74,7 @@ where
     type ValueType = V;
     type Backend = B;
 
-    fn get_view(
+    fn get_facade(
         &self,
         partition: i32,
     ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend> {

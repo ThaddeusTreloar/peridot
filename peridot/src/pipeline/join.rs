@@ -26,7 +26,7 @@ use crate::{
         join::{Combiner, JoinMessage},
         stream::PipelineStage,
     },
-    state::backend::{view::GetView, view::GetViewDistributor, StateBackend},
+    state::backend::{facade::GetFacade, facade::GetFacadeDistributor, StateBackend},
 };
 
 use super::stream::PipelineStream;
@@ -46,7 +46,7 @@ pin_project! {
 impl<S, T, C> JoinPipeline<S, T, C>
 where
     S: PipelineStream,
-    T: GetView,
+    T: GetFacade,
     S::KeyType: PartialEq<T::KeyType>,
 {
     pub fn new(inner: S, table: T, combiner: C) -> Self {
@@ -63,7 +63,7 @@ where
     S: PipelineStream,
     S::KeyType: Clone + Serialize + Send + Sync + 'static,
     S::ValueType: Send + Sync,
-    T: GetView<KeyType = S::KeyType> + Send,
+    T: GetFacade<KeyType = S::KeyType> + Send,
     T::KeyType: Send + Sync,
     T::ValueType: DeserializeOwned + Send + Sync + 'static,
     T::Backend: StateBackend + Send + Sync + 'static,
@@ -87,7 +87,7 @@ where
             Poll::Ready(Some(queue)) => queue,
         };
 
-        let facade = this.table.get_view(queue_metadata.partition());
+        let facade = this.table.get_facade(queue_metadata.partition());
 
         let join = JoinMessage::new(upstream, facade, this.combiner.clone());
 

@@ -20,14 +20,25 @@ use std::fmt::Display;
 
 use peridot::app::builder::AppBuilder;
 use peridot::app::config::builder::PeridotConfigBuilder;
-use peridot::bencher::Bencher;
 use peridot::engine::wrapper::serde::json::Json;
 use peridot::init::init_tracing;
+use peridot::message::types::Message;
+use peridot::state::backend::in_memory::InMemoryStateBackend;
+use peridot::state::backend::view::state_view::StateView;
+use peridot::state::backend::view::{GetViewDistributor, ReadableStateView};
+use peridot::task::process::Process;
 use peridot::task::Task;
 use rdkafka::ClientConfig;
 
 use rdkafka::config::RDKafkaLogLevel;
 use tracing::level_filters::LevelFilter;
+
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+struct ConsentGrant {
+    owner_type: String,
+    owner: String,
+    map: HashMap<String, HashMap<String, HashMap<String, bool>>>,
+}
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChangeOfAddress {
@@ -51,6 +62,18 @@ impl Display for ChangeOfAddress {
     }
 }
 
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+struct Client {
+    owner_type: String,
+    owner: String,
+}
+
+async fn process_callback(
+    msg: Message<String, ChangeOfAddress>,
+    state: StateView<String, String, InMemoryStateBackend>,
+) {
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing(LevelFilter::INFO);
@@ -64,12 +87,10 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("bootstrap.servers", "kafka1:9092,kafka2:9093,kafka3:9094")
         .set("security.protocol", "PLAINTEXT")
         .set("enable.auto.commit", "false")
-        .set("application.id", "app-message-bench")
+        .set("application.id", "app-message-task1")
         .set("group.id", group)
         .set("group.instance.id", group_instance)
         .set("auto.offset.reset", "earliest")
-        .set("statistics.interval.ms", "50")
-        .set("queue.buffering.max.messages", "500000")
         .set_log_level(RDKafkaLogLevel::Error);
 
     let app = AppBuilder::new()
@@ -81,21 +102,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .expect("Failed to build app.");
 
-    let message_count: i64 = 1_000_000;
+    let table_a = app.table::<String, String>("table_a", "my_table_a").await;
+    let table_b = app.table::<String, String>("table_b", "my_table_b").await;
 
-    let (sender, receiver) = tokio::sync::mpsc::channel(message_count as usize);
+    app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
+        .process(process_callback, (&table_a));
 
-    let bencher = Bencher::new(message_count, receiver);
-
-    app.task::<String, Json<ChangeOfAddress>>("inputTopic")
-        .into_bench::<String, Json<ChangeOfAddress>>("outputTopic", sender);
-
-    //app.task::<String, Json<ChangeOfAddress>>("inputTopic")
-    //    .into_topic::<String, Json<ChangeOfAddress>>("outputTopic");
-
-    //Ok(app.run().await?)
-
-    tokio::spawn(app.run());
-    bencher.await;
-    Ok(())
+    Ok(app.run().await?)
 }

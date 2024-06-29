@@ -21,6 +21,10 @@ path = "src/app-message-bench.rs"
 name = "app-message-closures"
 path = "src/app-message-closures.rs"
 
+#[[bin]]
+#name = "app-message-process"
+#path = "src/app-message-process.rs"
+
 [[bin]]
 name = "app-message-task"
 path = "src/app-message-task.rs"

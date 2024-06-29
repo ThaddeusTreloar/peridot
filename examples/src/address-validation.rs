@@ -26,7 +26,7 @@ use peridot::app::config::builder::PeridotConfigBuilder;
 use peridot::engine::wrapper::serde::json::Json;
 use peridot::init::init_tracing;
 use peridot::message::types::KeyValue;
-use peridot::state::backend::view::{GetView, GetViewDistributor, ReadableStateView};
+use peridot::state::backend::facade::{GetFacade, GetFacadeDistributor, ReadableStateFacade};
 use peridot::task::Task;
 use rdkafka::ClientConfig;
 
@@ -104,7 +104,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let table_ref = &table;
 
-    let dist = table_ref.get_view_distributor();
+    let dist = table_ref.get_facade_distributor();
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
         .map(|kv: KeyValue<String, ChangeOfAddress>| KeyValue(kv.0, kv.1.address))
@@ -121,8 +121,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     use std::io::stdin;
 
-    let facade_0 = Arc::new(dist.get_view(0));
-    let facade_1 = Arc::new(dist.get_view(1));
+    let facade_0 = Arc::new(dist.get_facade(0));
+    let facade_1 = Arc::new(dist.get_facade(1));
 
     let stdin = stdin();
 

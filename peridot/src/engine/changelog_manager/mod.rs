@@ -294,7 +294,7 @@ impl ChangelogManager {
     }
 
     pub(super) fn poll_consumer(&self) {
-        if let Some(msg) = self.consumer.poll(Duration::from_millis(100)) {
+        if let Some(msg) = self.consumer.poll(Duration::from_millis(1000)) {
             match msg {
                 Err(e) => panic!("Failed to poll consumer: {}", e),
                 Ok(msg) => {

@@ -25,16 +25,15 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::message::types::PeridotTimestamp;
 
-use self::{
-    checkpoint::Checkpoint,
-    facade::{FacadeDistributor, StateFacade},
-};
+use self::checkpoint::Checkpoint;
 
 pub mod checkpoint;
 pub mod error;
 pub mod facade;
 pub mod in_memory;
 pub mod view;
+// TODO: find a better name for this module.
+//pub mod state_connectors;
 //pub mod persistent;
 
 struct VersionedRecord<V> {

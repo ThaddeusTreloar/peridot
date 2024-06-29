@@ -32,6 +32,8 @@ pub enum TopicSinkError {
         offset: i64,
         err: KafkaError,
     },
+    #[error("Producer queue full")]
+    QueueFull,
     #[error(
         "Unknown error while checking producer send: {}, partition: {}, offset: {}, caused by: {}",
         topic,

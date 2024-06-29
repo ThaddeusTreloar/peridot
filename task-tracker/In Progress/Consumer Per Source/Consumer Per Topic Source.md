@@ -1,0 +1,3 @@
+When benching, it seems that we are hitting the limits of a what a single consumer can handle. It can be seen that pipelines are constantly starved, recieving empty queue notifications, and having to wait til the queue becomes non empty.
+
+This problem may be solved by moving to a queue per topic source model, where each topic source has it's own consumer.  It will also be a great opportunity to combine the changelog and consumer managers as having them separated isn't working out very well.

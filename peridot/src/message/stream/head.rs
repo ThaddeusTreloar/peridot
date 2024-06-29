@@ -21,13 +21,14 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{ready, Context, Poll, Waker},
+    time::Duration,
 };
 
-use futures::Stream;
+use futures::{FutureExt, Stream};
 use parking_lot::Mutex;
 use pin_project_lite::pin_project;
 use rdkafka::Message as rdMessage;
-use tokio::time::Instant;
+use tokio::time::{sleep, Instant, Sleep};
 use tracing::error;
 
 use crate::{
@@ -43,7 +44,7 @@ use crate::{
 
 use super::{MessageStream, MessageStreamPoll};
 
-pub const COMMIT_INTERVAL: u128 = 100;
+pub const COMMIT_INTERVAL: u64 = 100;
 
 pin_project! {
     #[project=QueueHeadProjection]
@@ -53,6 +54,7 @@ pin_project! {
         interval: Option<Instant>,
         is_committed: bool,
         is_changelog: bool,
+        waker: Option<Pin<Box<Sleep>>>,
         _key_serialiser: PhantomData<KS>,
         _value_serialiser: PhantomData<VS>,
     }
@@ -65,6 +67,7 @@ impl<KS, VS> QueueHead<KS, VS> {
             interval: None,
             is_committed: false,
             is_changelog: false,
+            waker: None,
             _key_serialiser: PhantomData,
             _value_serialiser: PhantomData,
         }
@@ -76,6 +79,7 @@ impl<KS, VS> QueueHead<KS, VS> {
             interval: None,
             is_committed: false,
             is_changelog: true,
+            waker: None,
             _key_serialiser: PhantomData,
             _value_serialiser: PhantomData,
         }
@@ -99,6 +103,7 @@ where
             interval,
             is_committed,
             is_changelog,
+            waker,
             ..
         } = self.project();
 
@@ -107,7 +112,7 @@ where
                 let _ = interval.replace(Instant::now());
             }
             Some(instant) => {
-                if instant.elapsed().as_millis() > COMMIT_INTERVAL {
+                if instant.elapsed().as_millis() > COMMIT_INTERVAL as u128 {
                     *is_committed = true;
 
                     let next_offset = input.consumer_position();
@@ -138,9 +143,27 @@ where
 
         match input.as_mut().poll_next(cx) {
             Poll::Pending => {
-                let _ = interval.take();
+                match interval {
+                    Some(i) => {
+                        let remaining = COMMIT_INTERVAL - i.elapsed().as_millis() as u64;
 
-                if *is_committed {
+                        let mut w = Box::pin(sleep(Duration::from_millis(remaining)));
+
+                        w.poll_unpin(cx);
+
+                        let _ = waker.replace(w);
+                    },
+                    None => panic!("No timer set!?")
+                }
+
+                tracing::info!(
+                    "No buffered messages, Pending..."
+                );
+
+                Poll::Pending
+
+                // Eager commit code. Tends to increase scheduler contention.
+                /*if *is_committed {
                     tracing::info!(
                         "No buffered messages, already committed. Pending..."
                     );
@@ -157,7 +180,7 @@ where
                     );
 
                     Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset)))
-                }
+                }*/
             }
             Poll::Ready(None) => panic!("PartitionQueueStreams should never return none. If this panic is triggered, there must be an upstream change."),
             Poll::Ready(Some(raw_msg)) => {

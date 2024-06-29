@@ -41,8 +41,7 @@ use crate::{
         stream::{PipelineStream, PipelineStreamExt},
     },
     state::backend::{
-        facade::{FacadeDistributor, StateFacade},
-        view::GetViewDistributor,
+        facade::{facade_distributor::FacadeDistributor, GetFacadeDistributor},
         StateBackend,
     },
 };
@@ -50,6 +49,7 @@ use crate::{
 use self::{table::TableTask, transform::TransformTask};
 
 pub mod import;
+pub mod process;
 pub mod table;
 pub mod transform;
 pub mod transparent;
@@ -108,7 +108,7 @@ pub trait Task<'a> {
         Self::G,
     >
     where
-        T: GetViewDistributor<KeyType = <Self::R as PipelineStream>::KeyType> + Send + 'a,
+        T: GetFacadeDistributor<KeyType = <Self::R as PipelineStream>::KeyType> + Send + 'a,
         T::KeyType: Send + Sync + 'static,
         T::ValueType: DeserializeOwned + Send + Sync + 'static,
         T::Backend: StateBackend + Sync + 'static,
@@ -120,7 +120,7 @@ pub trait Task<'a> {
     {
         let parts = self.into_parts();
 
-        let view = table.get_view_distributor();
+        let view = table.get_facade_distributor();
 
         let transform = move |input: Self::R| JoinPipeline::new(input, view, combiner);
 
