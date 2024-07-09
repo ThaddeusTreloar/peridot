@@ -7,3 +7,5 @@ Folder for dependencies that or outside of this project.
 Tasks that are currently being worked on.
 # Todo
 Tasks that are pending assignment or dependency completion
+
+asyncapi codegen
