@@ -84,8 +84,10 @@ impl StreamPeridotPartitionQueue {
             let mut maybe_waker = waker_ref.lock();
 
             if let Some(waker) = maybe_waker.take() {
+                info!("Wake non empty successfully");
                 waker.wake()
             } else {
+                info!("Woke with no waker...");
                 //todo!("Queue became non empty while lock not present.")
             }
         };
@@ -116,8 +118,10 @@ impl StreamPeridotPartitionQueue {
             let mut maybe_waker = waker_ref.lock();
 
             if let Some(waker) = maybe_waker.take() {
+                info!("Wake non empty successfully");
                 waker.wake()
             } else {
+                info!("Woke with no waker...");
                 //todo!("Queue became non empty while lock not present.")
             }
         };
@@ -180,6 +184,7 @@ impl Stream for StreamPeridotPartitionQueue {
             source_topic,
             partition,
             highest_offset,
+            engine_context,
             ..
         } = self.project();
 
@@ -221,6 +226,10 @@ impl Stream for StreamPeridotPartitionQueue {
                 waker.lock().replace(cx.waker().clone());
 
                 info!("Queue empty, Pending.");
+                let consumer_position =
+                    engine_context.get_consumer_position(source_topic, *partition);
+
+                info!("Consumer position: {}", consumer_position);
 
                 Poll::Pending
             }

@@ -187,7 +187,7 @@ where
             }
         }
 
-        tracing::info!("Transaction committed.");
+        info!("Transaction comitted.");
         *stream_state = StreamState::Committed;
 
         match queue_metadata.producer().begin_transaction() {

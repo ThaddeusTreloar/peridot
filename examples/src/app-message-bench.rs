@@ -70,6 +70,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .set("auto.offset.reset", "earliest")
         .set("statistics.interval.ms", "50")
         .set("queue.buffering.max.messages", "500000")
+        .set("fetch.queue.backoff.ms", "10")
         .set_log_level(RDKafkaLogLevel::Error);
 
     let app = AppBuilder::new()

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-docker-compose up -d
+docker compose up -d
 
 echo "Waiting for Kafka to launch on 9092..."
 while ! nc -z localhost 9092; do   

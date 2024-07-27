@@ -153,8 +153,6 @@ where
 
         tracing::trace!("Polling distributor...");
 
-        this.engine_context.changelog_manager.poll_consumer();
-
         if let Some(message) = this.engine_context.consumer_manager.poll_consumer()? {
             let key = <String as PeridotDeserializer>::deserialize(message.key().unwrap()).unwrap();
             let value =
@@ -188,13 +186,13 @@ where
                 return Poll::Ready(Ok(()));
             }
             Err(TryRecvError::Empty) => {
-                let sleep = tokio::time::sleep(Duration::from_millis(1));
+                let mut s = Box::pin(tokio::time::sleep(Duration::from_millis(100)));
 
-                let _ = this.sleep.replace(Box::pin(sleep));
+                s.poll_unpin(cx);
 
-                if let Some(sleep) = this.sleep.as_mut() {
-                    sleep.as_mut().poll(cx);
-                }
+                let _ = this.sleep.replace(s);
+
+                cx.waker().wake_by_ref();
 
                 return Poll::Pending;
             }
