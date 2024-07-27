@@ -36,3 +36,4 @@ apache-avro = "0.16.0"
 prost = "0.12.4"
 derive_more = "0.99.17"
 uuid = { version = "1.8.0", features = ["v3", "v4", "v8"] }
+rocksdb = "0.22.0"

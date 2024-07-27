@@ -85,7 +85,7 @@ where
         key: Self::KeyType,
     ) -> Result<Option<Self::ValueType>, Self::Error> {
         self.backend
-            .get(key, self.store_name(), self.partition())
+            .get(&key, self.store_name(), self.partition())
             .await
     }
 
@@ -137,8 +137,8 @@ where
     ) -> Result<(), Self::Error> {
         self.backend
             .put(
-                message.key,
-                message.value,
+                &message.key,
+                &message.value,
                 self.store_name(),
                 self.partition(),
                 message.offset,
@@ -176,7 +176,7 @@ where
 
     async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), Self::Error> {
         self.backend
-            .delete(key, self.store_name(), self.partition())
+            .delete(&key, self.store_name(), self.partition())
             .await
     }
 

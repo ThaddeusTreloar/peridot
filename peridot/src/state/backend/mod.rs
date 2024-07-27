@@ -49,7 +49,7 @@ pub enum StateBackendError {
     Recoverable(Box<dyn std::error::Error + Send>),
 }
 
-#[trait_variant::make(Send)]
+#[trait_variant::make(Send + Sync)]
 pub trait StateBackend
 where
     Self: Sized,
@@ -81,26 +81,26 @@ where
 
     async fn get<K, V>(
         &self,
-        key: K,
+        key: &K,
         store: &str,
         partition: i32,
     ) -> Result<Option<V>, Self::Error>
     where
-        K: Serialize + Send,
+        K: Serialize + Send + Sync,
         V: DeserializeOwned;
 
     async fn put<K, V>(
         &self,
-        key: K,
-        value: V,
+        key: &K,
+        value: &V,
         store: &str,
         partition: i32,
         offset: i64,
         timestamp: i64,
     ) -> Result<(), Self::Error>
     where
-        K: Serialize + Send,
-        V: Serialize + Send;
+        K: Serialize + Send + Sync,
+        V: Serialize + Send + Sync;
 
     /// offset and timestamp are the hghest for this batch
     async fn put_range<K, V>(
@@ -112,12 +112,12 @@ where
         timestamp: i64,
     ) -> Result<(), Self::Error>
     where
-        K: Serialize + Send,
-        V: Serialize + Send;
+        K: Serialize + Send + Sync,
+        V: Serialize + Send + Sync;
 
-    async fn delete<K>(&self, key: K, store: &str, partition: i32) -> Result<(), Self::Error>
+    async fn delete<K>(&self, key: &K, store: &str, partition: i32) -> Result<(), Self::Error>
     where
-        K: Serialize + Send;
+        K: Serialize + Send + Sync;
 
     async fn clear<K>(&self, store: &str, partition: i32) -> Result<(), Self::Error>
     where

@@ -243,12 +243,12 @@ impl StateBackend for InMemoryStateBackend {
 
     async fn get<K, V>(
         &self,
-        key: K,
+        key: &K,
         store_name: &str,
         partition: i32,
     ) -> Result<Option<V>, Self::Error>
     where
-        K: Serialize + Send,
+        K: Serialize + Send + Sync,
         V: DeserializeOwned,
     {
         let state_key = Self::derive_state_key(store_name, partition);
@@ -271,16 +271,16 @@ impl StateBackend for InMemoryStateBackend {
 
     async fn put<K, V>(
         &self,
-        key: K,
-        value: V,
+        key: &K,
+        value: &V,
         store_name: &str,
         partition: i32,
         offset: i64,
         timestamp: i64,
     ) -> Result<(), Self::Error>
     where
-        K: Serialize + Send,
-        V: Serialize + Send,
+        K: Serialize + Send + Sync,
+        V: Serialize + Send + Sync,
     {
         let state_key = Self::derive_state_key(store_name, partition);
 
@@ -305,8 +305,8 @@ impl StateBackend for InMemoryStateBackend {
         timestamp: i64,
     ) -> Result<(), Self::Error>
     where
-        K: Serialize + Send,
-        V: Serialize + Send,
+        K: Serialize + Send + Sync,
+        V: Serialize + Send + Sync,
     {
         let state_key = Self::derive_state_key(store_name, partition);
 
@@ -328,9 +328,9 @@ impl StateBackend for InMemoryStateBackend {
         Ok(())
     }
 
-    async fn delete<K>(&self, key: K, store_name: &str, partition: i32) -> Result<(), Self::Error>
+    async fn delete<K>(&self, key: &K, store_name: &str, partition: i32) -> Result<(), Self::Error>
     where
-        K: Serialize + Send,
+        K: Serialize + Send + Sync,
     {
         let state_key = Self::derive_state_key(store_name, partition);
 

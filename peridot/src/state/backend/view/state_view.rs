@@ -85,7 +85,7 @@ where
         key: Self::KeyType,
     ) -> Result<Option<Self::ValueType>, Self::Error> {
         self.backend
-            .get(key, self.store_name(), self.partition())
+            .get(&key, self.store_name(), self.partition())
             .await
     }
 }
