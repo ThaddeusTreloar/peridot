@@ -30,7 +30,7 @@ use crate::{
 };
 
 use super::{
-    changelog_queues::ChangelogQueues, partition_queue::StreamPeridotPartitionQueue,
+    changelog_queues::ChangelogQueues, partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue},
     state_cells::StateCells,
 };
 
@@ -69,7 +69,7 @@ impl QueueMetadata {
         self.producer_ref.clone()
     }
 
-    pub fn take_changelog_queue(&self, store_name: &str) -> Option<StreamPeridotPartitionQueue> {
+    pub fn take_changelog_queue(&self, store_name: &str) -> Option<PeridotPartitionQueue> {
         self.changelog_queues.take(store_name)
     }
 

@@ -19,10 +19,10 @@ use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
 
-use super::partition_queue::StreamPeridotPartitionQueue;
+use super::partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue};
 
 pub struct ChangelogQueues {
-    inner: Arc<DashMap<String, StreamPeridotPartitionQueue>>,
+    inner: Arc<DashMap<String, PeridotPartitionQueue>>,
 }
 
 impl Clone for ChangelogQueues {
@@ -34,13 +34,13 @@ impl Clone for ChangelogQueues {
 }
 
 impl ChangelogQueues {
-    pub fn new(queues: Vec<(String, StreamPeridotPartitionQueue)>) -> Self {
+    pub fn new(queues: Vec<(String, PeridotPartitionQueue)>) -> Self {
         let inner = Arc::new(queues.into_iter().collect());
 
         Self { inner }
     }
 
-    pub(crate) fn take(&self, store: &str) -> Option<StreamPeridotPartitionQueue> {
+    pub(crate) fn take(&self, store: &str) -> Option<PeridotPartitionQueue> {
         self.inner.remove(store).map(|(k, v)| v)
     }
 }

@@ -138,15 +138,15 @@ where
             MessageStreamPoll::Commit(Ok(offset)) => {
                 tracing::debug!("Recieved commit message for offset: {}", offset);
 
+                tracing::debug!(
+                    "Consumer position increased, committing fork at offset: {}.",
+                    offset
+                );
+                *next_offset = offset;
+
+                *commit_state = StreamState::Committing;
+
                 if offset > *next_offset {
-                    tracing::debug!(
-                        "Consumer position increased, committing fork at offset: {}.",
-                        offset
-                    );
-                    *next_offset = offset;
-
-                    *commit_state = StreamState::Committing;
-
                     Self::commit(queue_metadata, message_sink, commit_state, next_offset, cx)
                 } else {
                     tracing::debug!(
@@ -165,7 +165,7 @@ where
                 match message_sink
                     .as_mut()
                     .start_send(message.clone()){
-                        Ok(_) => todo!(),
+                        Ok(_) => (),
                         Err(ErrorType::Fatal(e)) => panic!("Fatal error"),
                         Err(ErrorType::Retryable(e)) => todo!("Handle retryable error"),
                 };

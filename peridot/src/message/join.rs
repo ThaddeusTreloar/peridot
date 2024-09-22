@@ -157,6 +157,11 @@ where
                     let (message, right) = ready!(future.as_mut().poll(cx));
 
                     if let Some(right) = right {
+                        tracing::info!(
+                            "Joined message at offset: {}",
+                            message.offset()
+                        );
+
                         let (Value(left), partial_message) = Value::from_message(message);
 
                         let output_value = this.combiner.combine(left, right);
@@ -167,7 +172,7 @@ where
 
                         return Poll::Ready(MessageStreamPoll::Message(output_message));
                     } else {
-                        tracing::debug!(
+                        tracing::info!(
                             "Dropped message, no RHS in table, offset: {}",
                             message.offset()
                         );

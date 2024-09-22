@@ -34,7 +34,7 @@ use crate::{
 
 use super::{
     context::EngineContext, metadata_manager::topic_metadata::TopicMetadata,
-    queue_manager::partition_queue::StreamPeridotPartitionQueue, util::ConsumerUtils,
+    queue_manager::partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue}, util::ConsumerUtils,
     PeridotConsumer,
 };
 
@@ -128,7 +128,7 @@ impl ConsumerManager {
         topic: &str,
         partition: i32,
         engine_context: Arc<EngineContext>,
-    ) -> Result<StreamPeridotPartitionQueue, ClientManagerError> {
+    ) -> Result<PeridotPartitionQueue, ClientManagerError> {
         tracing::debug!(
             "Getting partition queue for topic: {} partition: {}",
             topic,
@@ -149,12 +149,7 @@ impl ConsumerManager {
                     topic,
                     partition
                 );
-                Ok(StreamPeridotPartitionQueue::new(
-                    queue,
-                    topic.to_owned(),
-                    partition,
-                    engine_context,
-                ))
+                Ok(queue)
             }
         }
     }
@@ -185,6 +180,8 @@ impl ConsumerManager {
     }
 
     pub(crate) fn get_topic_partition_consumer_position(&self, topic: &str, partition: i32) -> i64 {
+        tracing::debug!("Finding consumer position for topic: {}, partition: {}", topic, partition);
+
         match self
             .consumer
             .position()
@@ -193,22 +190,22 @@ impl ConsumerManager {
             .into_iter()
             .find(|elem| elem.partition() == partition)
             .map(|elem| elem.offset())
+            .expect("Failed to find consumer offset")
         {
-            None => -1,
-            Some(Offset::Offset(offset)) => offset,
-            Some(Offset::Beginning) => {
+            Offset::Offset(offset) => offset,
+            Offset::Beginning => {
                 panic!("Offset::Beginning")
             }
-            Some(Offset::End) => {
+            Offset::End => {
                 panic!("Offset::End")
             }
-            Some(Offset::OffsetTail(o)) => {
+            Offset::OffsetTail(o) => {
                 panic!("Offset::OffsetTail({})", o)
             }
-            Some(Offset::Stored) => {
+            Offset::Stored => {
                 panic!("Offset::Stored")
             }
-            Some(Offset::Invalid) => {
+            Offset::Invalid => {
                 tracing::warn!("Current offset invalid...");
                 -1
             }

@@ -22,11 +22,7 @@ use std::{collections::HashMap, fmt::Display, time::Duration};
 
 use dashmap::DashMap;
 use rdkafka::{
-    consumer::ConsumerContext,
-    error::KafkaError,
-    topic_partition_list::{self, TopicPartitionListElem},
-    util::Timeout,
-    ClientContext,
+    consumer::ConsumerContext, error::KafkaError, statistics::Partition, topic_partition_list::{self, TopicPartitionListElem}, util::Timeout, ClientContext
 };
 use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tracing::{debug, error, info};
@@ -111,8 +107,7 @@ pub struct PeridotConsumerContext {
     pre_rebalance_waker: RebalanceSender,
     post_rebalance_waker: RebalanceSender,
     commit_waker: Sender<Commit>,
-    topic_lso: DashMap<String, DashMap<i32, i64>>,
-    next_offset: DashMap<String, DashMap<i32, i64>>,
+    metadata: DashMap<String, DashMap<i32, Partition>>,
 }
 
 impl Clone for PeridotConsumerContext {
@@ -121,23 +116,21 @@ impl Clone for PeridotConsumerContext {
             pre_rebalance_waker: self.pre_rebalance_waker.clone(),
             post_rebalance_waker: self.post_rebalance_waker.clone(),
             commit_waker: self.commit_waker.clone(),
-            topic_lso: Default::default(),
-            next_offset: Default::default(),
+            metadata: Default::default(),
         }
     }
 }
 
 impl ClientContext for PeridotConsumerContext {
     fn stats(&self, statistics: rdkafka::Statistics) {
-        statistics.topics.iter().for_each(|(topic, t_stats)| {
+        statistics.topics.into_iter().for_each(|(topic, t_stats)| {
             t_stats
                 .partitions
-                .iter()
+                .into_iter()
                 .filter(|(p, _)| p >= &&0)
                 .filter(|(_, stat)| stat.ls_offset >= 0)
                 .for_each(|(p, p_stat)| {
-                    self.set_next_offset(topic, *p, p_stat.next_offset);
-                    self.set_lso(topic, *p, p_stat.ls_offset);
+                    self.set_partition_stats(&topic, p, p_stat);
                 })
         });
     }
@@ -157,8 +150,7 @@ impl Default for PeridotConsumerContext {
             pre_rebalance_waker,
             post_rebalance_waker,
             commit_waker,
-            topic_lso: Default::default(),
-            next_offset: Default::default(),
+            metadata: Default::default(),
         }
     }
 }
@@ -196,50 +188,51 @@ impl PeridotConsumerContext {
         self.commit_waker.clone()
     }
 
-    pub fn set_next_offset(&self, topic: &str, partition: i32, offset: i64) {
-        match self.next_offset.get_mut(topic) {
+    pub fn set_partition_stats(&self, topic: &str, partition: i32, stats: Partition) {
+        match self.metadata.get_mut(topic) {
             None => {
                 let inner = DashMap::new();
-                inner.insert(partition, offset);
+                inner.insert(partition, stats);
 
-                self.next_offset.insert(topic.to_owned(), inner);
+                self.metadata.insert(topic.to_owned(), inner);
             }
             Some(topic_map) => match topic_map.get_mut(&partition) {
                 None => {
-                    topic_map.insert(partition, offset);
+                    topic_map.insert(partition, stats);
                 }
                 Some(mut partition) => {
-                    *partition.value_mut() = offset;
+                    *partition.value_mut() = stats;
                 }
             },
         }
     }
 
     pub fn get_next_offset(&self, topic: &str, partition: i32) -> Option<i64> {
-        self.next_offset.get(topic)?.get(&partition).map(|lso| *lso)
-    }
-
-    pub fn set_lso(&self, topic: &str, partition: i32, offset: i64) {
-        match self.topic_lso.get_mut(topic) {
-            None => {
-                let inner = DashMap::new();
-                inner.insert(partition, offset);
-
-                self.topic_lso.insert(topic.to_owned(), inner);
-            }
-            Some(topic_map) => match topic_map.get_mut(&partition) {
-                None => {
-                    topic_map.insert(partition, offset);
-                }
-                Some(mut partition) => {
-                    *partition.value_mut() = offset;
-                }
-            },
-        }
+        self.metadata.get(topic)?.get(&partition).map(|stats| stats.next_offset)
     }
 
     pub fn get_lso(&self, topic: &str, partition: i32) -> Option<i64> {
-        self.topic_lso.get(topic)?.get(&partition).map(|lso| *lso)
+        self.metadata.get(topic)?.get(&partition).map(|stats| stats.ls_offset)
+    }
+
+    pub fn get_eof(&self, topic: &str, partition: i32) -> Option<i64> {
+        self.metadata.get(topic)?.get(&partition).map(|stats| stats.eof_offset)
+    }
+
+    pub fn get_fetch_count(&self, topic: &str, partition: i32) -> Option<i64> {
+        self.metadata.get(topic)?.get(&partition).map(|stats| stats.fetchq_cnt)
+    }
+
+    pub fn get_app_offset(&self, topic: &str, partition: i32) -> Option<i64> {
+        self.metadata.get(topic)?.get(&partition).map(|stats| stats.app_offset)
+    }
+
+    pub fn get_query_offset(&self, topic: &str, partition: i32) -> Option<i64> {
+        self.metadata.get(topic)?.get(&partition).map(|stats| stats.query_offset)
+    }
+
+    pub fn get_rx(&self, topic: &str, partition: i32) -> Option<u64> {
+        self.metadata.get(topic)?.get(&partition).map(|stats| stats.rxmsgs)
     }
 }
 

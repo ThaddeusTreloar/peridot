@@ -143,7 +143,8 @@ where
                         metadata
                             .clone_stream_state(store_name)
                             .expect("Now stream state"),
-                        store_name.clone(),
+                        &store_name,
+                        metadata.source_topic(),
                         metadata.partition(),
                     );
 

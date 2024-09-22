@@ -166,7 +166,7 @@ async fn main() {
             );
             let commit_time = Instant::now();
             producer
-                .commit_transaction(Duration::from_millis(1000))
+                .commit_transaction(Duration::from_millis(3000))
                 .expect("Commit transaction");
 
             info!("Commit time: {}ms", commit_time.elapsed().as_millis());

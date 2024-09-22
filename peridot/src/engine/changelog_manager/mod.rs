@@ -28,7 +28,7 @@ use tracing::{info, warn};
 use crate::app::{config::PeridotConfig, extensions::PeridotConsumerContext};
 
 use super::{
-    context::EngineContext, queue_manager::partition_queue::StreamPeridotPartitionQueue,
+    context::EngineContext, queue_manager::partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue},
     PeridotConsumer,
 };
 
@@ -128,7 +128,7 @@ impl ChangelogManager {
         changelog_topic: &str,
         partition: i32,
         engine_context: Arc<EngineContext>,
-    ) -> Result<StreamPeridotPartitionQueue, ChangelogManagerError> {
+    ) -> Result<PeridotPartitionQueue, ChangelogManagerError> {
         let partition_registered = self
             .consumer
             .assignment()
@@ -161,13 +161,7 @@ impl ChangelogManager {
                     topic: changelog_topic.to_owned(),
                     partition,
                 })?,
-                Some(queue) => StreamPeridotPartitionQueue::new_changelog(
-                    queue,
-                    state_name,
-                    changelog_topic.to_owned(),
-                    partition,
-                    engine_context,
-                ),
+                Some(queue) => queue,
             };
 
             let mut tpl = TopicPartitionList::new();
@@ -350,6 +344,8 @@ impl ChangelogManager {
     }
 
     pub(super) fn get_topic_consumer_position(&self, changelog_topic: &str, partition: i32) -> i64 {
+        tracing::debug!("Finding changelog position for topic: {}, partition: {}", changelog_topic, partition);
+
         match self
             .consumer
             .position()
@@ -358,7 +354,7 @@ impl ChangelogManager {
             .into_iter()
             .find(|elem| elem.partition() == partition)
             .map(|elem| elem.offset())
-            .expect("Unable to find topic offset.")
+            .expect("Failed to find changelog offset")
         {
             Offset::Offset(offset) => offset,
             Offset::Beginning => {
@@ -420,6 +416,14 @@ impl ChangelogManager {
         self.consumer.context().get_lso(changelog_topic, partition)
     }
 
+    pub(super) fn get_eof(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<i64> {
+        self.consumer.context().get_eof(changelog_topic, partition)
+    }
+
     pub(super) fn get_next_consumer_offset(
         &self,
         changelog_topic: &str,
@@ -428,5 +432,45 @@ impl ChangelogManager {
         self.consumer
             .context()
             .get_next_offset(changelog_topic, partition)
+    }
+
+    pub(super) fn get_fetch_count(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<i64> {
+        self.consumer
+            .context()
+            .get_fetch_count(changelog_topic, partition)
+    }
+
+    pub(super) fn get_app_offset(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<i64> {
+        self.consumer
+            .context()
+            .get_app_offset(changelog_topic, partition)
+    }
+
+    pub(super) fn get_rx(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<u64> {
+        self.consumer
+            .context()
+            .get_rx(changelog_topic, partition)
+    }
+
+    pub(super) fn get_query_offset(
+        &self,
+        changelog_topic: &str,
+        partition: i32,
+    ) -> Option<i64> {
+        self.consumer
+            .context()
+            .get_query_offset(changelog_topic, partition)
     }
 }

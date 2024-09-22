@@ -40,7 +40,7 @@ use crate::{
 
 pub mod queue_service;
 
-pub(super) type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
+pub type PeridotPartitionQueue = PartitionQueue<PeridotConsumerContext>;
 
 enum QueueType {
     Core,

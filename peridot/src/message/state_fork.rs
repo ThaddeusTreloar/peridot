@@ -37,7 +37,7 @@ use crate::{
         changelog_manager::ChangelogManager,
         consumer_manager::{self, ConsumerManager},
         context::EngineContext,
-        queue_manager::partition_queue::StreamPeridotPartitionQueue,
+        queue_manager::partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue},
         wrapper::serde::native::NativeBytes,
     },
     message::{
@@ -132,20 +132,29 @@ where
     }
 
     pub fn new_with_changelog(
-        changelog_stream: StreamPeridotPartitionQueue,
+        changelog_stream: PeridotPartitionQueue,
         message_stream: M,
         state_sink: StateSink<B, M::KeyType, M::ValueType>,
         engine_context: Arc<EngineContext>,
         store_state: Arc<StoreStateCell>,
-        store_name: String,
+        store_name: &str,
+        source_topic: &str,
         partition: i32,
     ) -> Self {
         Self {
-            changelog_stream: Some(QueueHead::new(changelog_stream)),
+            changelog_stream: Some(
+                QueueHead::new_changelog(
+                    changelog_stream, 
+                    engine_context.clone(),
+                    store_name,
+                    source_topic,
+                    partition
+                )
+            ),
             message_stream,
             state_sink,
             engine_context,
-            store_name,
+            store_name: store_name.to_owned(),
             partition,
             changelog_start: None,
             store_state,
@@ -199,7 +208,7 @@ where
             Some(lso) => lso,
         };
 
-        tracing::debug!("State store changelog watermarks: {}", watermarks);
+        tracing::info!("State store changelog watermarks: {}", watermarks);
 
         let mut beginning_offset = 0;
 
@@ -451,103 +460,110 @@ where
             }
         }
 
-        if store_state.load().is_ready() {
-            let _ = changelog_stream.take();
-        } else {
-            let mut changelog_stream_proj = changelog_stream.as_pin_mut();
+        match store_state.load() {
+            StoreState::Rebuilding | StoreState::Uninitialised => {
 
-            while let Some(ref mut stream) = changelog_stream_proj {
-                match *commit_state {
-                    StreamState::Committing => {
-                        ready!(Self::commit(
-                            &mut state_sink,
-                            commit_state,
-                            *changelog_next_offset,
-                            cx
-                        ))
-                        .expect("Failed to commit");
+                let mut changelog_stream_proj = changelog_stream.as_pin_mut();
 
-                        *commit_state = StreamState::Committed;
-                    }
-                    StreamState::Closing => panic!("stream state closed"),
-                    StreamState::Committed => {
-                        if ready!(Self::poll_state_rebuilt(
-                            &mut state_sink,
-                            engine_context,
-                            store_name,
-                            partition,
-                            lso_sleep,
-                            cx,
-                        ))
-                        .expect("Failed to poll state store readiness")
-                        {
-                            tracing::debug!(
-                                "Setting state store status to StoreState::Ready for store: {}, partition: {}",
-                                store_name,
-                                partition
-                            );
+                while let Some(ref mut stream) = changelog_stream_proj {
+                    match *commit_state {
+                        StreamState::Committing => {
+                            ready!(Self::commit(
+                                &mut state_sink,
+                                commit_state,
+                                *changelog_next_offset,
+                                cx
+                            ))
+                            .expect("Failed to commit");
 
-                            store_state.store(StoreState::Ready);
-
-                            tracing::debug!(
-                                "Closing changelog stream for for store: {}, partition: {}",
-                                store_name,
-                                partition
-                            );
-
-                            engine_context
-                                .close_changelog_stream(store_name, *partition)
-                                .expect("Failed to close changelog stream.");
-
-                            let _ = changelog_stream_proj.take();
+                            *commit_state = StreamState::Committed;
                         }
+                        StreamState::Closing => panic!("stream state closed"),
+                        StreamState::Committed => {
+                            if ready!(Self::poll_state_rebuilt(
+                                &mut state_sink,
+                                engine_context,
+                                store_name,
+                                partition,
+                                lso_sleep,
+                                cx,
+                            ))
+                            .expect("Failed to poll state store readiness")
+                            {
+                                tracing::debug!(
+                                    "Setting state store status to StoreState::Ready for store: {}, partition: {}",
+                                    store_name,
+                                    partition
+                                );
 
-                        *commit_state = StreamState::Uncommitted;
-                    }
-                    StreamState::Sleeping | StreamState::Uncommitted => {
-                        if changelog_start.is_none() {
-                            ready!(Self::set_changelog_start(
+                                store_state.store(StoreState::Ready);
+
+                                tracing::debug!(
+                                    "Closing changelog stream for for store: {}, partition: {}",
+                                    store_name,
+                                    partition
+                                );
+
+                                engine_context
+                                    .close_changelog_stream(store_name, *partition)
+                                    .expect("Failed to close changelog stream.");
+
+                                let _ = changelog_stream_proj.take();
+                            }
+
+                            *commit_state = StreamState::Uncommitted;
+                        }
+                        StreamState::Sleeping | StreamState::Uncommitted => {
+                            if changelog_start.is_none() {
+                                ready!(Self::set_changelog_start(
+                                    &mut state_sink,
+                                    engine_context,
+                                    store_name,
+                                    partition,
+                                    changelog_start,
+                                    lso_sleep,
+                                    cx,
+                                ))
+                                .expect("Failed to set changelog start.");
+                            };
+
+                            if Self::poll_changelog(
+                                stream,
                                 &mut state_sink,
                                 engine_context,
                                 store_name,
                                 partition,
                                 changelog_start,
                                 lso_sleep,
+                                commit_state,
+                                changelog_next_offset,
                                 cx,
-                            ))
-                            .expect("Failed to set changelog start.");
-                        };
+                            )
+                            .is_pending()
+                            {
+                                
+                                /**commit_state = StreamState::Committing;
 
-                        if Self::poll_changelog(
-                            stream,
-                            &mut state_sink,
-                            engine_context,
-                            store_name,
-                            partition,
-                            changelog_start,
-                            lso_sleep,
-                            commit_state,
-                            changelog_next_offset,
-                            cx,
-                        )
-                        .is_pending()
-                        {
-                            /**commit_state = StreamState::Committing;
+                                let mut sleep =
+                                    Box::pin(tokio::time::sleep(Duration::from_millis(250)));
 
-                            let mut sleep =
-                                Box::pin(tokio::time::sleep(Duration::from_millis(250)));
+                                sleep.poll_unpin(cx);
 
-                            sleep.poll_unpin(cx);
+                                let _ = lso_sleep.replace(sleep);*/
 
-                            let _ = lso_sleep.replace(sleep);*/
+                                debug!("Waiting for changelog messages...");
 
-                            debug!("Waiting for changelog messages...");
-
-                            return Poll::Pending;
+                                return Poll::Pending;
+                            }
                         }
                     }
                 }
             }
+            _ => {
+                tracing::debug!("Taking changelog stream.");
+    
+                let _ = changelog_stream.take();
+            },
         }
 
         tracing::debug!("Resuming state fork processing...");
@@ -598,6 +614,8 @@ where
                             return Poll::Pending;
                         }
                         Poll::Ready(MessageStreamPoll::Message(message)) => {
+                            tracing::info!("Got message in state fork offset: {}", message.offset());
+
                             *commit_state = StreamState::Uncommitted;
                             store_state.store(StoreState::Ready);
 

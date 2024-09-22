@@ -15,7 +15,7 @@
  *
  */
 
-pub type Queue = (QueueMetadata, StreamPeridotPartitionQueue);
+pub type Queue = (QueueMetadata, PeridotPartitionQueue);
 
 pub type QueueSender = UnboundedSender<Queue>;
 pub type QueueReceiver = UnboundedReceiver<Queue>;
@@ -32,7 +32,7 @@ use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, DashSet};
 use futures::{ready, Future, FutureExt, SinkExt};
 use pin_project_lite::pin_project;
-use rdkafka::{producer::PARTITION_UA, Message, TopicPartitionList};
+use rdkafka::{consumer::base_consumer::PartitionQueue, producer::PARTITION_UA, Message, TopicPartitionList};
 use serde::Deserialize;
 use tokio::{
     sync::{
@@ -84,7 +84,7 @@ pin_project! {
         engine_context: Arc<EngineContext>,
         state_store_manager: Arc<StateStoreManager<B>>,
         producer_factory: Arc<ProducerFactory>,
-        partition_queues: HashMap<(String, i32), StreamPeridotPartitionQueue>,
+        partition_queues: HashMap<(String, i32), PeridotPartitionQueue>,
         //changelog_queues: HashMap<(String, i32), StreamPeridotPartitionQueue>,
         downstreams: Arc<DashMap<String, QueueSender>>,
         engine_state: Arc<AtomicCell<EngineState>>,

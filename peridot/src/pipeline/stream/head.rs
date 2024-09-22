@@ -86,9 +86,16 @@ where
             metadata.partition()
         );
 
+        let head = QueueHead::<KS, VS>::new(
+            queue, 
+            metadata.engine_context_arc(),
+            metadata.source_topic(),
+            metadata.partition()
+        );
+
         Poll::Ready(Option::Some(PipelineStage::new(
             metadata,
-            QueueHead::<KS, VS>::new(queue),
+            head,
         )))
     }
 }

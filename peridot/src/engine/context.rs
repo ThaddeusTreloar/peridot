@@ -285,6 +285,39 @@ impl EngineContext {
             .get_lowest_stable_offset(&changelog_topic, partition)
     }
 
+    pub(crate) fn get_changelog_eof(&self, state_store: &str, partition: i32) -> Option<i64> {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager
+            .get_eof(&changelog_topic, partition)
+    }
+
+    pub(crate) fn get_changelog_fetch_count(&self, state_store: &str, partition: i32) -> Option<i64> {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager
+            .get_fetch_count(&changelog_topic, partition)
+    }
+    pub(crate) fn get_changelog_app_offset(&self, state_store: &str, partition: i32) -> Option<i64> {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager
+            .get_app_offset(&changelog_topic, partition)
+    }
+    pub(crate) fn get_changelog_query_offset(&self, state_store: &str, partition: i32) -> Option<i64> {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager
+            .get_query_offset(&changelog_topic, partition)
+    }
+
+    pub(crate) fn get_changelog_rx(&self, state_store: &str, partition: i32) -> Option<u64> {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
+
+        self.changelog_manager
+            .get_rx(&changelog_topic, partition)
+    }
+
     pub(crate) fn get_changelog_next_offset(
         &self,
         state_store: &str,
