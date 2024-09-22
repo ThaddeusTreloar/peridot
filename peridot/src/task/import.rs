@@ -20,7 +20,7 @@ use crate::{
     engine::util::DeliveryGuaranteeType,
     message::types::{KeyValue, Message, PatchMessage},
     pipeline::stream::PipelineStream,
-    state::backend::StateBackend,
+    state::store::StateStore,
 };
 
 use super::Task;
@@ -28,7 +28,7 @@ use super::Task;
 #[must_use = "pipelines do nothing unless patched to a topic"]
 pub struct ImportTask<'a, S, B, G>
 where
-    B: StateBackend,
+    B: StateStore,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     app: &'a PeridotApp<B, G>,
@@ -38,7 +38,7 @@ where
 impl<'a, S, B, G> ImportTask<'a, S, B, G>
 where
     S: futures::Stream,
-    B: StateBackend,
+    B: StateStore,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, imports: Vec<S>) -> Self {
@@ -67,7 +67,7 @@ where
 #[must_use = "pipelines do nothing unless patched to a topic"]
 pub struct IntegratedImportTask<'a, S, B, G>
 where
-    B: StateBackend,
+    B: StateStore,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     app: &'a PeridotApp<B, G>,
@@ -76,7 +76,7 @@ where
 
 impl<'a, S, B, G> IntegratedImportTask<'a, S, B, G>
 where
-    B: StateBackend,
+    B: StateStore,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, imports: Vec<S>) -> Self {

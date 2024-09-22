@@ -21,6 +21,8 @@ use serde::{de::DeserializeOwned, Serialize};
 use state_view::StateView;
 use view_distributor::ViewDistributor;
 
+use super::store::StateStoreError;
+
 pub mod state_view;
 pub mod view_distributor;
 
@@ -35,23 +37,39 @@ pub trait GetViewDistributor {
     ) -> ViewDistributor<Self::KeyType, Self::ValueType, Self::Backend>;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ViewError {
+    #[error(transparent)]
+    Fatal(Box<dyn std::error::Error + Send>),
+    #[error(transparent)]
+    Recoverable(Box<dyn std::error::Error + Send>),
+}
+
+impl From<StateStoreError> for ViewError {
+    fn from(value: StateStoreError) -> Self {
+        match value {
+            StateStoreError::Fatal(e) => ViewError::Fatal(e),
+            StateStoreError::Recoverable(e) => ViewError::Recoverable(e),
+        }
+    }
+}
+
 pub trait GetView {
-    type Error: std::error::Error;
     type KeyType;
     type ValueType;
     type Backend;
 
-    fn get_view(&self, partition: i32) -> StateView<Self::KeyType, Self::ValueType, Self::Backend>;
+    fn get_view(
+        &self,
+        partition: i32,
+    ) -> Result<StateView<Self::KeyType, Self::ValueType, Self::Backend>, ViewError>;
 }
 
 #[trait_variant::make(Send)]
 pub trait ReadableStateView {
-    type Error: std::error::Error;
     type KeyType: Serialize + Send;
     type ValueType: DeserializeOwned + Send;
 
-    async fn get(
-        self: Arc<Self>,
-        key: Self::KeyType,
-    ) -> Result<Option<Self::ValueType>, Self::Error>;
+    async fn get(self: Arc<Self>, key: Self::KeyType)
+        -> Result<Option<Self::ValueType>, ViewError>;
 }

@@ -66,9 +66,15 @@ impl AdminManager {
             .create_topics(&new_topic, &AdminOptions::new())
             .await
         {
-            Ok(v) => match v.first().expect("No topics successful") {
-                Ok(_) => Ok(()),
-                Err(e) => panic!("Failed to create topic"),
+            Ok(v) => {
+                v.into_iter().for_each(|result| {
+                    if let Err((s, e)) = result {
+                        tracing::error!("Error while creating topic: {}, error: {}", s, e);
+                        panic!("Failed to create topic")
+                    }
+                });
+
+                Ok(())
             },
             Err(e) => Err(AdminManagerError::CreateTopicError {
                 topic: topic.to_owned(),

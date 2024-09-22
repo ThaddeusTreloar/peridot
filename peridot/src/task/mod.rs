@@ -40,10 +40,7 @@ use crate::{
         },
         stream::{PipelineStream, PipelineStreamExt},
     },
-    state::backend::{
-        facade::{facade_distributor::FacadeDistributor, GetFacadeDistributor},
-        StateBackend,
-    },
+    state::{facade::{facade_distributor::FacadeDistributor, GetFacade, GetFacadeDistributor}, store::StateStore},
 };
 
 use self::{table::TableTask, transform::TransformTask};
@@ -77,7 +74,7 @@ where
 
 pub trait Task<'a> {
     type G: DeliveryGuaranteeType + Send + Sync + 'static;
-    type B: StateBackend + Send + Sync + 'static;
+    type B: StateStore + Send + Sync + 'static;
     type R: PipelineStream + Send + 'static;
 
     fn and_then<F1, R1>(self, next: F1) -> TransformTask<'a, F1, Self::R, R1, Self::B, Self::G>
@@ -100,18 +97,17 @@ pub trait Task<'a> {
         'a,
         impl FnOnce(
             Self::R,
-        )
-            -> JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C>,
+        ) -> JoinPipeline<Self::R, T, C>,
         Self::R,
-        JoinPipeline<Self::R, FacadeDistributor<T::KeyType, T::ValueType, T::Backend>, C>,
+        JoinPipeline<Self::R, T, C>,
         Self::B,
         Self::G,
     >
     where
-        T: GetFacadeDistributor<KeyType = <Self::R as PipelineStream>::KeyType> + Send + 'a,
+        T: GetFacade<KeyType = <Self::R as PipelineStream>::KeyType> + Send + 'static + Sync,
         T::KeyType: Send + Sync + 'static,
         T::ValueType: DeserializeOwned + Send + Sync + 'static,
-        T::Backend: StateBackend + Sync + 'static,
+        T::Backend: StateStore + Sync + 'static,
         C: Combiner<<Self::R as PipelineStream>::ValueType, T::ValueType> + 'static,
         C::Output: Send + Sync + 'static,
         <Self::R as PipelineStream>::KeyType: PartialEq<T::KeyType> + Serialize + Clone + Send,
@@ -120,9 +116,7 @@ pub trait Task<'a> {
     {
         let parts = self.into_parts();
 
-        let view = table.get_facade_distributor();
-
-        let transform = move |input: Self::R| JoinPipeline::new(input, view, combiner);
+        let transform = move |input: Self::R| JoinPipeline::new(input, table, combiner);
 
         TransformTask::<'a>::new(parts.app(), parts.source_topic(), transform, parts.output())
     }

@@ -26,7 +26,7 @@ use crate::{
         join::{Combiner, JoinMessage},
         stream::PipelineStage,
     },
-    state::backend::{facade::GetFacade, facade::GetFacadeDistributor, StateBackend},
+    state::{facade::GetFacade, store::StateStore},
 };
 
 use super::stream::PipelineStream;
@@ -66,7 +66,7 @@ where
     T: GetFacade<KeyType = S::KeyType> + Send,
     T::KeyType: Send + Sync,
     T::ValueType: DeserializeOwned + Send + Sync + 'static,
-    T::Backend: StateBackend + Send + Sync + 'static,
+    T::Backend: StateStore + Send + Sync + 'static,
     S::KeyType: PartialEq<T::KeyType>,
     C: Combiner<S::ValueType, T::ValueType> + Send + Sync,
     C::Output: Send + Sync,
@@ -87,7 +87,7 @@ where
             Poll::Ready(Some(queue)) => queue,
         };
 
-        let facade = this.table.get_facade(queue_metadata.partition());
+        let facade = this.table.get_facade(queue_metadata.partition()).expect("Encountered error while getting state facade.");
 
         let join = JoinMessage::new(upstream, facade, this.combiner.clone());
 

@@ -105,13 +105,13 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let table = app
         .table::<String, Json<ConsentGrant>>("consent.Client", "consent_table")
-        .await;
+        .await
+        .expect("Failed to create table.")
+        .finish();
 
     app.task::<String, Json<ChangeOfAddress>>("changeOfAddress")
-        .join(&table, CombinedValues)
+        .join(table, CombinedValues)
         .into_topic::<String, Json<CombinedValues>>("genericTopic");
-
-    table.finish();
 
     Ok(app.run().await?)
 }

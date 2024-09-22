@@ -33,7 +33,7 @@ use crate::{
         state_fork::StateSinkFork,
         stream::{MessageStream, PipelineStage},
     },
-    state::backend::StateBackend,
+    state::store::StateStore,
 };
 
 use super::{
@@ -105,7 +105,7 @@ where
     S::MStream: MessageStream,
     S::KeyType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
     S::ValueType: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     type KeyType = <S::MStream as MessageStream>::KeyType;
     type ValueType = <S::MStream as MessageStream>::ValueType;

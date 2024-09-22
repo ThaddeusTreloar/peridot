@@ -20,14 +20,16 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 use rdkafka::{
     consumer::{BaseConsumer, Consumer},
     message::OwnedMessage,
+    message::Message,
     metadata::Metadata,
     Offset,
 };
+use rdkafka_sys::RDKafkaRespErr;
 use tracing::info;
 
 use crate::{
     app::{config::PeridotConfig, extensions::PeridotConsumerContext},
-    engine::metadata_manager::topic_metadata,
+    engine::metadata_manager::topic_metadata, error::{engine::consumer_manager::ClientManagerError, ErrorType, Fatal},
 };
 
 use super::{
@@ -39,39 +41,6 @@ use super::{
 #[derive(Clone)]
 pub(crate) struct ConsumerManager {
     consumer: Arc<PeridotConsumer>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ClientManagerError {
-    #[error("ClientManagerError::CreateConsumerError: Failed to create consumer while initialising ClientManager -> {}", 0)]
-    CreateConsumerError(rdkafka::error::KafkaError),
-    #[error("ClientManagerError::FetchTopicMetadataError: Failed to fetch topic metadata for '{}' caused by: {}", topic, err)]
-    FetchTopicMetadataError {
-        topic: String,
-        err: rdkafka::error::KafkaError,
-    },
-    #[error(
-        "ClientManagerError::GetPartitionQueueError: Failed to get partition queue for {}:{}",
-        topic,
-        partition
-    )]
-    GetPartitionQueueError { topic: String, partition: i32 },
-    #[error("ClientManagerError::ConsumerSubscribeError: Failed to subscribe consumer to topic '{}' caused by: {}", topic, err)]
-    ConsumerSubscribeError {
-        topic: String,
-        err: rdkafka::error::KafkaError,
-    },
-    #[error(
-        "ClientManagerError::ConsumerPollError: Failed to poll consumer caused by: {}",
-        err
-    )]
-    ConsumerPollError { err: rdkafka::error::KafkaError },
-    #[error("ClientManagerError::ConflictingTopicRegistration: {}", topic)]
-    ConflictingTopicRegistration { topic: String },
-    #[error("ClientManagerError::TopicNotFoundOnCluster: {}", topic)]
-    TopicNotFoundOnCluster { topic: String },
-    #[error("ClientManagerError::PartitionMetadataNotFoundForTopic: {}", topic)]
-    PartitionMetadataNotFoundForTopic { topic: String },
 }
 
 impl ConsumerManager {
@@ -105,10 +74,22 @@ impl ConsumerManager {
         let raw_metadata = self.get_topic_metadata(topic)?;
 
         let topic_metadata = match raw_metadata.topics().first() {
-            None => Err(ClientManagerError::TopicNotFoundOnCluster {
-                topic: topic.to_owned(),
-            })?,
+            None => unreachable!(""),
             Some(meta) => {
+                if let Some(error) = meta.error() {
+                    tracing::error!("Encountered error while fetching metadata for topic: {}, error: {:?}", meta.name(), error);
+
+                    match error {
+                        RDKafkaRespErr::RD_KAFKA_RESP_ERR_UNKNOWN_TOPIC_OR_PART => {
+                            return Err(ClientManagerError::TopicNotFoundOnCluster { topic: topic.to_owned() });
+                            todo!("Some config to create topic if not found");
+                        },
+                        e => {
+                            return Err(ClientManagerError::UnknownError { error: e as u8, info: format!("fetching metadata for topic: {}", topic) })
+                        }
+                    }
+                }
+
                 let partition_count = meta.partitions().iter().count();
 
                 TopicMetadata::new(partition_count as i32)
@@ -178,12 +159,28 @@ impl ConsumerManager {
         }
     }
 
-    pub(crate) fn poll_consumer(&self) -> Result<Option<OwnedMessage>, ClientManagerError> {
-        match self.consumer.poll(Duration::from_millis(100)) {
-            None => Ok(None),
-            Some(result) => result
-                .map(|m| Some(m.detach()))
-                .map_err(|err| ClientManagerError::ConsumerPollError { err }),
+    pub(crate) fn poll_consumer(&self) {
+        if let Some(msg) = self.consumer.poll(Duration::from_millis(1000)) {
+            match msg {
+                Err(e) => panic!("Failed to poll consumer: {}", e),
+                Ok(msg) => {
+                    let message = msg.detach();
+
+                    tracing::error!(
+                        "Unexpected changelog consumer message: topic: {}, partition: {}, offset: {}",
+                        message.topic(),
+                        message.partition(),
+                        message.offset(),
+                    );
+
+                    panic!(
+                        "Unexpected changelog consumer message: topic: {}, partition: {}, offset: {}",
+                        message.topic(),
+                        message.partition(),
+                        message.offset(),
+                    );
+                }
+            }
         }
     }
 
@@ -196,22 +193,22 @@ impl ConsumerManager {
             .into_iter()
             .find(|elem| elem.partition() == partition)
             .map(|elem| elem.offset())
-            .expect("Unable to find topic offset.")
         {
-            Offset::Offset(offset) => offset,
-            Offset::Beginning => {
+            None => -1,
+            Some(Offset::Offset(offset)) => offset,
+            Some(Offset::Beginning) => {
                 panic!("Offset::Beginning")
             }
-            Offset::End => {
+            Some(Offset::End) => {
                 panic!("Offset::End")
             }
-            Offset::OffsetTail(o) => {
+            Some(Offset::OffsetTail(o)) => {
                 panic!("Offset::OffsetTail({})", o)
             }
-            Offset::Stored => {
+            Some(Offset::Stored) => {
                 panic!("Offset::Stored")
             }
-            Offset::Invalid => {
+            Some(Offset::Invalid) => {
                 tracing::warn!("Current offset invalid...");
                 -1
             }

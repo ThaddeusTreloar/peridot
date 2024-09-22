@@ -45,7 +45,7 @@ use crate::{
         types::{Message, TryFromOwnedMessage},
         BATCH_SIZE,
     },
-    state::{self, backend::StateBackend},
+    state::{self, store::StateStore},
 };
 
 use super::{
@@ -80,7 +80,7 @@ pin_project! {
     pub struct StateSinkFork<B, M>
     where
         M: MessageStream,
-        B: StateBackend
+        B: StateStore
     {
         #[pin]
         message_stream: M,
@@ -104,7 +104,7 @@ pin_project! {
 impl<B, M> StateSinkFork<B, M>
 where
     M: MessageStream,
-    B: StateBackend,
+    B: StateStore,
 {
     pub fn new(
         message_stream: M,
@@ -163,7 +163,7 @@ where
     M: MessageStream,
     M::KeyType: Serialize + Send + Sync + Clone + DeserializeOwned + 'static,
     M::ValueType: Serialize + DeserializeOwned + Send + Sync + Clone + DeserializeOwned + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     fn set_changelog_start(
         state_sink: &mut Pin<&mut StateSink<B, M::KeyType, M::ValueType>>,
@@ -414,7 +414,7 @@ where
     M: MessageStream,
     M::KeyType: Serialize + Send + Sync + Clone + DeserializeOwned + 'static,
     M::ValueType: Serialize + DeserializeOwned + Send + Sync + Clone + DeserializeOwned + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     type KeyType = M::KeyType;
     type ValueType = M::ValueType;

@@ -22,10 +22,10 @@ use crate::{
         context::EngineContext, metadata_manager::table_metadata,
         state_store_manager::StateStoreManager, util::DeliveryGuaranteeType, AppEngine,
     },
-    state::backend::{StateBackend, VersionedStateBackend},
+    state::store::{StateStore, VersionedStateStore},
 };
 
-use super::{GetFacade, StateFacade};
+use super::{FacadeError, GetFacade, StateStoreFacade};
 
 pub struct FacadeDistributor<K, V, B> {
     engine_context: Arc<EngineContext>,
@@ -37,7 +37,7 @@ pub struct FacadeDistributor<K, V, B> {
 
 impl<K, V, B> FacadeDistributor<K, V, B>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     pub fn new<G>(engine: &AppEngine<B, G>, store_name: String) -> Self
     where
@@ -67,9 +67,8 @@ where
 
 impl<K, V, B> GetFacade for FacadeDistributor<K, V, B>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
-    type Error = B::Error;
     type KeyType = K;
     type ValueType = V;
     type Backend = B;
@@ -77,14 +76,14 @@ where
     fn get_facade(
         &self,
         partition: i32,
-    ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend> {
+    ) -> Result<StateStoreFacade<Self::KeyType, Self::ValueType, Self::Backend>, FacadeError> {
         let backend = self.fetch_backend(partition);
 
-        StateFacade::new(
+        Ok(StateStoreFacade::new(
             backend,
             self.state_store_manager.clone(),
             self.store_name().to_owned(),
             partition,
-        )
+        ))
     }
 }

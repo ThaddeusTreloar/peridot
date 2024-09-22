@@ -29,63 +29,12 @@ use dashmap::{
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::{debug, info};
 
-use crate::message::types::PeridotTimestamp;
+use crate::{message::types::PeridotTimestamp, state::checkpoint::Checkpoint};
 
-use super::{Checkpoint, StateBackend};
-
-struct TimestampedWaker {
-    time: i64,
-    waker: Waker,
-}
-
-impl TimestampedWaker {
-    fn new(time: i64, waker: Waker) -> Self {
-        Self { time, waker }
-    }
-
-    fn wake(self) {
-        self.waker.wake()
-    }
-
-    fn wake_by_ref(&self) {
-        self.waker.wake_by_ref()
-    }
-}
-
-impl PartialEq<Self> for TimestampedWaker {
-    fn eq(&self, other: &Self) -> bool {
-        self.time == other.time
-    }
-}
-
-impl Eq for TimestampedWaker {}
-
-impl PartialOrd<Self> for TimestampedWaker {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TimestampedWaker {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.time.cmp(&other.time)
-    }
-}
-
-impl PartialEq<i64> for TimestampedWaker {
-    fn eq(&self, other: &i64) -> bool {
-        &self.time == other
-    }
-}
-
-impl PartialOrd<i64> for TimestampedWaker {
-    fn partial_cmp(&self, other: &i64) -> Option<std::cmp::Ordering> {
-        Some(self.time.cmp(other))
-    }
-}
+use super::{StateStore, StateStoreError};
 
 #[derive(Default)]
-pub struct InMemoryStateBackend {
+pub struct InMemoryStateStore {
     stores: DashMap<String, DashMap<Vec<u8>, Vec<u8>>>,
     checkpoint: DashMap<String, Checkpoint>,
     // See notes here about compare and swap operations:
@@ -94,7 +43,7 @@ pub struct InMemoryStateBackend {
     store_times: DashMap<String, AtomicI64>,
 }
 
-impl InMemoryStateBackend {
+impl InMemoryStateStore {
     fn derive_state_key(store_name: &str, partition: i32) -> String {
         format!("{}-{}", store_name, partition)
     }
@@ -175,13 +124,11 @@ impl InMemoryStateBackend {
 #[derive(Debug, thiserror::Error)]
 pub enum InMemoryStateBackendError {}
 
-impl StateBackend for InMemoryStateBackend {
-    type Error = InMemoryStateBackendError;
-
+impl StateStore for InMemoryStateStore {
     fn with_source_topic_name_and_partition(
         _topic_name: &str,
         _partition: i32,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, StateStoreError> {
         Ok(Default::default())
     }
 
@@ -190,7 +137,7 @@ impl StateBackend for InMemoryStateBackend {
         _topic_name: &str,
         store_name: &str,
         partition: i32,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), StateStoreError> {
         let state_key = Self::derive_state_key(store_name, partition);
 
         self.create_state_store(&state_key);
@@ -218,7 +165,7 @@ impl StateBackend for InMemoryStateBackend {
         store_name: &str,
         partition: i32,
         offset: i64,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), StateStoreError> {
         let checkpoint_name = Self::derive_state_key(store_name, partition);
 
         match self.checkpoint.get_mut(&checkpoint_name) {
@@ -246,7 +193,7 @@ impl StateBackend for InMemoryStateBackend {
         key: &K,
         store_name: &str,
         partition: i32,
-    ) -> Result<Option<V>, Self::Error>
+    ) -> Result<Option<V>, StateStoreError>
     where
         K: Serialize + Send + Sync,
         V: DeserializeOwned,
@@ -277,7 +224,7 @@ impl StateBackend for InMemoryStateBackend {
         partition: i32,
         offset: i64,
         timestamp: i64,
-    ) -> Result<(), Self::Error>
+    ) -> Result<(), StateStoreError>
     where
         K: Serialize + Send + Sync,
         V: Serialize + Send + Sync,
@@ -303,7 +250,7 @@ impl StateBackend for InMemoryStateBackend {
         partition: i32,
         offset: i64,
         timestamp: i64,
-    ) -> Result<(), Self::Error>
+    ) -> Result<(), StateStoreError>
     where
         K: Serialize + Send + Sync,
         V: Serialize + Send + Sync,
@@ -328,7 +275,12 @@ impl StateBackend for InMemoryStateBackend {
         Ok(())
     }
 
-    async fn delete<K>(&self, key: &K, store_name: &str, partition: i32) -> Result<(), Self::Error>
+    async fn delete<K>(
+        &self,
+        key: &K,
+        store_name: &str,
+        partition: i32,
+    ) -> Result<(), StateStoreError>
     where
         K: Serialize + Send + Sync,
     {
@@ -343,7 +295,7 @@ impl StateBackend for InMemoryStateBackend {
         Ok(())
     }
 
-    async fn clear<K>(&self, store_name: &str, partition: i32) -> Result<(), Self::Error>
+    async fn clear<K>(&self, store_name: &str, partition: i32) -> Result<(), StateStoreError>
     where
         K: Serialize + Send,
     {

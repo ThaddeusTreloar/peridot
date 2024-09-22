@@ -21,12 +21,12 @@ use rdkafka::consumer::{Consumer, ConsumerGroupMetadata};
 use tokio::time::sleep;
 use tracing::info;
 
-use crate::{app::config::PeridotConfig, state};
+use crate::{app::config::PeridotConfig, error::engine::consumer_manager::ClientManagerError, state};
 
 use super::{
     admin_manager::{AdminManager, AdminManagerError},
     changelog_manager::{ChangelogManager, ChangelogManagerError, Watermarks},
-    consumer_manager::{self, ClientManagerError, ConsumerManager},
+    consumer_manager::{self,  ConsumerManager},
     metadata_manager::{table_metadata, MetadataManager},
     wrapper::{partitioner::PeridotPartitioner, timestamp::TimestampExtractor},
     AppEngine, TableMetadata,

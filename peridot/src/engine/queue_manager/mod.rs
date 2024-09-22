@@ -54,7 +54,7 @@ use crate::{
         wrapper::serde::{PeridotDeserializer, PeridotSerializer},
     },
     message::StreamState,
-    state::backend::StateBackend,
+    state::store::StateStore,
 };
 
 use self::{
@@ -135,8 +135,7 @@ impl<B> QueueManager<B> {
 
 impl<B> Future for QueueManager<B>
 where
-    B: StateBackend,
-    B::Error: 'static,
+    B: StateStore,
 {
     type Output = Result<(), PeridotEngineRuntimeError>;
 
@@ -153,29 +152,9 @@ where
 
         tracing::trace!("Polling distributor...");
 
-        if let Some(message) = this.engine_context.consumer_manager.poll_consumer()? {
-            let key = <String as PeridotDeserializer>::deserialize(message.key().unwrap()).unwrap();
-            let value =
-                <String as PeridotDeserializer>::deserialize(message.payload().unwrap()).unwrap();
+        this.engine_context.changelog_manager.poll_consumer();
 
-            error!(
-                "Unexpected consumer message: topic: {}, partition: {}, offset: {}, key: {}, value: {}",
-                message.topic(),
-                message.partition(),
-                message.offset(),
-                key,
-                value,
-            );
-
-            panic!(
-                "Unexpected consumer message: topic: {}, partition: {}, offset: {}, key: {}, value: {}",
-                message.topic(),
-                message.partition(),
-                message.offset(),
-                key,
-                value,
-            );
-        }
+        this.engine_context.consumer_manager.poll_consumer();
 
         tracing::trace!("Checking for rebalances");
 
@@ -234,7 +213,7 @@ where
             );
 
             this.state_store_manager
-                .create_state_store_if_not_exists(&topic, partition)
+                .create_state_store_partition_if_not_exists(&topic, partition)
                 .expect("Failed to create state store.");
 
             let changelog_queues = ChangelogQueues::new(

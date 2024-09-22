@@ -17,7 +17,7 @@
 
 use crate::{
     app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream,
-    state::backend::StateBackend,
+    state::store::StateStore,
 };
 
 use super::{PipelineParts, Task};
@@ -26,7 +26,7 @@ use super::{PipelineParts, Task};
 pub struct TransparentTask<'a, R, B, G>
 where
     R: PipelineStream,
-    B: StateBackend,
+    B: StateStore,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     app: &'a PeridotApp<B, G>,
@@ -37,7 +37,7 @@ where
 impl<'a, R, B, G> TransparentTask<'a, R, B, G>
 where
     R: PipelineStream + 'static,
-    B: StateBackend,
+    B: StateStore,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     pub fn new(app: &'a PeridotApp<B, G>, source_topic: &str, handler: R) -> Self {
@@ -53,7 +53,7 @@ impl<'a, R, B, G> Task<'a> for TransparentTask<'a, R, B, G>
 where
     R: PipelineStream + Send + 'static,
     R::MStream: Send,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
     type G = G;

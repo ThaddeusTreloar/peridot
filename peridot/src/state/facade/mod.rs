@@ -30,8 +30,7 @@ use crate::message::{
 
 use super::{
     checkpoint::Checkpoint,
-    facade::{FacadeDistributor, StateFacade},
-    VersionedRecord,
+    facade::{FacadeDistributor, StateStoreFacade}, store::StateStoreError,
 };
 
 pub(crate) mod facade_distributor;
@@ -40,19 +39,34 @@ pub(crate) mod state_facade;
 pub(crate) use facade_distributor::*;
 pub use state_facade::*;
 
+#[derive(Debug, thiserror::Error)]
+pub enum FacadeError {
+    #[error(transparent)]
+    Fatal(Box<dyn std::error::Error + Send>),
+    #[error(transparent)]
+    Recoverable(Box<dyn std::error::Error + Send>),
+}
+
+impl From<StateStoreError> for FacadeError {
+    fn from(value: StateStoreError) -> Self {
+        match value {
+            StateStoreError::Fatal(e) => FacadeError::Fatal(e),
+            StateStoreError::Recoverable(e) => FacadeError::Recoverable(e),
+        }
+    }
+}
+
 pub trait GetFacadeDistributor {
-    type Error: std::error::Error;
     type KeyType;
     type ValueType;
     type Backend;
 
     fn get_facade_distributor(
         &self,
-    ) -> FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend>;
+    ) -> Result<FacadeDistributor<Self::KeyType, Self::ValueType, Self::Backend>, FacadeError>;
 }
 
 pub trait GetFacade {
-    type Error: std::error::Error;
     type KeyType;
     type ValueType;
     type Backend;
@@ -60,23 +74,22 @@ pub trait GetFacade {
     fn get_facade(
         &self,
         partition: i32,
-    ) -> StateFacade<Self::KeyType, Self::ValueType, Self::Backend>;
+    ) -> Result<StateStoreFacade<Self::KeyType, Self::ValueType, Self::Backend>, FacadeError>;
 }
 
 #[trait_variant::make(Send)]
 pub trait ReadableStateFacade {
-    type Error: std::error::Error;
     type KeyType: Serialize + Send;
     type ValueType: DeserializeOwned + Send;
 
     async fn get(
         self: Arc<Self>,
         key: Self::KeyType,
-    ) -> Result<Option<Self::ValueType>, Self::Error>;
+    ) -> Result<Option<Self::ValueType>, FacadeError>;
 
     fn poll_time(&self, time: i64, cx: &mut Context<'_>) -> Poll<i64>;
 
-    fn get_checkpoint(&self) -> Result<Option<Checkpoint>, Self::Error>;
+    fn get_checkpoint(&self) -> Result<Option<Checkpoint>, FacadeError>;
 
     fn get_stream_state(&self) -> Option<Arc<StoreStateCell>>;
 }
@@ -86,23 +99,22 @@ pub trait WriteableStateFacade {
     // TODO: Considering how timestamps will be passed to the facade
     // Do we pass a whole message for the facade to extract?
     // or do we add a timestamp field.
-    type Error: std::error::Error;
     type KeyType: Serialize + Send;
     type ValueType: Serialize + Send;
 
     async fn put(
         self: Arc<Self>,
         message: Message<Self::KeyType, Self::ValueType>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), FacadeError>;
 
     async fn put_range(
         self: Arc<Self>,
         range: Vec<Message<Self::KeyType, Self::ValueType>>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), FacadeError>;
 
-    async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), Self::Error>;
+    async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), FacadeError>;
 
-    fn create_checkpoint(self: Arc<Self>, consumer_position: i64) -> Result<(), Self::Error>;
+    fn create_checkpoint(self: Arc<Self>, consumer_position: i64) -> Result<(), FacadeError>;
 
     fn wake(&self);
     fn wake_all(&self);

@@ -23,7 +23,7 @@ use tracing::info;
 
 use crate::{
     message::{state_fork::StoreStateCell, StreamState},
-    state::backend::StateBackend,
+    state::store::StateStore,
 };
 
 use self::timestamped_waker::TimestampedWaker;
@@ -73,8 +73,7 @@ impl<B> Default for StateStoreManager<B> {
 
 impl<B> StateStoreManager<B>
 where
-    B: StateBackend,
-    B::Error: 'static,
+    B: StateStore,
 {
     pub(super) fn new() -> Self {
         Default::default()
@@ -150,7 +149,7 @@ where
         Ok(new_state)
     }
 
-    pub(crate) fn create_state_store_if_not_exists(
+    pub(crate) fn create_state_store_partition_if_not_exists(
         &self,
         source_topic: &str,
         partition: i32,

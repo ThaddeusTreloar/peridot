@@ -30,10 +30,7 @@ use tracing::{info, Level};
 
 use crate::{
     message::types::PatchMessage,
-    state::backend::{
-        facade::{state_facade::StateFacade, ReadableStateFacade},
-        StateBackend,
-    },
+    state::{facade::{state_facade::StateStoreFacade, FacadeError, ReadableStateFacade}, store::StateStore},
 };
 
 use super::{
@@ -47,17 +44,17 @@ pin_project! {
     pub struct JoinMessage<M, C, B, R>
     where
         M: MessageStream,
-        B: StateBackend,
+        B: StateStore,
         C: Combiner<M::ValueType, R>,
     {
         #[pin]
         stream: M,
-        state: Arc<StateFacade<M::KeyType, R, B>>,
+        state: Arc<StateStoreFacade<M::KeyType, R, B>>,
         combiner: Arc<C>,
         cached_state_time: i64,
         store_state: Arc<StoreStateCell>,
         waiting_message: Option<Message<M::KeyType, M::ValueType>>,
-        state_future: Option<Pin<Box<JoinMessageFuture<R, B::Error, M::KeyType, M::ValueType>>>>
+        state_future: Option<Pin<Box<JoinMessageFuture<R, FacadeError, M::KeyType, M::ValueType>>>>
     }
 }
 
@@ -66,10 +63,14 @@ where
     M: MessageStream,
     M::KeyType: Clone + Serialize + Send + Sync + 'static,
     R: DeserializeOwned + Send + Sync + 'static,
-    B: StateBackend + Sync + 'static,
+    B: StateStore + Sync + 'static,
     C: Combiner<M::ValueType, R>,
 {
-    pub(crate) fn new(stream: M, state: StateFacade<M::KeyType, R, B>, combiner: Arc<C>) -> Self {
+    pub(crate) fn new(
+        stream: M,
+        state: StateStoreFacade<M::KeyType, R, B>,
+        combiner: Arc<C>,
+    ) -> Self {
         let store_state = state.get_stream_state().unwrap();
 
         Self {
@@ -89,7 +90,7 @@ where
     M: MessageStream,
     M::KeyType: Clone + Serialize + Send + Sync + 'static,
     R: DeserializeOwned + Send + Sync + 'static,
-    B: StateBackend + Sync + 'static,
+    B: StateStore + Sync + 'static,
     C: Combiner<M::ValueType, R>,
 {
     type KeyType = M::KeyType;
@@ -198,11 +199,11 @@ where
     R: DeserializeOwned + Send + Sync + 'static,
 {
     fn new<B>(
-        state: Arc<StateFacade<K, R, B>>,
+        state: Arc<StateStoreFacade<K, R, B>>,
         message: Message<K, V>,
-    ) -> JoinMessageFuture<R, B::Error, K, V>
+    ) -> JoinMessageFuture<R, FacadeError, K, V>
     where
-        B: StateBackend + Send + Sync + 'static,
+        B: StateStore + Send + Sync + 'static,
     {
         let key = message.key().clone();
 

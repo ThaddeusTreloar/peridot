@@ -26,7 +26,7 @@ use crate::{
         AppEngine,
     },
     message::sink::state_sink::StateSink,
-    state::backend::{facade::state_facade::StateFacade, StateBackend},
+    state::{facade::state_facade::StateStoreFacade, store::StateStore},
 };
 
 use super::MessageSinkFactory;
@@ -59,7 +59,7 @@ impl<B, K, V> MessageSinkFactory<K, V> for StateSinkFactory<B, K, V>
 where
     K: Serialize + Clone + Send + Sync + 'static,
     V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     type SinkType = StateSink<B, K, V>;
 
@@ -71,7 +71,7 @@ where
             .get_state_store(&self.source_topic, partition)
             .expect("No state store for partition.");
 
-        let facade = StateFacade::new(
+        let facade = StateStoreFacade::new(
             state_store,
             self.state_store_manager.clone(),
             self.store_name.clone(),

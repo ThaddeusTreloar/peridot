@@ -23,7 +23,7 @@ use tracing::warn;
 use crate::help;
 
 use self::builder::{
-    PeridotConfigBuilder, PeridotConfigError, APP_FIELDS, GROUP_ID, GROUP_INSTANCE_ID,
+    PeridotConfigBuilder, PeridotConfigError, PERIDOT_FIELDS, GROUP_ID, GROUP_INSTANCE_ID,
 };
 
 pub mod builder;
@@ -78,7 +78,7 @@ impl PeridotConfig {
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        if APP_FIELDS.contains(&key) {
+        if PERIDOT_FIELDS.contains(&key) {
             self.app_config.get(key).map(|s| s.as_str())
         } else {
             self.client_config.get(key)

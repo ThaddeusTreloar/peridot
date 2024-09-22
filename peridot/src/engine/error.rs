@@ -17,11 +17,11 @@
 
 use rdkafka::error::KafkaError;
 
-use crate::state::error::StateStoreCreationError;
+use crate::{error::engine::consumer_manager::ClientManagerError, state::error::StateStoreCreationError};
 
 use super::{
     admin_manager::AdminManagerError, changelog_manager::ChangelogManagerError,
-    consumer_manager::ClientManagerError, metadata_manager::MetadataManagerError,
+    metadata_manager::MetadataManagerError,
 };
 
 #[derive(Debug, thiserror::Error)]

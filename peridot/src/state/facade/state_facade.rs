@@ -26,12 +26,12 @@ use tracing::info;
 use crate::{
     engine::state_store_manager::StateStoreManager,
     message::{state_fork::StoreStateCell, types::Message},
-    state::backend::{Checkpoint, StateBackend},
+    state::{checkpoint::Checkpoint, store::StateStore},
 };
 
-use super::{ReadableStateFacade, WriteableStateFacade};
+use super::{FacadeError, ReadableStateFacade, WriteableStateFacade};
 
-pub struct StateFacade<K, V, B> {
+pub struct StateStoreFacade<K, V, B> {
     backend_manager: Arc<StateStoreManager<B>>,
     backend: Arc<B>,
     store_name: String,
@@ -40,7 +40,7 @@ pub struct StateFacade<K, V, B> {
     _value_type: std::marker::PhantomData<V>,
 }
 
-impl<K, V, B> StateFacade<K, V, B> {
+impl<K, V, B> StateStoreFacade<K, V, B> {
     pub(crate) fn new(
         backend: Arc<B>,
         backend_manager: Arc<StateStoreManager<B>>,
@@ -70,23 +70,22 @@ impl<K, V, B> StateFacade<K, V, B> {
     }
 }
 
-impl<K, V, B> ReadableStateFacade for StateFacade<K, V, B>
+impl<K, V, B> ReadableStateFacade for StateStoreFacade<K, V, B>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
     K: Serialize + Send + Sync,
     V: DeserializeOwned + Send + Sync,
 {
-    type Error = B::Error;
     type KeyType = K;
     type ValueType = V;
 
     async fn get(
         self: Arc<Self>,
         key: Self::KeyType,
-    ) -> Result<Option<Self::ValueType>, Self::Error> {
-        self.backend
+    ) -> Result<Option<Self::ValueType>, FacadeError> {
+        Ok(self.backend
             .get(&key, self.store_name(), self.partition())
-            .await
+            .await?)
     }
 
     fn poll_time(&self, time: i64, cx: &mut Context<'_>) -> Poll<i64> {
@@ -106,7 +105,7 @@ where
         }
     }
 
-    fn get_checkpoint(&self) -> Result<Option<Checkpoint>, Self::Error> {
+    fn get_checkpoint(&self) -> Result<Option<Checkpoint>, FacadeError> {
         let checkpoint = self
             .backend
             .get_state_store_checkpoint(self.store_name(), self.partition());
@@ -120,22 +119,21 @@ where
     }
 }
 
-impl<K, V, B> WriteableStateFacade for StateFacade<K, V, B>
+impl<K, V, B> WriteableStateFacade for StateStoreFacade<K, V, B>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
     K: Serialize + Send + Sync,
     V: Serialize + Send + Sync,
     Self: Send,
 {
-    type Error = B::Error;
     type KeyType = K;
     type ValueType = V;
 
     async fn put(
         self: Arc<Self>,
         message: Message<Self::KeyType, Self::ValueType>,
-    ) -> Result<(), Self::Error> {
-        self.backend
+    ) -> Result<(), FacadeError> {
+        Ok(self.backend
             .put(
                 &message.key,
                 &message.value,
@@ -144,13 +142,13 @@ where
                 message.offset,
                 message.timestamp.into(),
             )
-            .await
+            .await?)
     }
 
     async fn put_range(
         self: Arc<Self>,
         range: Vec<Message<Self::KeyType, Self::ValueType>>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), FacadeError> {
         if range.is_empty() {
             return Ok(());
         }
@@ -169,20 +167,20 @@ where
 
         let data = range.into_iter().map(|m| (m.key, m.value)).collect();
 
-        self.backend
+        Ok(self.backend
             .put_range(data, self.store_name(), self.partition(), offset, timestamp)
-            .await
+            .await?)
     }
 
-    async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), Self::Error> {
-        self.backend
+    async fn delete(self: Arc<Self>, key: Self::KeyType) -> Result<(), FacadeError> {
+        Ok(self.backend
             .delete(&key, self.store_name(), self.partition())
-            .await
+            .await?)
     }
 
-    fn create_checkpoint(self: Arc<Self>, consumer_position: i64) -> Result<(), Self::Error> {
-        self.backend
-            .create_checkpoint(self.store_name(), self.partition(), consumer_position)
+    fn create_checkpoint(self: Arc<Self>, consumer_position: i64) -> Result<(), FacadeError> {
+        Ok(self.backend
+            .create_checkpoint(self.store_name(), self.partition(), consumer_position)?)
     }
 
     fn wake(&self) {

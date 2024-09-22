@@ -3,9 +3,9 @@ use futures::Future;
 use crate::{
     message::types::Message,
     pipeline::stream::PipelineStream,
-    state::backend::{
-        facade::GetFacadeDistributor,
-        view::{state_view::StateView, GetViewDistributor, ReadableStateView},
+    state::facade::GetFacadeDistributor,
+    state::view::{state_view::StateView, GetViewDistributor, ReadableStateView},
+    state::store::{
     },
 };
 

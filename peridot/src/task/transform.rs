@@ -17,7 +17,7 @@
 
 use crate::{
     app::PeridotApp, engine::util::DeliveryGuaranteeType, pipeline::stream::PipelineStream,
-    state::backend::StateBackend,
+    state::store::StateStore,
 };
 
 use super::{PipelineParts, Task};
@@ -60,7 +60,7 @@ where
     I: PipelineStream,
     R: PipelineStream + Send + 'static,
     G: DeliveryGuaranteeType + Send + Sync + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     type G = G;
     type R = R;

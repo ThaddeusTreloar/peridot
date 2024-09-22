@@ -111,7 +111,7 @@ impl ChangelogManager {
 
         let context = PeridotConsumerContext::default();
 
-        let consumer = config
+        let consumer: PeridotConsumer = config
             .client_config()
             .create_with_context(context)
             .map_err(ChangelogManagerError::CreateConsumerError)?;
@@ -294,7 +294,7 @@ impl ChangelogManager {
     }
 
     pub(super) fn poll_consumer(&self) {
-        if let Some(msg) = self.consumer.poll(Duration::from_millis(1000)) {
+        if let Some(msg) = self.consumer.poll(Duration::from_millis(0)) {
             match msg {
                 Err(e) => panic!("Failed to poll consumer: {}", e),
                 Ok(msg) => {

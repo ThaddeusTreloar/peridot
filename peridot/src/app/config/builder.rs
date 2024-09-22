@@ -49,6 +49,8 @@ pub(super) const PERSISTENT_CONFIG_DIR: &str = "persistent.config.dir";
 pub(super) const PERSISTENT_CONFIG_FILENAME: &str = "peridot.persistent.config";
 pub(super) const STATE_DIR: &str = "state.dir";
 pub(super) const STATISTICS_INTERVAL_MS: &str = "statistics.interval.ms";
+pub(super) const TOPIC_CREATE_MISSING: &str = "topic.create.missing";
+pub(super) const TOPIC_CREATE_MISSING_DEFAULT_PARTITIONS: &str = "topic.create.missing.default.partitions";
 
 // Config values
 pub(super) const ENABLE_IDEMPOTENCE_TRUE: &str = "TRUE";
@@ -64,15 +66,17 @@ pub(super) const REQUIRED_FIELDS: [&str; 6] = [
     STATE_DIR,
 ];
 
-pub(super) const APP_FIELDS: [&str; 3] = [APPLICATION_ID, STATE_DIR, PERSISTENT_CONFIG_DIR];
+pub(super) const PERIDOT_FIELDS: [&str; 5] = [APPLICATION_ID, STATE_DIR, PERSISTENT_CONFIG_DIR, TOPIC_CREATE_MISSING, TOPIC_CREATE_MISSING_DEFAULT_PARTITIONS];
 
-pub(super) const DEFAULT_FIELDS: [(&str, &str); 6] = [
+pub(super) const DEFAULT_FIELDS: [(&str, &str); 8] = [
     (ENABLE_IDEMPOTENCE, ENABLE_IDEMPOTENCE_TRUE),
     (ISOLATION_LEVEL, ISOLATION_LEVEL_READ_COMMITTED), // TODO: Make setting this dependent on delivery semantics arg
     (PARTITIONER, PARTITIONER_MURMUR_2_RANDOM), // TODO: Make setting this dependent on delivery semantics arg
     (PERSISTENT_CONFIG_DIR, "./"),
     (STATE_DIR, "/var/lib/peridot"),
     (STATISTICS_INTERVAL_MS, "100"),
+    (TOPIC_CREATE_MISSING, "false"),
+    (TOPIC_CREATE_MISSING_DEFAULT_PARTITIONS, "6"),
 ];
 
 pub(super) const FORBID_USER_SET_FIELDS: [(&str, &str); 3] = [
@@ -132,7 +136,7 @@ impl PeridotConfigBuilder {
     pub fn get<'a, K: Into<&'a str>>(&self, key: K) -> Option<&str> {
         let key: &str = key.into();
 
-        if APP_FIELDS.contains(&key) {
+        if PERIDOT_FIELDS.contains(&key) {
             self.get_app_var(key)
         } else {
             self.get_client_var(key)
@@ -151,7 +155,7 @@ impl PeridotConfigBuilder {
         let key: String = key.into();
         let value: String = value.into();
 
-        if APP_FIELDS.contains(&key.as_str()) {
+        if PERIDOT_FIELDS.contains(&key.as_str()) {
             self.set_app_var(key, value)
         } else {
             self.set_client_var(key, value)
@@ -163,7 +167,7 @@ impl PeridotConfigBuilder {
     pub fn remove<'a, K: Into<&'a str>>(&mut self, key: K) -> &mut Self {
         let key: &str = key.into();
 
-        if APP_FIELDS.contains(&key) {
+        if PERIDOT_FIELDS.contains(&key) {
             self.app_config.remove(key);
         } else {
             self.client_config.remove(key);

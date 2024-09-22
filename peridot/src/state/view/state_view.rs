@@ -26,10 +26,10 @@ use tracing::info;
 use crate::{
     engine::state_store_manager::StateStoreManager,
     message::{state_fork::StoreStateCell, types::Message},
-    state::backend::{Checkpoint, StateBackend},
+    state::store::StateStore,
 };
 
-use super::ReadableStateView;
+use super::{ReadableStateView, ViewError};
 
 pub struct StateView<K, V, B> {
     backend_manager: Arc<StateStoreManager<B>>,
@@ -72,20 +72,19 @@ impl<K, V, B> StateView<K, V, B> {
 
 impl<K, V, B> ReadableStateView for StateView<K, V, B>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
     K: Serialize + Send + Sync,
     V: DeserializeOwned + Send + Sync,
 {
-    type Error = B::Error;
     type KeyType = K;
     type ValueType = V;
 
     async fn get(
         self: Arc<Self>,
         key: Self::KeyType,
-    ) -> Result<Option<Self::ValueType>, Self::Error> {
-        self.backend
+    ) -> Result<Option<Self::ValueType>, ViewError> {
+        Ok(self.backend
             .get(&key, self.store_name(), self.partition())
-            .await
+            .await?)
     }
 }

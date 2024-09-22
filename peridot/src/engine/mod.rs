@@ -48,7 +48,7 @@ use tracing_subscriber::field::display;
 
 use crate::app::error::PeridotAppRuntimeError;
 use crate::engine::queue_manager::QueueManager;
-use crate::state::backend::StateBackend;
+use crate::state::store::StateStore;
 use crate::{engine::wrapper::serde::PeridotDeserializer, pipeline::stream::head::HeadPipeline};
 
 use self::admin_manager::AdminManager;
@@ -120,7 +120,7 @@ pub struct AppEngine<B, G = ExactlyOnce> {
 impl<B, G> AppEngine<B, G>
 where
     G: DeliveryGuaranteeType + Send + Sync + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     pub(crate) fn state_store_context(&self) -> Arc<StateStoreManager<B>> {
         self.state_store_manager.clone()
@@ -248,6 +248,7 @@ where
             .engine_context
             .consumer_manager
             .create_topic_source(&topic)?;
+        
         self.engine_context
             .metadata_manager
             .register_source_topic(&topic, &metadata)?;

@@ -98,6 +98,7 @@ async fn main() -> Result<(), anyhow::Error> {
 pub mod app;
 pub mod bencher;
 pub mod engine;
+pub mod error;
 pub mod extensions;
 pub mod init;
 pub mod message;

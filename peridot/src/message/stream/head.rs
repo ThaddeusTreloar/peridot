@@ -145,13 +145,19 @@ where
             Poll::Pending => {
                 match interval {
                     Some(i) => {
-                        let remaining = COMMIT_INTERVAL - i.elapsed().as_millis() as u64;
+                        let elapsed = i.elapsed().as_millis() as u64;
 
-                        let mut w = Box::pin(sleep(Duration::from_millis(remaining)));
-
-                        w.poll_unpin(cx);
-
-                        let _ = waker.replace(w);
+                        if elapsed > COMMIT_INTERVAL {
+                            cx.waker().wake_by_ref();
+                        } else {
+                            let remaining = COMMIT_INTERVAL - elapsed;
+    
+                            let mut w = Box::pin(sleep(Duration::from_millis(remaining)));
+    
+                            w.poll_unpin(cx);
+    
+                            let _ = waker.replace(w);
+                        }
                     },
                     None => panic!("No timer set!?")
                 }

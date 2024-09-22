@@ -39,10 +39,7 @@ use crate::{
         sink::{topic_sink::CHANGELOG_OFFSET_HEADER, MessageSink, NonCommittingSink},
         types::{Message, TryFromOwnedMessage},
     },
-    state::backend::{
-        facade::{state_facade::StateFacade, ReadableStateFacade, WriteableStateFacade},
-        StateBackend,
-    },
+    state::{facade::{state_facade::StateStoreFacade, FacadeError, ReadableStateFacade, WriteableStateFacade}, store::StateStore},
 };
 
 type PendingCommit<E> = Pin<Box<dyn Future<Output = Result<(), E>> + Send>>;
@@ -51,11 +48,11 @@ type PendingOffsetCommit<E> = Option<Pin<Box<dyn Future<Output = Result<(), E>> 
 pin_project! {
     pub struct StateSink<B, K, V>
     where
-        B: StateBackend,
+        B: StateStore,
     {
         queue_metadata: QueueMetadata,
-        state_facade: Arc<StateFacade<K, V, B>>,
-        buffer: Vec<PendingCommit<B::Error>>,
+        state_facade: Arc<StateStoreFacade<K, V, B>>,
+        buffer: Vec<PendingCommit<FacadeError>>,
         _key_type: std::marker::PhantomData<K>,
         _value_type: std::marker::PhantomData<V>,
         consumer_position: Option<i64>,
@@ -64,11 +61,11 @@ pin_project! {
 
 impl<B, K, V> StateSink<B, K, V>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
     K: Serialize + Send + Sync + 'static,
     V: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
-    pub fn new(queue_metadata: QueueMetadata, state_facade: StateFacade<K, V, B>) -> Self {
+    pub fn new(queue_metadata: QueueMetadata, state_facade: StateStoreFacade<K, V, B>) -> Self {
         Self {
             queue_metadata,
             state_facade: Arc::new(state_facade),
@@ -79,7 +76,7 @@ where
         }
     }
 
-    pub fn get_checkpoint(&self) -> Result<Option<i64>, B::Error> {
+    pub fn get_checkpoint(&self) -> Result<Option<i64>, FacadeError> {
         self.state_facade
             .get_checkpoint()
             .map(|r| r.map(|c| c.offset))
@@ -104,13 +101,13 @@ impl<B, K, V> NonCommittingSink for StateSink<B, K, V>
 where
     K: Clone,
     V: Clone,
-    B: StateBackend + Send,
+    B: StateStore + Send,
 {
 }
 
 impl<B, K, V> MessageSink<K, V> for StateSink<B, K, V>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
     K: Clone + Serialize + Send + Sync + 'static,
     V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
 {
@@ -138,7 +135,7 @@ where
                 Poll::Ready(Ok(())) => None,
                 Poll::Ready(Err(e)) => todo!("{}", e),
             })
-            .collect::<Vec<PendingCommit<B::Error>>>();
+            .collect::<Vec<PendingCommit<FacadeError>>>();
 
         this.buffer.extend(pending_commits);
 

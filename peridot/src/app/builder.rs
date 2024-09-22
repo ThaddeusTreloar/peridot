@@ -19,7 +19,7 @@ use rdkafka::ClientConfig;
 
 use crate::{
     engine::util::{DeliveryGuaranteeType, ExactlyOnce},
-    state::backend::{in_memory::InMemoryStateBackend, StateBackend},
+    state::store::{in_memory::InMemoryStateStore, StateStore},
 };
 
 use super::{config::PeridotConfig, error::PeridotAppCreationError, PeridotApp};
@@ -60,7 +60,7 @@ impl<C, B, G> AppBuilder<C, B, G> {
 
     pub fn with_state_backend<NB>(self) -> AppBuilder<C, NB, G>
     where
-        NB: StateBackend,
+        NB: StateStore,
     {
         AppBuilder {
             config: self.config,
@@ -81,7 +81,7 @@ impl<C, B, G> AppBuilder<C, B, G> {
 impl AppBuilder<PeridotConfig, (), ()> {
     pub fn build(
         self,
-    ) -> Result<PeridotApp<InMemoryStateBackend, ExactlyOnce>, PeridotAppCreationError> {
+    ) -> Result<PeridotApp<InMemoryStateStore, ExactlyOnce>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;
         Ok(app)
     }
@@ -89,7 +89,7 @@ impl AppBuilder<PeridotConfig, (), ()> {
 
 impl<B> AppBuilder<PeridotConfig, B, ()>
 where
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     pub fn build(self) -> Result<PeridotApp<B, ExactlyOnce>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;
@@ -101,7 +101,7 @@ impl<G> AppBuilder<PeridotConfig, (), G>
 where
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
-    pub fn build(self) -> Result<PeridotApp<InMemoryStateBackend, G>, PeridotAppCreationError> {
+    pub fn build(self) -> Result<PeridotApp<InMemoryStateStore, G>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;
         Ok(app)
     }
@@ -110,7 +110,7 @@ where
 impl<B, G> AppBuilder<PeridotConfig, B, G>
 where
     G: DeliveryGuaranteeType + Send + Sync + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     pub fn build(self) -> Result<PeridotApp<B, G>, PeridotAppCreationError> {
         let app = PeridotApp::from_config(self.config)?;

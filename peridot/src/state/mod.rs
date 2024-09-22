@@ -16,4 +16,8 @@
  */
 
 pub mod backend;
+pub mod checkpoint;
 pub mod error;
+pub mod facade;
+pub mod store;
+pub mod view;

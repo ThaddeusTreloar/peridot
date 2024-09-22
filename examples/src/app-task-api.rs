@@ -34,8 +34,8 @@ use peridot::pipeline::message::types::{KeyValue, Value};
 use peridot::pipeline::pipeline::sink::SinkError;
 use peridot::pipeline::pipeline::stream::{PipelineStreamExt, PipelineStreamSinkExt};
 use peridot::pipeline::serde_ext::Json;
-use peridot::state::backend::in_memory::InMemoryStateBackend;
-use peridot::state::backend::persistent::PersistentStateBackend;
+use peridot::state::store::in_memory::InMemoryStateBackend;
+use peridot::state::store::persistent::PersistentStateBackend;
 use rdkafka::ClientConfig;
 
 use peridot::state::ReadableStateStore;

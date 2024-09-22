@@ -36,7 +36,7 @@ use crate::{
         AppEngine, Job,
     },
     pipeline::stream::head::HeadPipeline,
-    state::backend::{in_memory::InMemoryStateBackend, StateBackend},
+    state::store::{in_memory::InMemoryStateStore, StateStore},
     task::{table::TableTask, transparent::TransparentTask, Task},
 };
 
@@ -70,7 +70,7 @@ impl CompletedQueueMetadata {
 type DirectTableTask<'a, KS, VS, B, G> = TableTask<'a, HeadPipeline<KS, VS>, B, G>;
 
 #[derive()]
-pub struct PeridotApp<B = InMemoryStateBackend, G = ExactlyOnce>
+pub struct PeridotApp<B = InMemoryStateStore, G = ExactlyOnce>
 where
     G: DeliveryGuaranteeType + Send + Sync + 'static,
 {
@@ -82,7 +82,7 @@ where
 impl<B, G> PeridotApp<B, G>
 where
     G: DeliveryGuaranteeType + Send + Sync + 'static,
-    B: StateBackend + Send + Sync + 'static,
+    B: StateStore + Send + Sync + 'static,
 {
     fn stream<KS, VS>(
         &self,
@@ -100,7 +100,7 @@ where
         &'a self,
         topic: &'a str,
         store_name: &'a str,
-    ) -> DirectTableTask<KS, VS, B, G>
+    ) -> Result<DirectTableTask<KS, VS, B, G>, PeridotAppRuntimeError>
     where
         KS: PeridotDeserializer + Send + 'static,
         VS: PeridotDeserializer + Send + 'static,
@@ -108,11 +108,11 @@ where
         VS::Output: Clone + Serialize + Send,
     {
         let input: HeadPipeline<KS, VS, ExactlyOnce> =
-            self.stream(topic).expect("Failed to create topic");
+            self.stream(topic)?;
 
-        TransparentTask::new(self, topic, input)
+        Ok(TransparentTask::new(self, topic, input)
             .into_table(store_name)
-            .await
+            .await)
     }
 
     pub fn task<'a, KS, VS>(
@@ -135,7 +135,7 @@ where
 
         Ok(Self {
             _config: config.clone(),
-            engine,
+            engine: engine,
             _phantom: std::marker::PhantomData,
         })
     }
