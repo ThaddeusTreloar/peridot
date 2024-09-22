@@ -15,9 +15,9 @@
  *
  */
 
-use partial_message::PartialMessage;
+use partial_message::PartialMessageOwned;
 
-use crate::message::types::{partial_message, FromMessage, Message, PatchMessage};
+use crate::message::types::{partial_message, FromMessageOwned, Message, PatchMessage};
 
 pub struct KeyValue<K, V>(pub K, pub V);
 
@@ -84,8 +84,8 @@ impl<K, V, KR, VR> PatchMessage<K, V> for (KR, VR) {
 }
  */
 
-impl<K, V> FromMessage<K, V> for KeyValue<K, V> {
-    fn from_message(
+impl<K, V> FromMessageOwned<K, V> for KeyValue<K, V> {
+    fn from_message_owned(
         Message {
             topic,
             timestamp,
@@ -95,11 +95,11 @@ impl<K, V> FromMessage<K, V> for KeyValue<K, V> {
             key,
             value,
         }: Message<K, V>,
-    ) -> (Self, PartialMessage<K, V>)
+    ) -> (Self, PartialMessageOwned<K, V>)
     where
         Self: Sized,
     {
-        let partial_message = PartialMessage {
+        let partial_message = PartialMessageOwned {
             topic: Some(topic),
             timestamp: Some(timestamp),
             partition: Some(partition),
@@ -117,11 +117,11 @@ impl<K, V, KR, VR> PatchMessage<K, V> for KeyValue<KR, VR> {
     type RK = KR;
     type RV = VR;
 
-    fn patch(self, partial_message: PartialMessage<K, V>) -> Message<Self::RK, Self::RV> {
+    fn patch_message(self, partial_message: PartialMessageOwned<K, V>) -> Message<Self::RK, Self::RV> {
         let Self(key, value) = self;
 
         match partial_message {
-            PartialMessage {
+            PartialMessageOwned {
                 topic: Some(topic),
                 timestamp: Some(timestamp),
                 partition: Some(partition),

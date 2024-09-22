@@ -28,8 +28,20 @@ pub use message::*;
 pub(crate) use partial_message::*;
 pub use timestamp::*;
 
+pub trait FromMessageOwned<K, V> {
+    fn from_message_owned(msg: Message<K, V>) -> (Self, PartialMessageOwned<K, V>)
+    where
+        Self: Sized;
+}
+
+pub trait FromMessageMut<K, V> {
+    fn from_message_mut<'a>(msg: &'a mut Message<K, V>) -> Self
+    where
+        Self: Sized;
+}
+
 pub trait FromMessage<K, V> {
-    fn from_message(msg: Message<K, V>) -> (Self, PartialMessage<K, V>)
+    fn from_message<'a>(msg: &'a Message<K, V>) -> PartialMessage<'a, K, V>
     where
         Self: Sized;
 }
@@ -38,7 +50,7 @@ pub trait PatchMessage<K, V> {
     type RK;
     type RV;
 
-    fn patch(self, msg: PartialMessage<K, V>) -> Message<Self::RK, Self::RV>
+    fn patch_message(self, msg: PartialMessageOwned<K, V>) -> Message<Self::RK, Self::RV>
     where
         Self: Sized;
 }

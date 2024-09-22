@@ -541,16 +541,6 @@ where
                             )
                             .is_pending()
                             {
-                                
-                                /**commit_state = StreamState::Committing;
-
-                                let mut sleep =
-                                    Box::pin(tokio::time::sleep(Duration::from_millis(250)));
-
-                                sleep.poll_unpin(cx);
-
-                                let _ = lso_sleep.replace(sleep);*/
-
                                 debug!("Waiting for changelog messages...");
 
                                 return Poll::Pending;

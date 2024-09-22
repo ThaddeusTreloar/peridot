@@ -27,7 +27,7 @@ use crate::engine::queue_manager::queue_metadata::QueueMetadata;
 
 use super::{
     map::MapMessage,
-    types::{FromMessage, Message, PatchMessage},
+    types::{FromMessageOwned, Message, PatchMessage},
 };
 
 //pub mod import;
@@ -67,7 +67,7 @@ where
     pub fn map<F, E, R>(self, f: Arc<F>) -> PipelineStage<MapMessage<M, F, E, R>>
     where
         F: Fn(E) -> R,
-        E: FromMessage<M::KeyType, M::ValueType>,
+        E: FromMessageOwned<M::KeyType, M::ValueType>,
         R: PatchMessage<M::KeyType, M::ValueType>,
         Self: Sized,
     {

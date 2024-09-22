@@ -27,7 +27,7 @@ use pin_project_lite::pin_project;
 use crate::message::{
     map::MapMessage,
     stream::{MessageStream, PipelineStage},
-    types::{FromMessage, PatchMessage},
+    types::{FromMessageOwned, PatchMessage},
 };
 
 use super::stream::PipelineStream;
@@ -63,7 +63,7 @@ impl<S, F, E, R> PipelineStream for MapPipeline<S, F, E, R>
 where
     S: PipelineStream,
     F: Fn(E) -> R + Send + Sync,
-    E: FromMessage<
+    E: FromMessageOwned<
             <<S as PipelineStream>::MStream as MessageStream>::KeyType,
             <<S as PipelineStream>::MStream as MessageStream>::ValueType,
         > + Send,

@@ -15,12 +15,12 @@
  *
  */
 
-use crate::message::types::{FromMessage, Message, MessageHeaders, PartialMessage, PatchMessage};
+use crate::message::types::{FromMessageOwned, Message, MessageHeaders, PartialMessageOwned, PatchMessage};
 
 pub struct Headers(MessageHeaders);
 
-impl<K, V> FromMessage<K, V> for Headers {
-    fn from_message(
+impl<K, V> FromMessageOwned<K, V> for Headers {
+    fn from_message_owned(
         Message {
             topic,
             timestamp,
@@ -30,11 +30,11 @@ impl<K, V> FromMessage<K, V> for Headers {
             key,
             value,
         }: Message<K, V>,
-    ) -> (Self, PartialMessage<K, V>)
+    ) -> (Self, PartialMessageOwned<K, V>)
     where
         Self: Sized,
     {
-        let partial_message = PartialMessage {
+        let partial_message = PartialMessageOwned {
             topic: Some(topic),
             timestamp: Some(timestamp),
             partition: Some(partition),
@@ -52,9 +52,9 @@ impl<K, V> PatchMessage<K, V> for Headers {
     type RK = K;
     type RV = V;
 
-    fn patch(self, partial_message: PartialMessage<K, V>) -> Message<Self::RK, Self::RV> {
+    fn patch_message(self, partial_message: PartialMessageOwned<K, V>) -> Message<Self::RK, Self::RV> {
         match partial_message {
-            PartialMessage {
+            PartialMessageOwned {
                 topic: Some(topic),
                 timestamp: Some(timestamp),
                 partition: Some(partition),

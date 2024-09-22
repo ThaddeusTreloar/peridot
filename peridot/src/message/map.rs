@@ -22,11 +22,11 @@ use std::{
     task::{ready, Context, Poll},
 };
 
-use crate::message::types::{FromMessage, Message, PatchMessage};
+use crate::message::types::{FromMessageOwned, Message, PatchMessage};
 
 use pin_project_lite::pin_project;
 
-use super::stream::{MessageStream, MessageStreamPoll};
+use super::{stream::{MessageStream, MessageStreamPoll}, types::{FromMessage, FromMessageMut}};
 
 pin_project! {
     pub struct MapMessage<M, F, E, R> {
@@ -53,7 +53,7 @@ impl<M, F, E, R> MessageStream for MapMessage<M, F, E, R>
 where
     M: MessageStream,
     F: Fn(E) -> R,
-    E: FromMessage<M::KeyType, M::ValueType>,
+    E: FromMessageOwned<M::KeyType, M::ValueType>,
     R: PatchMessage<M::KeyType, M::ValueType>,
     Self: Sized,
 {
@@ -70,14 +70,48 @@ where
             MessageStreamPoll::Closed => Poll::Ready(MessageStreamPoll::Closed),
             MessageStreamPoll::Commit(val) => Poll::Ready(MessageStreamPoll::Commit(val)),
             MessageStreamPoll::Message(message) => {
-                let (extractor, partial_message) = E::from_message(message);
+                let (extractor, partial_message) = E::from_message_owned(message);
 
                 let map_result = (this.callback)(extractor);
 
-                let patched_message = map_result.patch(partial_message);
+                let patched_message = map_result.patch_message(partial_message);
 
                 Poll::Ready(MessageStreamPoll::Message(patched_message))
             }
         }
     }
 }
+
+/*
+impl<'a, M, F, E, R> MessageStream for MapMessage<M, F, E, R>
+where
+    M: MessageStream,
+    M::KeyType: 'a,
+    M::ValueType: 'a,
+    F: Fn(E),
+    E: FromMessageMut<'a, M::KeyType, M::ValueType>,
+    Self: Sized,
+{
+    type KeyType = M::KeyType;
+    type ValueType = M::ValueType;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<MessageStreamPoll<Self::KeyType, Self::ValueType>> {
+        let this = self.project();
+
+        match ready!(this.stream.poll_next(cx)) {
+            MessageStreamPoll::Closed => Poll::Ready(MessageStreamPoll::Closed),
+            MessageStreamPoll::Commit(val) => Poll::Ready(MessageStreamPoll::Commit(val)),
+            MessageStreamPoll::Message(mut message) => {
+                let partial_message = E::from_message_mut(&mut message);
+
+                (this.callback)(partial_message);
+
+                Poll::Ready(MessageStreamPoll::Message(message))
+            }
+        }
+    }
+}
+ */

@@ -25,7 +25,7 @@ use tracing::debug;
 
 use crate::engine::wrapper::serde::PeridotDeserializer;
 
-use super::{MessageHeaders, PartialMessage, PeridotTimestamp};
+use super::{MessageHeaders, PartialMessageOwned, PeridotTimestamp};
 
 #[derive(Debug, serde::Serialize, Clone)]
 pub struct Message<K, V> {
@@ -101,9 +101,9 @@ impl<K, V> Message<K, V> {
     }
 }
 
-impl From<Message<(), ()>> for PartialMessage<(), ()> {
+impl From<Message<(), ()>> for PartialMessageOwned<(), ()> {
     fn from(value: Message<(), ()>) -> Self {
-        PartialMessage {
+        PartialMessageOwned {
             topic: Some(value.topic),
             timestamp: Some(value.timestamp), // TODO: Maybe set to ingestion time to allow synchronisation.
             partition: Some(value.partition),

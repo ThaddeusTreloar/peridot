@@ -36,7 +36,7 @@ use crate::{
 use super::{
     state_fork::{StoreState, StoreStateCell},
     stream::{MessageStream, MessageStreamPoll},
-    types::{FromMessage, KeyValue, Message, PartialMessage, Value},
+    types::{FromMessageOwned, KeyValue, Message, PartialMessageOwned, Value},
     BATCH_SIZE,
 };
 
@@ -162,11 +162,11 @@ where
                             message.offset()
                         );
 
-                        let (Value(left), partial_message) = Value::from_message(message);
+                        let (Value(left), partial_message) = Value::from_message_owned(message);
 
                         let output_value = this.combiner.combine(left, right);
 
-                        let output_message = Value(output_value).patch(partial_message);
+                        let output_message = Value(output_value).patch_message(partial_message);
 
                         let _ = this.state_future.take();
 

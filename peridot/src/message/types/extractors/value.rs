@@ -17,9 +17,10 @@
 
 use std::fmt::Debug;
 
-use crate::message::types::{FromMessage, Message, PartialMessage, PatchMessage};
+use crate::message::types::{FromMessage, FromMessageMut, FromMessageOwned, Message, PartialMessage, PartialMessageMut, PartialMessageOwned, PatchMessage};
 
 pub struct Value<K>(pub K);
+pub struct ValueMutRef<'a, K>(pub &'a mut K);
 
 impl<K> Value<K> {
     pub fn value(self) -> K {
@@ -29,8 +30,8 @@ impl<K> Value<K> {
     }
 }
 
-impl<K, V> FromMessage<K, V> for Value<V> {
-    fn from_message(
+impl<K, V> FromMessageOwned<K, V> for Value<V> {
+    fn from_message_owned(
         Message {
             topic,
             timestamp,
@@ -40,11 +41,11 @@ impl<K, V> FromMessage<K, V> for Value<V> {
             key,
             value,
         }: Message<K, V>,
-    ) -> (Self, PartialMessage<K, V>)
+    ) -> (Self, PartialMessageOwned<K, V>)
     where
         Self: Sized,
     {
-        let partial_message = PartialMessage {
+        let partial_message = PartialMessageOwned {
             topic: Some(topic),
             timestamp: Some(timestamp),
             partition: Some(partition),
@@ -58,13 +59,31 @@ impl<K, V> FromMessage<K, V> for Value<V> {
     }
 }
 
+impl<K, V> FromMessage<K, V> for Value<V> {
+    fn from_message<'a>(msg: &'a Message<K, V>) -> PartialMessage<'a, K, V>
+        where
+            Self: Sized {
+        let partial_message = PartialMessage {
+            topic: None,
+            timestamp: None,
+            partition: None,
+            offset: None,
+            headers: None,
+            key: None,
+            value: Some(&msg.value),
+        };
+
+        partial_message
+    }
+}
+
 impl<K, V, VR> PatchMessage<K, V> for Value<VR> {
     type RK = K;
     type RV = VR;
 
-    fn patch(self, partial_message: PartialMessage<K, V>) -> Message<Self::RK, Self::RV> {
+    fn patch_message(self, partial_message: PartialMessageOwned<K, V>) -> Message<Self::RK, Self::RV> {
         match partial_message {
-            PartialMessage {
+            PartialMessageOwned {
                 topic: Some(topic),
                 timestamp: Some(timestamp),
                 partition: Some(partition),
@@ -93,9 +112,9 @@ where
     type RK = K;
     type RV = VR;
 
-    fn patch(self, partial_message: PartialMessage<K, V>) -> Message<Self::RK, Self::RV> {
+    fn patch_message(self, partial_message: PartialMessageOwned<K, V>) -> Message<Self::RK, Self::RV> {
         match partial_message {
-            PartialMessage {
+            PartialMessageOwned {
                 topic: Some(topic),
                 timestamp: Some(timestamp),
                 partition: Some(partition),

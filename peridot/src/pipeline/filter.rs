@@ -28,7 +28,7 @@ use crate::message::{
     filter::FilterMessage,
     map::MapMessage,
     stream::{MessageStream, PipelineStage},
-    types::{FromMessage, PatchMessage},
+    types::{FromMessageOwned, PatchMessage},
 };
 
 use super::stream::PipelineStream;

@@ -27,7 +27,7 @@ use crate::{
     },
     message::{
         join::Combiner,
-        types::{FromMessage, PatchMessage},
+        types::{FromMessageOwned, PatchMessage},
     },
     pipeline::{
         filter::FilterPipeline,
@@ -134,7 +134,7 @@ pub trait Task<'a> {
     >
     where
         MF: Fn(ME) -> MR + Send + Sync + Clone + 'static,
-        ME: FromMessage<
+        ME: FromMessageOwned<
                 <Self::R as PipelineStream>::KeyType,
                 <Self::R as PipelineStream>::ValueType,
             > + Send

@@ -204,16 +204,6 @@ impl StateStore for InMemoryStateStore {
 
         let key_bytes = bincode::serialize(&key).expect("Failed to serialize key");
 
-        tracing::info!("Dump state store");
-
-        if store.iter().count() == 0 {
-            tracing::info!("State store empty.")
-        }
-
-        store.iter().for_each(|item| {
-            tracing::info!("{:?}:{:?}", item.key(), item.value());
-        });
-
         let value = match store.get(&key_bytes) {
             None => {
                 return Ok(None);

@@ -22,7 +22,7 @@ use std::{
     task::{ready, Context, Poll},
 };
 
-use crate::message::types::{FromMessage, Message, PatchMessage};
+use crate::message::types::{FromMessageOwned, Message, PatchMessage};
 
 use pin_project_lite::pin_project;
 

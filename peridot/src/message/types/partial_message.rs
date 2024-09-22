@@ -17,7 +17,7 @@
 
 use super::{MessageHeaders, PeridotTimestamp};
 
-pub struct PartialMessage<K, V> {
+pub struct PartialMessageOwned<K, V> {
     pub(crate) topic: Option<String>,
     pub(crate) timestamp: Option<PeridotTimestamp>,
     pub(crate) partition: Option<i32>,
@@ -25,4 +25,24 @@ pub struct PartialMessage<K, V> {
     pub(crate) headers: Option<MessageHeaders>,
     pub(crate) key: Option<K>,
     pub(crate) value: Option<V>,
+}
+
+pub struct PartialMessageMut<'a, K, V> {
+    pub(crate) topic: Option<&'a mut String>,
+    pub(crate) timestamp: Option<&'a mut PeridotTimestamp>,
+    pub(crate) partition: Option<&'a mut i32>,
+    pub(crate) offset: Option<&'a mut i64>,
+    pub(crate) headers: Option<&'a mut MessageHeaders>,
+    pub(crate) key: Option<&'a mut K>,
+    pub(crate) value: Option<&'a mut V>,
+}
+
+pub struct PartialMessage<'a, K, V> {
+    pub(crate) topic: Option<&'a String>,
+    pub(crate) timestamp: Option<&'a PeridotTimestamp>,
+    pub(crate) partition: Option<&'a i32>,
+    pub(crate) offset: Option<&'a i64>,
+    pub(crate) headers: Option<&'a MessageHeaders>,
+    pub(crate) key: Option<&'a K>,
+    pub(crate) value: Option<&'a V>,
 }
