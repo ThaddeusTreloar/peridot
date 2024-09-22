@@ -38,9 +38,7 @@ use crate::{
     engine::{
         queue_manager::queue_metadata::QueueMetadata,
         wrapper::serde::{native::NativeBytes, PeridotSerializer},
-    },
-    message::sink::{MessageSink, NonCommittingSink},
-    util::common_format::{topic_partition_offset, topic_partition_offset_err},
+    }, error::ErrorType, message::sink::{MessageSink, NonCommittingSink}, util::common_format::{topic_partition_offset, topic_partition_offset_err}
 };
 
 mod error;
@@ -108,7 +106,7 @@ where
 {
     type Error = TopicSinkError;
 
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
@@ -116,7 +114,7 @@ where
         self: Pin<&mut Self>,
         consumer_position: i64,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<i64, Self::Error>> {
+    ) -> Poll<Result<i64, ErrorType<Self::Error>>> {
         let span = tracing::span!(
             Level::DEBUG,
             "->TopicSink::poll_commit",
@@ -168,7 +166,7 @@ where
                                 err,
                             };
 
-                            Err(ret_err)?
+                            Err(ErrorType::Fatal(ret_err))?
                         }
                     },
                 },
@@ -196,14 +194,14 @@ where
         Poll::Ready(Ok(*this.highest_offset))
     }
 
-    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
     fn start_send(
         self: Pin<&mut Self>,
         mut message: crate::message::types::Message<KS::Input, VS::Input>,
-    ) -> Result<crate::message::types::Message<KS::Input, VS::Input>, Self::Error> {
+    ) -> Result<crate::message::types::Message<KS::Input, VS::Input>, ErrorType<Self::Error>> {
         let span = tracing::span!(
             Level::DEBUG,
             "->TopicSink::start_send",
@@ -215,10 +213,10 @@ where
         let this = self.project();
 
         let key_bytes =
-            KS::serialize(message.key()).expect("Failed to serialise key in StateSink.");
+            KS::serialize(message.key()).expect("Failed to serialise key.");
 
         let value_bytes =
-            VS::serialize(message.value()).expect("Failed to serialise value in StateSink.");
+            VS::serialize(message.value()).expect("Failed to serialise value.");
 
         tracing::trace!(
             "Raw output key bytes for topic: {}, partition: {}, offset: {}, key: {:?}",
@@ -258,7 +256,7 @@ where
         let delivery_future = match this.queue_metadata.producer().send_result(record) {
             Ok(fut) => fut,
             Err((KafkaError::MessageProduction(RDKafkaErrorCode::QueueFull), record)) => {
-                return Err(TopicSinkError::QueueFull);
+                return Err(ErrorType::Retryable(TopicSinkError::QueueFull));
             }
             Err((e, _)) => panic!("Error: {}", e),
         };

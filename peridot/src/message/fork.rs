@@ -25,8 +25,7 @@ use pin_project_lite::pin_project;
 use tracing::{info, Level};
 
 use crate::{
-    engine::queue_manager::queue_metadata::{self, QueueMetadata},
-    message::stream::MessageCommitError,
+    engine::queue_manager::queue_metadata::{self, QueueMetadata}, error::ErrorType, message::stream::MessageCommitError
 };
 
 use super::{
@@ -97,7 +96,10 @@ where
 
                 Poll::Ready(MessageStreamPoll::Commit(Ok(*next_offset)))
             }
-            Err(e) => Poll::Ready(MessageStreamPoll::Commit(Err(
+            Err(ErrorType::Fatal(e)) => Poll::Ready(MessageStreamPoll::Commit(Err(
+                MessageCommitError::SinkCommitError(Box::new(e)),
+            ))),
+            Err(ErrorType::Retryable(e)) => Poll::Ready(MessageStreamPoll::Commit(Err(
                 MessageCommitError::SinkCommitError(Box::new(e)),
             ))),
         }
@@ -160,10 +162,13 @@ where
 
                 *commit_state = StreamState::Uncommitted;
 
-                message_sink
+                match message_sink
                     .as_mut()
-                    .start_send(message.clone())
-                    .expect("Failed to send message to sink.");
+                    .start_send(message.clone()){
+                        Ok(_) => todo!(),
+                        Err(ErrorType::Fatal(e)) => panic!("Fatal error"),
+                        Err(ErrorType::Retryable(e)) => todo!("Handle retryable error"),
+                };
 
                 Poll::Ready(MessageStreamPoll::Message(message))
             }

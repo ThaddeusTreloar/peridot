@@ -1,5 +1,6 @@
 pub mod engine;
 
+#[derive(Debug)]
 pub enum ErrorType<T> {
     Fatal(T),
     Retryable(T),

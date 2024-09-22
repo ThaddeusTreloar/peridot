@@ -27,8 +27,7 @@ use rdkafka::{consumer::Consumer, TopicPartitionList};
 use tracing::info;
 
 use crate::{
-    engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer},
-    message::types::Message,
+    engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer}, error::ErrorType, message::types::Message
 };
 
 use super::MessageSink;
@@ -75,7 +74,7 @@ where
 {
     type Error = PrintSinkError;
 
-    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
@@ -83,18 +82,18 @@ where
         self: Pin<&mut Self>,
         consumer_position: i64,
         _cx: &mut Context<'_>,
-    ) -> Poll<Result<i64, Self::Error>> {
+    ) -> Poll<Result<i64, ErrorType<Self::Error>>> {
         Poll::Ready(Ok(consumer_position))
     }
 
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
     fn start_send(
         self: Pin<&mut Self>,
         message: Message<KS::Input, VS::Input>,
-    ) -> Result<Message<KS::Input, VS::Input>, Self::Error> {
+    ) -> Result<Message<KS::Input, VS::Input>, ErrorType<Self::Error>> {
         let ser_key = KS::serialize(message.key()).expect("Failed to serialise key.");
         let ser_value = VS::serialize(message.value()).expect("Failed to serialise value.");
 

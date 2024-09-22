@@ -30,16 +30,13 @@ use serde::{de::DeserializeOwned, Serialize};
 use tracing::{debug, info};
 
 use crate::{
-    app::PeridotConsumer,
-    engine::{
+    app::PeridotConsumer, engine::{
         queue_manager::queue_metadata::QueueMetadata,
         wrapper::serde::{json::Json, native::NativeBytes, PeridotDeserializer, PeridotSerializer},
-    },
-    message::{
+    }, error::ErrorType, message::{
         sink::{topic_sink::CHANGELOG_OFFSET_HEADER, MessageSink, NonCommittingSink},
         types::{Message, TryFromOwnedMessage},
-    },
-    state::{facade::{state_facade::StateStoreFacade, FacadeError, ReadableStateFacade, WriteableStateFacade}, store::StateStore},
+    }, state::{facade::{state_facade::StateStoreFacade, FacadeError, ReadableStateFacade, WriteableStateFacade}, store::StateStore}
 };
 
 type PendingCommit<E> = Pin<Box<dyn Future<Output = Result<(), E>> + Send>>;
@@ -113,7 +110,7 @@ where
 {
     type Error = StateSinkError;
 
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
@@ -122,7 +119,7 @@ where
         self: Pin<&mut Self>,
         mut consumer_position: i64,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<i64, Self::Error>> {
+    ) -> Poll<Result<i64, ErrorType<Self::Error>>> {
         let this = self.project();
 
         tracing::debug!("Committing state sink.");
@@ -168,14 +165,14 @@ where
         }
     }
 
-    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
     fn start_send(
         self: Pin<&mut Self>,
         message: Message<K, V>,
-    ) -> Result<Message<K, V>, Self::Error> {
+    ) -> Result<Message<K, V>, ErrorType<Self::Error>> {
         let this = self.project();
 
         tracing::debug!(

@@ -23,6 +23,8 @@ use std::{
 
 use super::types::Message;
 
+use crate::error::ErrorType;
+
 pub mod debug_sink;
 pub mod export;
 pub(crate) mod noop_sink;
@@ -32,17 +34,17 @@ pub mod topic_sink;
 pub trait MessageSink<K, V> {
     type Error: Error;
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>>;
     fn start_send(
         self: Pin<&mut Self>,
         message: Message<K, V>,
-    ) -> Result<Message<K, V>, Self::Error>;
+    ) -> Result<Message<K, V>, ErrorType<Self::Error>>;
     fn poll_commit(
         self: Pin<&mut Self>,
         consumer_position: i64,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<i64, Self::Error>>;
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
+    ) -> Poll<Result<i64, ErrorType<Self::Error>>>;
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>>;
 }
 
 pub trait MessageSinkExt<K, V>: MessageSink<K, V> {

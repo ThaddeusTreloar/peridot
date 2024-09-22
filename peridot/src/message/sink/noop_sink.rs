@@ -26,8 +26,7 @@ use rdkafka::{consumer::Consumer, producer::Producer, Offset, TopicPartitionList
 use tracing::info;
 
 use crate::{
-    engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer},
-    message::types::Message,
+    engine::{queue_manager::queue_metadata::QueueMetadata, wrapper::serde::PeridotSerializer}, error::ErrorType, message::types::Message
 };
 
 use super::{CommitingSink, MessageSink};
@@ -63,7 +62,7 @@ where
 {
     type Error = NoopSinkError;
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
@@ -71,18 +70,18 @@ where
         self: Pin<&mut Self>,
         consumer_position: i64,
         _: &mut Context<'_>,
-    ) -> Poll<Result<i64, Self::Error>> {
+    ) -> Poll<Result<i64, ErrorType<Self::Error>>> {
         Poll::Ready(Ok(consumer_position))
     }
 
-    fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {
         Poll::Ready(Ok(()))
     }
 
     fn start_send(
         self: Pin<&mut Self>,
         message: crate::message::types::Message<KS::Input, VS::Input>,
-    ) -> Result<Message<KS::Input, VS::Input>, Self::Error> {
+    ) -> Result<Message<KS::Input, VS::Input>, ErrorType<Self::Error>> {
         let this = self.project();
 
         Ok(message)

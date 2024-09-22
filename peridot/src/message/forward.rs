@@ -34,8 +34,7 @@ use tokio::time::Instant;
 use tracing::{event, info, instrument, trace_span, Level};
 
 use crate::{
-    engine::queue_manager::queue_metadata::{self, QueueMetadata},
-    message::sink::topic_sink::TopicSinkError,
+    engine::queue_manager::queue_metadata::{self, QueueMetadata}, error::ErrorType, message::sink::topic_sink::TopicSinkError
 };
 
 use super::{
@@ -292,7 +291,8 @@ where
                 match message_sink.as_mut().start_send(message) {
                     Ok(_) => (),
                     //                    Err(e) => {}
-                    Err(e) => panic!("Unknown error while sending record: {}", e),
+                    Err(ErrorType::Fatal(e)) => panic!("Unknown error while sending record: {}", e),
+                    Err(ErrorType::Retryable(e)) => todo!("Handle Retryable error"),
                 };
 
                 Poll::Ready(Ok(()))
