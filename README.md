@@ -15,10 +15,10 @@ Below is a list of the features currently being architected:
 - ✅ Exactly once semantics (Streams)
 - ✅ Exactly once semantics (Tables)
 - ✅ Changelog state rebuilding
-- 🚧 Automatic topic creation (changelogs etc.)
-- 🚧 Joins
+- ✅ Automatic topic creation (changelogs etc.)
+- ✅ Joins
 - 🚧 Unified Service layer API 
-- 🚧 Event time processing
+- ✅ Event time processing
 - 🚧 Import/Export integration API for any types that implement futures::Stream 
 - ❌ Paralell operations
 - ❌ Async operations
