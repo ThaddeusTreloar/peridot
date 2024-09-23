@@ -73,6 +73,10 @@ where
         }
     }
 
+    pub fn get_facade(&self) -> Arc<StateStoreFacade<K, V, B>> {
+        self.state_facade.clone()
+    }
+
     pub fn get_checkpoint(&self) -> Result<Option<i64>, FacadeError> {
         self.state_facade
             .get_checkpoint()
@@ -117,7 +121,6 @@ where
     /// Will always return the changelog offset
     fn poll_commit(
         self: Pin<&mut Self>,
-        mut consumer_position: i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<i64, ErrorType<Self::Error>>> {
         let this = self.project();
@@ -143,6 +146,8 @@ where
                 this.state_facade.store_name(),
                 this.state_facade.partition(),
             );
+        
+        let mut consumer_position = -1;
 
         if let Some(offset) = changelog_write_position {
             consumer_position = offset + 1;

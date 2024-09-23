@@ -4,6 +4,13 @@ pub mod engine;
 pub enum ErrorType<T> {
     Fatal(T),
     Retryable(T),
+    Revertable(T)
+}
+
+#[derive(Debug)]
+pub enum ErrorSource<T> {
+    Commit(T),
+    Processing(T),
 }
 
 pub enum Retryable<T> {

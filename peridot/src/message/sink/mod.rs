@@ -41,7 +41,6 @@ pub trait MessageSink<K, V> {
     ) -> Result<Message<K, V>, ErrorType<Self::Error>>;
     fn poll_commit(
         self: Pin<&mut Self>,
-        consumer_position: i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<i64, ErrorType<Self::Error>>>;
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>>;

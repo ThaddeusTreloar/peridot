@@ -23,7 +23,7 @@ use std::{
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::engine::queue_manager::queue_metadata::QueueMetadata;
+use crate::{engine::queue_manager::queue_metadata::QueueMetadata, error::ErrorType};
 
 use super::{
     map::MapMessage,
@@ -87,8 +87,10 @@ pub enum MessageCommitError {
 
 pub enum MessageStreamPoll<K, V> {
     // Next offset to be read, or unrecoverable commit error
-    Commit(Result<i64, MessageCommitError>),
+    Commit,
+    Error(ErrorType<Box<dyn std::error::Error>>),
     Message(Message<K, V>),
+    Revert,
     Closed,
 }
 
@@ -97,8 +99,10 @@ impl<K, V> MessageStreamPoll<K, V> {
     pub(crate) fn translate<RK, RV>(self) -> Poll<MessageStreamPoll<RK, RV>> {
         match self {
             MessageStreamPoll::Message(_) => panic!("Cannot translate MessageStreamPoll::Message."),
+            MessageStreamPoll::Error(e) => Poll::Ready(MessageStreamPoll::Error(e)),
             MessageStreamPoll::Closed => Poll::Ready(MessageStreamPoll::Closed),
-            MessageStreamPoll::Commit(i) => Poll::Ready(MessageStreamPoll::Commit(i)),
+            MessageStreamPoll::Commit => Poll::Ready(MessageStreamPoll::Commit),
+            MessageStreamPoll::Revert => Poll::Ready(MessageStreamPoll::Revert),
         }
     }
 }

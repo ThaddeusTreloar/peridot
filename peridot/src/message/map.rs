@@ -68,7 +68,9 @@ where
 
         match ready!(this.stream.poll_next(cx)) {
             MessageStreamPoll::Closed => Poll::Ready(MessageStreamPoll::Closed),
-            MessageStreamPoll::Commit(val) => Poll::Ready(MessageStreamPoll::Commit(val)),
+            MessageStreamPoll::Commit => Poll::Ready(MessageStreamPoll::Commit),
+            MessageStreamPoll::Revert => Poll::Ready(MessageStreamPoll::Revert),
+            MessageStreamPoll::Error(e) => Poll::Ready(MessageStreamPoll::Error(e)),
             MessageStreamPoll::Message(message) => {
                 let (extractor, partial_message) = E::from_message_owned(message);
 

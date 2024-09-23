@@ -15,6 +15,9 @@
  *
  */
 
+pub mod table;
+pub mod stream;
+
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -39,6 +42,19 @@ use super::{
     types::{FromMessageOwned, KeyValue, Message, PartialMessageOwned, Value},
     BATCH_SIZE,
 };
+
+#[derive(Debug)]
+pub enum FullJoin<L, R> {
+    Left(L),
+    Inner(L, R),
+    Right(R)
+}
+
+#[derive(Debug)]
+pub enum LeftJoin<L, R> {
+    Left(L),
+    Inner(L, R)
+}
 
 pin_project! {
     pub struct JoinMessage<M, C, B, R>

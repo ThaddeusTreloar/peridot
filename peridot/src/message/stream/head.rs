@@ -179,17 +179,11 @@ where
                 if instant.elapsed().as_millis() > COMMIT_INTERVAL as u128 {
                     *is_committed = true;
 
-                    let next_offset = match head_type {
-                        HeadType::Core => engine_context.get_consumer_position(&source_topic, *partition),
-                        HeadType::Changelog(state_name) => engine_context.get_changelog_consumer_position(&state_name, *partition),
-                    };
-
                     tracing::debug!(
-                        "Commit interval reached. Sending commit request upstream for offset: {}",
-                        next_offset
+                        "Commit interval reached. Sending commit request upstream."
                     );
 
-                    return Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset)));
+                    return Poll::Ready(MessageStreamPoll::Commit);
                 } else {
                     let _ = interval.replace(instant);
                 }
@@ -242,17 +236,6 @@ where
 
                 tracing::info!("Queue empty, Pending.");
 
-                
-                let consumer_position = match head_type {
-                    HeadType::Core => *highest_offset + 1,
-                    HeadType::Changelog(store_name) => engine_context.get_changelog_consumer_position(
-                        store_name, 
-                        *partition
-                    )
-                };
-
-                tracing::info!("Consumer position: {}", consumer_position);
-
                 match interval {
                     Some(i) => {
                         let elapsed = i.elapsed().as_millis() as u64;
@@ -279,35 +262,5 @@ where
                 Poll::Pending
             }
         }
-/*
-        match input.as_mut().poll_next(cx) {
-            Poll::Pending => {
-                
-
-                // Eager commit code. Tends to increase scheduler contention.
-                /*if *is_committed {
-                    tracing::info!(
-                        "No buffered messages, already committed. Pending..."
-                    );
-
-                    Poll::Pending
-                } else {
-                    *is_committed = true;
-
-                    let next_offset = input.consumer_position();
-
-                    tracing::info!(
-                        "No buffered messages. Sending commit request upstream for offset: {}",
-                        next_offset
-                    );
-
-                    Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset)))
-                }*/
-            }
-            Poll::Ready(None) => panic!("PartitionQueueStreams should never return none. If this panic is triggered, there must be an upstream change."),
-            Poll::Ready(Some(raw_msg)) => {
-                
-            },
-        } */
     }
 }

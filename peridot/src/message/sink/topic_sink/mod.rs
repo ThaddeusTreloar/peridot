@@ -112,7 +112,6 @@ where
 
     fn poll_commit(
         self: Pin<&mut Self>,
-        consumer_position: i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<i64, ErrorType<Self::Error>>> {
         let span = tracing::span!(

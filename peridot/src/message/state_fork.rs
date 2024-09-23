@@ -39,13 +39,11 @@ use crate::{
         context::EngineContext,
         queue_manager::partition_queue::{PeridotPartitionQueue, StreamPeridotPartitionQueue},
         wrapper::serde::native::NativeBytes,
-    },
-    message::{
+    }, error::ErrorType, message::{
         stream::MessageStreamPoll,
         types::{Message, TryFromOwnedMessage},
         BATCH_SIZE,
-    },
-    state::{self, store::StateStore},
+    }, state::{self, facade::WriteableStateFacade, store::StateStore}
 };
 
 use super::{
@@ -90,13 +88,11 @@ pin_project! {
         #[pin]
         changelog_stream: Option<DeserialiserQueue<M::KeyType, M::ValueType>>,
         changelog_start: Option<i64>,
-        store_name: String,
+        state_name: String,
         partition: i32,
         commit_state: StreamState,
         store_state: Arc<StoreStateCell>,
         lso_sleep: Option<Pin<Box<Sleep>>>,
-        consumer_next_offset: i64,
-        changelog_next_offset: i64,
         _state_backend: PhantomData<B>,
     }
 }
@@ -119,14 +115,12 @@ where
             message_stream,
             state_sink,
             engine_context,
-            store_name,
+            state_name: store_name,
             partition,
             changelog_start: None,
             store_state,
             commit_state: Default::default(),
             lso_sleep: None,
-            consumer_next_offset: 0,
-            changelog_next_offset: 0,
             _state_backend: Default::default(),
         }
     }
@@ -154,14 +148,12 @@ where
             message_stream,
             state_sink,
             engine_context,
-            store_name: store_name.to_owned(),
+            state_name: store_name.to_owned(),
             partition,
             changelog_start: None,
             store_state,
             commit_state: Default::default(),
             lso_sleep: None,
-            consumer_next_offset: 0,
-            changelog_next_offset: 0,
             _state_backend: Default::default(),
         }
     }
@@ -267,22 +259,17 @@ where
     fn commit(
         state_sink: &mut Pin<&mut StateSink<B, M::KeyType, M::ValueType>>,
         commit_state: &mut StreamState,
-        next_offset: i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), MessageCommitError>> {
         tracing::debug!(
-            "Committing state fork for sink: {}, at offset: {}",
-            std::any::type_name::<StateSink<B, M::KeyType, M::ValueType>>(),
-            next_offset,
+            "Committing state fork for sink: {}",
+            std::any::type_name::<StateSink<B, M::KeyType, M::ValueType>>()
         );
 
-        ready!(state_sink.as_mut().poll_commit(next_offset, cx))
+        ready!(state_sink.as_mut().poll_commit(cx))
             .expect("Failed to commit state store.");
 
-        tracing::debug!(
-            "Commit completed for state fork, at offset: {}",
-            next_offset,
-        );
+        tracing::debug!("Commit completed for state fork");
 
         *commit_state = StreamState::Committed;
 
@@ -300,25 +287,23 @@ where
         changelog_start: &mut Option<i64>,
         lso_sleep: &mut Option<Pin<Box<Sleep>>>,
         commit_state: &mut StreamState,
-        changelog_next_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), MessageCommitError>> {
         match changelog_stream.as_mut().poll_next(cx) {
-            Poll::Ready(MessageStreamPoll::Commit(next_offset)) => {
-                let position = next_offset?;
-
-                *changelog_next_offset = position;
-
+            Poll::Ready(MessageStreamPoll::Error(e)) => {
+                todo!("")
+            }
+            Poll::Ready(MessageStreamPoll::Revert) => todo!("Handle revertable"),
+            Poll::Ready(MessageStreamPoll::Commit) => {
                 tracing::debug!(
-                    "Checkpointing consumer position next_offset: {} for store: {}, partition: {}",
-                    position,
+                    "Checkpointing for store: {}, partition: {}",
                     store_name,
                     partition
                 );
 
                 *commit_state = StreamState::Committing;
 
-                Self::commit(state_sink, commit_state, position, cx)
+                Self::commit(state_sink, commit_state, cx)
             }
             Poll::Ready(MessageStreamPoll::Closed) => {
                 panic!("Changelog stream closed before state store rebuilt.")
@@ -341,7 +326,7 @@ where
     fn poll_state_rebuilt(
         state_sink: &mut Pin<&mut StateSink<B, M::KeyType, M::ValueType>>,
         engine_context: &mut Arc<EngineContext>,
-        store_name: &mut str,
+        state_name: &mut str,
         partition: &mut i32,
         lso_sleep: &mut Option<Pin<Box<Sleep>>>,
         cx: &mut Context<'_>,
@@ -350,17 +335,22 @@ where
         //let watermarks =
         //    engine_context.watermark_for_changelog(store_name, *partition);
 
-        let _consumer_position =
-            engine_context.get_changelog_consumer_position(store_name, *partition);
+        let consumer_position =
+            engine_context.get_changelog_consumer_position(state_name, *partition);
 
-        info!("Consumer position: {}", _consumer_position);
+        info!("Consumer position: {}", consumer_position);
+
+        // TODO: clean these lines up
+        state_sink.get_facade().create_checkpoint(consumer_position);
+
+        engine_context.set_changelog_write_position_for_store(state_name, *partition, consumer_position);
 
         let checkpoint = state_sink
             .get_checkpoint()
             .expect("Failed to get checkpoint.")
             .expect("State sink not checkpointed after commit.");
 
-        let lso = match engine_context.get_changelog_lso(store_name, *partition) {
+        let lso = match engine_context.get_changelog_lso(state_name, *partition) {
             None => {
                 info!("LSO not store, waiting...");
 
@@ -376,7 +366,7 @@ where
         };
 
         let changelog_next_offset =
-            match engine_context.get_changelog_next_offset(store_name, *partition) {
+            match engine_context.get_changelog_next_offset(state_name, *partition) {
                 None => {
                     info!("LSO not store, waiting...");
 
@@ -439,12 +429,10 @@ where
             commit_state,
             store_state,
             engine_context,
-            store_name,
+            state_name,
             partition,
             changelog_start,
             lso_sleep,
-            consumer_next_offset,
-            changelog_next_offset,
             ..
         } = self.project();
 
@@ -467,11 +455,10 @@ where
 
                 while let Some(ref mut stream) = changelog_stream_proj {
                     match *commit_state {
-                        StreamState::Committing => {
+                        StreamState::Committing => {                            
                             ready!(Self::commit(
                                 &mut state_sink,
                                 commit_state,
-                                *changelog_next_offset,
                                 cx
                             ))
                             .expect("Failed to commit");
@@ -483,7 +470,7 @@ where
                             if ready!(Self::poll_state_rebuilt(
                                 &mut state_sink,
                                 engine_context,
-                                store_name,
+                                state_name,
                                 partition,
                                 lso_sleep,
                                 cx,
@@ -492,7 +479,7 @@ where
                             {
                                 tracing::debug!(
                                     "Setting state store status to StoreState::Ready for store: {}, partition: {}",
-                                    store_name,
+                                    state_name,
                                     partition
                                 );
 
@@ -500,12 +487,12 @@ where
 
                                 tracing::debug!(
                                     "Closing changelog stream for for store: {}, partition: {}",
-                                    store_name,
+                                    state_name,
                                     partition
                                 );
 
                                 engine_context
-                                    .close_changelog_stream(store_name, *partition)
+                                    .close_changelog_stream(state_name, *partition)
                                     .expect("Failed to close changelog stream.");
 
                                 let _ = changelog_stream_proj.take();
@@ -518,7 +505,7 @@ where
                                 ready!(Self::set_changelog_start(
                                     &mut state_sink,
                                     engine_context,
-                                    store_name,
+                                    state_name,
                                     partition,
                                     changelog_start,
                                     lso_sleep,
@@ -531,12 +518,11 @@ where
                                 stream,
                                 &mut state_sink,
                                 engine_context,
-                                store_name,
+                                state_name,
                                 partition,
                                 changelog_start,
                                 lso_sleep,
                                 commit_state,
-                                changelog_next_offset,
                                 cx,
                             )
                             .is_pending()
@@ -564,15 +550,10 @@ where
                     match ready!(Self::commit(
                         &mut state_sink,
                         commit_state,
-                        *consumer_next_offset,
                         cx
                     )) {
-                        Ok(_) => {
-                            return Poll::Ready(MessageStreamPoll::Commit(Ok(
-                                *consumer_next_offset,
-                            )))
-                        }
-                        Err(e) => return Poll::Ready(MessageStreamPoll::Commit(Err(e))),
+                        Ok(_) => return Poll::Ready(MessageStreamPoll::Commit),
+                        Err(e) => todo!("Handle commit error"),
                     }
                 }
                 StreamState::Closing => {
@@ -616,12 +597,15 @@ where
 
                             return Poll::Ready(MessageStreamPoll::Message(message));
                         }
-                        Poll::Ready(MessageStreamPoll::Commit(Err(e))) => {
-                            return Poll::Ready(MessageStreamPoll::Commit(Err(e)))
-                        }
-                        Poll::Ready(MessageStreamPoll::Commit(Ok(next_offset))) => {
+                        Poll::Ready(MessageStreamPoll::Error(ErrorType::Retryable(e))) => {
+                            return Poll::Pending
+                        },
+                        Poll::Ready(MessageStreamPoll::Error(e)) => {
+                            return Poll::Ready(MessageStreamPoll::Error(e))
+                        },
+                        Poll::Ready(MessageStreamPoll::Revert) => todo!("Handle revert"),
+                        Poll::Ready(MessageStreamPoll::Commit) => {
                             *commit_state = StreamState::Committing;
-                            *consumer_next_offset = next_offset;
                         }
                     }
                 }

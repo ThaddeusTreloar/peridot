@@ -68,10 +68,9 @@ where
 
     fn poll_commit(
         self: Pin<&mut Self>,
-        consumer_position: i64,
         _: &mut Context<'_>,
     ) -> Poll<Result<i64, ErrorType<Self::Error>>> {
-        Poll::Ready(Ok(consumer_position))
+        Poll::Ready(Ok(0))
     }
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), ErrorType<Self::Error>>> {

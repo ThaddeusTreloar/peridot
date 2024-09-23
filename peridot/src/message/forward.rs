@@ -56,7 +56,8 @@ pin_project! {
         message_sink: Si,
         queue_metadata: QueueMetadata,
         stream_state: StreamState,
-        next_offset: i64,
+        consumed_offset: i64,
+        committed_offset: i64
     }
 }
 
@@ -71,7 +72,8 @@ where
             message_sink,
             queue_metadata,
             stream_state: Default::default(),
-            next_offset: 0,
+            consumed_offset: -1,
+            committed_offset: -1,
         }
     }
 }
@@ -91,12 +93,13 @@ where
         queue_metadata: &mut QueueMetadata,
         message_sink: &mut Pin<&mut Si>,
         stream_state: &mut StreamState,
-        next_offset: &mut i64,
+        consumed_offset: &mut i64,
+        committed_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ForwarderError>> {
-        tracing::debug!("Committing forward at offset: {}", *next_offset);
+        tracing::debug!("Committing forward at offset: {}", *consumed_offset);
 
-        match message_sink.as_mut().poll_commit(*next_offset, cx) {
+        match message_sink.as_mut().poll_commit(cx) {
             Poll::Pending => {
                 tracing::debug!("Waiting on downstream commit...");
                 return Poll::Pending;
@@ -111,9 +114,9 @@ where
 
         let mut offsets = TopicPartitionList::new();
 
-        tracing::debug!("Adding offset: {} to transaction.", next_offset);
+        tracing::debug!("Adding offset: {} to transaction.", consumed_offset);
 
-        if *next_offset < 0 {
+        if *consumed_offset < 0 {
             *stream_state = StreamState::Committed;
 
             return Poll::Ready(Ok(()));
@@ -123,7 +126,7 @@ where
             .add_partition_offset(
                 queue_metadata.source_topic(),
                 queue_metadata.partition(),
-                Offset::Offset(*next_offset),
+                Offset::Offset(*consumed_offset + 1),
             )
             .expect("Failed to add partition offset");
 
@@ -133,7 +136,7 @@ where
             Duration::from_millis(1000),
         ) {
             Ok(r) => {
-                tracing::debug!("Successfully sent offsets, {} to producer transaction for source_topic: {}, partition: {}", next_offset, queue_metadata.source_topic(), queue_metadata.partition())
+                tracing::debug!("Successfully sent offsets, {} to producer transaction for source_topic: {}, partition: {}", consumed_offset, queue_metadata.source_topic(), queue_metadata.partition())
             }
             Err(KafkaError::Transaction(e)) => {
                 tracing::error!(
@@ -162,7 +165,7 @@ where
             .commit_transaction(Duration::from_millis(2500))
         {
             Ok(r) => {
-                tracing::debug!("Successfully committed producer transaction for source_topic: {}, partition: {}, offset: {}", queue_metadata.source_topic(), queue_metadata.partition(), next_offset)
+                tracing::debug!("Successfully committed producer transaction for source_topic: {}, partition: {}, offset: {}", queue_metadata.source_topic(), queue_metadata.partition(), consumed_offset)
             }
             Err(KafkaError::Transaction(e)) => {
                 tracing::error!(
@@ -188,6 +191,8 @@ where
 
         info!("Transaction comitted.");
         *stream_state = StreamState::Committed;
+
+        *committed_offset = *consumed_offset;
 
         match queue_metadata.producer().begin_transaction() {
             Ok(r) => {
@@ -227,7 +232,8 @@ where
         message_stream: &mut Pin<&mut M>,
         message_sink: &mut Pin<&mut Si>,
         stream_state: &mut StreamState,
-        next_offset: &mut i64,
+        consumed_offset: &mut i64,
+        committed_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ForwarderError>> {
         ready!(message_sink.as_mut().poll_ready(cx)).expect("Failed to get sink ready.");
@@ -244,37 +250,35 @@ where
 
                 Poll::Ready(Ok(()))
             }
-            MessageStreamPoll::Commit(Ok(offset)) => {
+            MessageStreamPoll::Commit => {
                 tracing::debug!(
-                    "Recieved commit instruction for topic: {} partition: {}, offset: {}",
+                    "Recieved commit instruction for topic: {} partition: {}",
                     queue_metadata.source_topic(),
-                    queue_metadata.partition(),
-                    offset
+                    queue_metadata.partition()
                 );
 
-                if offset > *next_offset {
+                if consumed_offset > committed_offset {
                     tracing::debug!(
                         "Consumer position increased, committing forward at offset: {}.",
-                        offset
+                        consumed_offset
                     );
-
-                    *next_offset = offset;
 
                     *stream_state = StreamState::Committing;
 
-                    Self::commit(queue_metadata, message_sink, stream_state, next_offset, cx)
+                    Self::commit(queue_metadata, message_sink, stream_state, consumed_offset, committed_offset, cx)
                 } else {
                     tracing::debug!(
                         "No change in consumer offset, skipping forward commit at offset: {}.",
-                        offset
+                        consumed_offset
                     );
 
                     Poll::Ready(Ok(()))
                 }
             }
-            MessageStreamPoll::Commit(Err(e)) => {
-                todo!("Handle upstream commit error.");
-            }
+            MessageStreamPoll::Revert => todo!("Handle revert"),
+            MessageStreamPoll::Error(e) => {
+                todo!("Handle upstream processing error.")
+            },
             MessageStreamPoll::Message(message) => {
                 tracing::debug!("Message received in Fork, sending to sink.");
                 // If we were waiting for upstream nodes to finish committing, we can transition
@@ -283,8 +287,6 @@ where
                     *stream_state = Default::default();
                 }
 
-                let topic = String::from(message.topic());
-                let partition = message.partition();
                 let offset = message.offset();
 
                 // TODO: Some retry logic
@@ -293,7 +295,13 @@ where
                     //                    Err(e) => {}
                     Err(ErrorType::Fatal(e)) => panic!("Unknown error while sending record: {}", e),
                     Err(ErrorType::Retryable(e)) => todo!("Handle Retryable error"),
+                    Err(ErrorType::Revertable(e)) => todo!("Handle Revertable error"),
                 };
+                
+
+                tracing::debug!("Updating consumed offset for source topic: {}, partition: {}, previous: {}, new: {}", queue_metadata.source_topic(), queue_metadata.partition(), consumed_offset, offset);
+
+                *consumed_offset = offset;
 
                 Poll::Ready(Ok(()))
             }
@@ -315,7 +323,8 @@ where
             mut message_sink,
             queue_metadata,
             stream_state,
-            next_offset,
+            consumed_offset,
+            committed_offset
         } = self.project();
 
         let span = tracing::span!(
@@ -334,7 +343,8 @@ where
                         queue_metadata,
                         &mut message_sink,
                         stream_state,
-                        next_offset,
+                        consumed_offset,
+                        committed_offset,
                         cx
                     ))
                     .expect("Commit Error");
@@ -346,7 +356,8 @@ where
                         &mut message_stream,
                         &mut message_sink,
                         stream_state,
-                        next_offset,
+                        consumed_offset,
+                        committed_offset,
                         cx,
                     ))
                     .expect("Poll error");

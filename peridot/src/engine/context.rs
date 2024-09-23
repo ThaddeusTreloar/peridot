@@ -252,9 +252,21 @@ impl EngineContext {
 
     pub(crate) fn get_changelog_consumer_position(&self, state_store: &str, partition: i32) -> i64 {
         let changelog_topic = self.get_changelog_topic_name(state_store);
+        
+        self.changelog_manager
+        .get_topic_consumer_position(&changelog_topic, partition)
+    }
+    
+    pub(crate) fn set_changelog_write_position_for_store(
+        &self,
+        state_store: &str,
+        partition: i32,
+        offset: i64,
+    ) {
+        let changelog_topic = self.get_changelog_topic_name(state_store);
 
         self.changelog_manager
-            .get_topic_consumer_position(&changelog_topic, partition)
+            .set_changelog_write_position(&changelog_topic, partition, offset)
     }
 
     pub(crate) fn set_changelog_write_position(

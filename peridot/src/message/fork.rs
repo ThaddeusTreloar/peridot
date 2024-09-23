@@ -47,7 +47,6 @@ pin_project! {
         #[pin]
         message_sink: Si,
         commit_state: StreamState,
-        next_offset: i64,
     }
 }
 
@@ -62,7 +61,6 @@ where
             message_stream,
             message_sink,
             commit_state: Default::default(),
-            next_offset: 0,
         }
     }
 }
@@ -76,32 +74,32 @@ where
     M::ValueType: Clone,
 {
     fn commit(
-        queue_metadata: &mut QueueMetadata,
         mut message_sink: Pin<&mut Si>,
         mut commit_state: &mut StreamState,
-        next_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<MessageStreamPoll<M::KeyType, M::ValueType>> {
         tracing::debug!(
-            "Committing fork for sink: {}, at offset: {}",
-            std::any::type_name::<Si>(),
-            next_offset,
+            "Committing fork for sink: {}",
+            std::any::type_name::<Si>()
         );
 
-        match ready!(message_sink.as_mut().poll_commit(*next_offset, cx)) {
+        match ready!(message_sink.as_mut().poll_commit(cx)) {
             Ok(_) => {
-                tracing::debug!("Commit completed for fork, at offset: {}", *next_offset,);
+                tracing::debug!("Commit completed for fork");
 
                 *commit_state = StreamState::Committed;
 
-                Poll::Ready(MessageStreamPoll::Commit(Ok(*next_offset)))
+                Poll::Ready(MessageStreamPoll::Commit)
             }
-            Err(ErrorType::Fatal(e)) => Poll::Ready(MessageStreamPoll::Commit(Err(
-                MessageCommitError::SinkCommitError(Box::new(e)),
-            ))),
-            Err(ErrorType::Retryable(e)) => Poll::Ready(MessageStreamPoll::Commit(Err(
-                MessageCommitError::SinkCommitError(Box::new(e)),
-            ))),
+            Err(ErrorType::Fatal(e)) => Poll::Ready(MessageStreamPoll::Error(
+                ErrorType::Fatal(Box::new(e)),
+            )),
+            Err(ErrorType::Retryable(e)) => Poll::Ready(MessageStreamPoll::Error(
+                ErrorType::Retryable(Box::new(e)),
+            )),
+            Err(ErrorType::Revertable(e)) => Poll::Ready(MessageStreamPoll::Error(
+                ErrorType::Revertable(Box::new(e)),
+            )),
         }
     }
 
@@ -126,7 +124,6 @@ where
         mut message_stream: Pin<&mut M>,
         mut message_sink: Pin<&mut Si>,
         commit_state: &mut StreamState,
-        next_offset: &mut i64,
         cx: &mut Context<'_>,
     ) -> Poll<MessageStreamPoll<M::KeyType, M::ValueType>> {
         match ready!(message_stream.as_mut().poll_next(cx)) {
@@ -135,28 +132,19 @@ where
 
                 Self::close(queue_metadata, message_sink, cx)
             }
-            MessageStreamPoll::Commit(Ok(offset)) => {
-                tracing::debug!("Recieved commit message for offset: {}", offset);
+            MessageStreamPoll::Commit => {
+                tracing::debug!("Recieved commit message.");
 
-                *next_offset = offset;
-                
                 *commit_state = StreamState::Committing;
                 
-                if offset > *next_offset {
-                    tracing::debug!(
-                        "Consumer position increased, committing fork at offset: {}.",
-                        offset
-                    );
-                    Self::commit(queue_metadata, message_sink, commit_state, next_offset, cx)
-                } else {
-                    tracing::debug!(
-                        "No change in consumer offset, skipping commit at offset: {}.",
-                        offset
-                    );
-                    Poll::Ready(MessageStreamPoll::Commit(Ok(*next_offset)))
-                }
+                tracing::debug!(
+                    "Consumer position increased, committing fork."
+                );
+
+                Self::commit(message_sink, commit_state, cx)
             }
-            MessageStreamPoll::Commit(Err(e)) => Poll::Ready(MessageStreamPoll::Commit(Err(e))),
+            MessageStreamPoll::Revert => todo!("Handle Revert"),
+            MessageStreamPoll::Error(e) => Poll::Ready(MessageStreamPoll::Error(e)),
             MessageStreamPoll::Message(message) => {
                 tracing::debug!("Message received in Fork, sending to sink.");
 
@@ -168,6 +156,7 @@ where
                         Ok(_) => (),
                         Err(ErrorType::Fatal(e)) => panic!("Fatal error"),
                         Err(ErrorType::Retryable(e)) => todo!("Handle retryable error"),
+                        Err(ErrorType::Revertable(e)) => todo!("Handle Revertable error"),
                 };
 
                 Poll::Ready(MessageStreamPoll::Message(message))
@@ -198,7 +187,6 @@ where
             mut message_stream,
             mut message_sink,
             commit_state,
-            next_offset,
             ..
         } = self.project();
 
@@ -209,12 +197,11 @@ where
                     message_stream,
                     message_sink,
                     commit_state,
-                    next_offset,
                     cx,
                 )
             }
             StreamState::Committing => {
-                Self::commit(queue_metadata, message_sink, commit_state, next_offset, cx)
+                Self::commit(message_sink, commit_state, cx)
             }
             StreamState::Closing => Self::close(queue_metadata, message_sink, cx),
         }
